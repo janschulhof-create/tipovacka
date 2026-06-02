@@ -1,5 +1,0 @@
-{
-  "crons": [
-    { "path": "/api/sync?key=PLACEHOLDER", "schedule": "*/15 * * * *" }
-  ]
-}
