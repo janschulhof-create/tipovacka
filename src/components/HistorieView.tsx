@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { StandingsChart } from './StandingsChart';
 
 type Tip = { h: number | null; a: number | null; pts: number | null };
 type Match = {
@@ -111,6 +112,12 @@ export function HistorieView({ data }: { data: Historie }) {
             </div>
           ))}
         </div>
+      </section>
+
+      {/* Vývoj pořadí po kolech */}
+      <section>
+        <h2 className="px-4 pb-2 text-sm font-semibold text-slate-300">Vývoj bodů po kolech</h2>
+        <StandingsChart rounds={data.rounds} players={data.players} />
       </section>
 
       {/* Výsledky po kolech */}
