@@ -23,13 +23,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         {/* Spodní navigace – palec dosáhne na mobilu */}
         <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-panel/95 backdrop-blur">
           <div className="mx-auto flex max-w-md items-center justify-around py-2 text-xs">
-            <Link href="/" className="flex flex-col items-center gap-0.5 px-4 py-1 text-slate-200">
+            <Link href="/" className="flex flex-col items-center gap-0.5 px-3 py-1 text-slate-200">
               <span className="text-lg">🏠</span>Domů
             </Link>
-            <Link href="/tipovat" className="flex flex-col items-center gap-0.5 px-4 py-1 text-slate-200">
+            <Link href="/tipovat" className="flex flex-col items-center gap-0.5 px-3 py-1 text-slate-200">
               <span className="text-lg">🎯</span>Tipovat
             </Link>
-            <Link href="/sin-slavy" className="flex flex-col items-center gap-0.5 px-4 py-1 text-slate-200">
+            <Link href="/historie" className="flex flex-col items-center gap-0.5 px-3 py-1 text-slate-200">
+              <span className="text-lg">📚</span>Historie
+            </Link>
+            <Link href="/sin-slavy" className="flex flex-col items-center gap-0.5 px-3 py-1 text-slate-200">
               <span className="text-lg">🏆</span>Síň slávy
             </Link>
           </div>
