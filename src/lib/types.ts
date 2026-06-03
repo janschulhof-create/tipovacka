@@ -52,3 +52,11 @@ export interface GoalStatRow {
   total_pred_goals: number;
   avg_pred_goals: number;
 }
+
+export interface MissRow {
+  player_id: number;
+  name: string;
+  season_id: number;
+  zeros: number;
+  missed: number;
+}

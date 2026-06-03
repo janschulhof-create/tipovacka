@@ -1,5 +1,5 @@
 import { createServerReadClient } from '@/lib/supabase/server';
-import type { Match, StandingRow, GoalStatRow, Player } from '@/lib/types';
+import type { Match, StandingRow, GoalStatRow, MissRow, Player } from '@/lib/types';
 
 export async function getActiveSeasonId(): Promise<number | null> {
   const sb = createServerReadClient();
@@ -64,6 +64,12 @@ export async function getGoalStats(seasonId: number): Promise<GoalStatRow[]> {
   const sb = createServerReadClient();
   const { data } = await sb.from('v_goal_stats').select('*').eq('season_id', seasonId);
   return (data as GoalStatRow[]) ?? [];
+}
+
+export async function getMisses(seasonId: number): Promise<MissRow[]> {
+  const sb = createServerReadClient();
+  const { data } = await sb.from('v_misses').select('*').eq('season_id', seasonId);
+  return (data as MissRow[]) ?? [];
 }
 
 // ---- Síň slávy: data napříč všemi sezónami ----

@@ -20,6 +20,8 @@ type Stat = {
   success: number;
   count: number;
   roundWins: number;
+  zeros: number;
+  missed: number;
 };
 export type Historie = {
   season: string;
@@ -53,6 +55,8 @@ export function HistorieView({ data }: { data: Historie }) {
   const defender = leaderName(data.stats, (s) => s.avgGoals, 'min');
   const bestAvg = leaderName(data.stats, (s) => s.avgPoints);
   const roundKing = leaderName(data.stats, (s) => s.roundWins);
+  const kralNulicky = leaderName(data.stats, (s) => s.zeros);
+  const mrAlzheimer = leaderName(data.stats, (s) => s.missed);
 
   const cards = [
     { icon: '🎯', label: 'Nejvíce přesných tipů', who: exact.names, val: `${exact.val}× desítka` },
@@ -60,6 +64,8 @@ export function HistorieView({ data }: { data: Historie }) {
     { icon: '🧱', label: 'Největší betonář', who: defender.names, val: `Ø ${defender.val} g/tip` },
     { icon: '📈', label: 'Průměr bodů na zápas', who: bestAvg.names, val: `${bestAvg.val}` },
     { icon: '🏅', label: 'Nejvíce vyhraných kol', who: roundKing.names, val: `${roundKing.val}×` },
+    { icon: '💀', label: 'Král nuličky', who: kralNulicky.names, val: `${kralNulicky.val}× nula bodů` },
+    { icon: '🧠', label: 'Mr. Alzheimer', who: mrAlzheimer.names, val: `${mrAlzheimer.val}× netipoval` },
   ];
 
   return (

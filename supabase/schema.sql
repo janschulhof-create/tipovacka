@@ -195,6 +195,21 @@ join predictions pr on pr.player_id = p.id
 join matches m      on m.id = pr.match_id
 group by p.id, p.name, m.season_id;
 
+-- Král nuličky (nejvíc 0bodových tipů) a Mr. Alzheimer (nejvíc netipovaných)
+-- Počítá se jen z ODEHRANÝCH zápasů.
+create or replace view v_misses as
+select
+  p.id   as player_id,
+  p.name,
+  m.season_id,
+  count(*) filter (where pr.points = 0) as zeros,   -- natipoval, ale 0 bodů
+  count(*) filter (where pr.id is null) as missed    -- vůbec netipoval
+from players p
+cross join matches m
+left join predictions pr on pr.player_id = p.id and pr.match_id = m.id
+where m.status = 'finished'
+group by p.id, p.name, m.season_id;
+
 -- =====================================================================
 --  ROW LEVEL SECURITY
 --  Bez přihlašování: čtení veřejné, zápis tipů jen přes anon klíč,

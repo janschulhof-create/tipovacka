@@ -5,6 +5,7 @@ import {
   getRoundMatches,
   getStandings,
   getGoalStats,
+  getMisses,
 } from '@/lib/queries';
 import { MatchList } from '@/components/MatchList';
 import { StandingsTable } from '@/components/StandingsTable';
@@ -18,10 +19,11 @@ export default async function Home() {
   const seasonId = season.id;
 
   const round = await getCurrentRound(seasonId);
-  const [matches, standings, goals] = await Promise.all([
+  const [matches, standings, goals, misses] = await Promise.all([
     round ? getRoundMatches(seasonId, round) : Promise.resolve([]),
     getStandings(seasonId),
     getGoalStats(seasonId),
+    getMisses(seasonId),
   ]);
 
   return (
@@ -58,7 +60,7 @@ export default async function Home() {
 
       <section className="mt-6">
         <h2 className="px-4 pb-2 text-sm font-semibold text-slate-300">Statistiky</h2>
-        <StatsCards standings={standings} goals={goals} />
+        <StatsCards standings={standings} goals={goals} misses={misses} />
       </section>
     </main>
   );

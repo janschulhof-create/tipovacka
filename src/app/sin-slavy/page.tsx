@@ -10,6 +10,8 @@ type Stat = {
   avgPoints: number;
   success: number;
   roundWins: number;
+  zeros: number;
+  missed: number;
 };
 type Season = { season: string; players: string[]; stats: Record<string, Stat> };
 
@@ -34,6 +36,8 @@ export default function SinSlavyPage() {
   const topScorer = pick(seasons, (s, n) => s.stats[n].avgGoals, 'max');
   const topDefender = pick(seasons, (s, n) => s.stats[n].avgGoals, 'min');
   const mostRoundWins = pick(seasons, (s, n) => s.stats[n].roundWins, 'max');
+  const kralNulicky = pick(seasons, (s, n) => s.stats[n].zeros, 'max');
+  const mrAlzheimer = pick(seasons, (s, n) => s.stats[n].missed, 'max');
 
   return (
     <main>
@@ -58,6 +62,10 @@ export default function SinSlavyPage() {
           rows={[`${topScorer.names} — Ø ${topScorer.val} g/tip (${topScorer.season})`]} />
         <Hof icon="🧱" label="Největší betonář historie"
           rows={[`${topDefender.names} — Ø ${topDefender.val} g/tip (${topDefender.season})`]} />
+        <Hof icon="💀" label="Král nuličky (nejvíc nul)"
+          rows={[`${kralNulicky.names} — ${kralNulicky.val}× nula bodů (${kralNulicky.season})`]} />
+        <Hof icon="🧠" label="Mr. Alzheimer (nejvíc netipoval)"
+          rows={[`${mrAlzheimer.names} — ${mrAlzheimer.val}× netipoval (${mrAlzheimer.season})`]} />
       </div>
     </main>
   );
