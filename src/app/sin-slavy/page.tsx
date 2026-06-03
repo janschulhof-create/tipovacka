@@ -12,6 +12,8 @@ type Stat = {
   roundWins: number;
   zeros: number;
   missed: number;
+  bestRound: number;
+  bestRoundNo: number;
 };
 type Season = { season: string; players: string[]; stats: Record<string, Stat> };
 
@@ -39,6 +41,19 @@ export default function SinSlavyPage() {
   const kralNulicky = pick(seasons, (s, n) => s.stats[n].zeros, 'max');
   const mrAlzheimer = pick(seasons, (s, n) => s.stats[n].missed, 'max');
 
+  // rekordní zisk za 1 kolo (napříč sezónami i hráči, se shodami)
+  let recMax = -1;
+  const recHolders: string[] = [];
+  for (const s of seasons)
+    for (const n of s.players) {
+      const v = s.stats[n].bestRound;
+      if (v > recMax) {
+        recMax = v;
+        recHolders.length = 0;
+      }
+      if (v === recMax) recHolders.push(`${n} (${s.stats[n].bestRoundNo}. kolo, ${s.season})`);
+    }
+
   return (
     <main>
       <header className="flex items-center gap-3 px-4 pb-2 pt-5">
@@ -58,6 +73,8 @@ export default function SinSlavyPage() {
           rows={[`${bestSeasonExact.names} — ${bestSeasonExact.val}× (${bestSeasonExact.season})`]} />
         <Hof icon="🏅" label="Nejvíce vyhraných kol v sezóně"
           rows={[`${mostRoundWins.names} — ${mostRoundWins.val}× (${mostRoundWins.season})`]} />
+        <Hof icon="💥" label="Rekordní zisk za 1 kolo"
+          rows={[`${recMax} b — ${recHolders.join(', ')}`]} />
         <Hof icon="⚽" label="Největší střelec historie"
           rows={[`${topScorer.names} — Ø ${topScorer.val} g/tip (${topScorer.season})`]} />
         <Hof icon="🧱" label="Největší betonář historie"

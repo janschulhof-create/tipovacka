@@ -4,7 +4,8 @@ import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction } from '@/lib/types';
 
-type Scores = Record<number, { h: number; a: number }>;
+// '' = prázdné (nezadáno)
+type Scores = Record<number, { h: string; a: string }>;
 
 export function PredictionForm({
   players,
@@ -22,7 +23,6 @@ export function PredictionForm({
   const isLocked = (m: Match) =>
     m.status !== 'scheduled' || new Date(m.kickoff).getTime() <= Date.now();
 
-  // Načti existující tipy zvoleného hráče a předvyplň
   const loadPredictions = useCallback(
     async (pid: number) => {
       const { data } = await supabase
@@ -30,9 +30,9 @@ export function PredictionForm({
         .select('match_id, predicted_home, predicted_away')
         .eq('player_id', pid);
       const next: Scores = {};
-      for (const m of matches) next[m.id] = { h: 0, a: 0 };
+      for (const m of matches) next[m.id] = { h: '', a: '' }; // prázdné dokud není tip
       for (const p of (data as Prediction[]) ?? []) {
-        next[p.match_id] = { h: p.predicted_home, a: p.predicted_away };
+        next[p.match_id] = { h: String(p.predicted_home), a: String(p.predicted_away) };
       }
       setScores(next);
     },
@@ -43,40 +43,50 @@ export function PredictionForm({
     if (playerId) loadPredictions(Number(playerId));
   }, [playerId, loadPredictions]);
 
-  const bump = (mid: number, side: 'h' | 'a', delta: number) =>
-    setScores((s) => {
-      const cur = s[mid] ?? { h: 0, a: 0 };
-      const v = Math.max(0, Math.min(20, cur[side] + delta));
-      return { ...s, [mid]: { ...cur, [side]: v } };
-    });
+  const setVal = (mid: number, side: 'h' | 'a', raw: string) => {
+    // jen číslice, max 2, ořež na 0–99
+    let v = raw.replace(/[^0-9]/g, '').slice(0, 2);
+    if (v !== '') v = String(Math.min(99, parseInt(v, 10)));
+    setScores((s) => ({ ...s, [mid]: { ...(s[mid] ?? { h: '', a: '' }), [side]: v } }));
+  };
 
   async function save() {
     if (!playerId) return;
     setSaving(true);
     setMsg(null);
 
+    // ukládej jen zápasy s OBĚMA vyplněnými poli a neuzamčené
     const rows = matches
       .filter((m) => !isLocked(m))
+      .filter((m) => {
+        const s = scores[m.id];
+        return s && s.h !== '' && s.a !== '';
+      })
       .map((m) => ({
         player_id: Number(playerId),
         match_id: m.id,
-        predicted_home: scores[m.id]?.h ?? 0,
-        predicted_away: scores[m.id]?.a ?? 0,
+        predicted_home: parseInt(scores[m.id].h, 10),
+        predicted_away: parseInt(scores[m.id].a, 10),
       }));
+
+    if (rows.length === 0) {
+      setSaving(false);
+      setMsg('Nic k uložení — vyplň skóre u zápasů, které chceš tipnout.');
+      return;
+    }
 
     const { error } = await supabase
       .from('predictions')
       .upsert(rows, { onConflict: 'player_id,match_id' });
 
     setSaving(false);
-    setMsg(error ? `Chyba: ${error.message}` : '✅ Tipy uloženy!');
+    setMsg(error ? `Chyba: ${error.message}` : `✅ Uloženo (${rows.length} tipů)!`);
   }
 
   const openMatches = matches.filter((m) => !isLocked(m));
 
   return (
     <div>
-      {/* Výběr hráče */}
       <div className="px-4 py-3">
         <label className="mb-1 block text-sm font-medium text-slate-300">Kdo tipuje?</label>
         <select
@@ -86,9 +96,7 @@ export function PredictionForm({
         >
           <option value="">— vyber jméno —</option>
           {players.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
+            <option key={p.id} value={p.id}>{p.name}</option>
           ))}
         </select>
       </div>
@@ -98,22 +106,20 @@ export function PredictionForm({
           <ul className="space-y-3 px-4">
             {matches.map((m) => {
               const locked = isLocked(m);
-              const s = scores[m.id] ?? { h: 0, a: 0 };
+              const s = scores[m.id] ?? { h: '', a: '' };
               return (
                 <li
                   key={m.id}
                   className={`rounded-xl border border-line bg-panel p-3 ${locked ? 'opacity-50' : ''}`}
                 >
                   <div className="mb-2 flex items-center justify-between text-xs text-slate-400">
-                    <span className="truncate">
-                      {m.home_team} – {m.away_team}
-                    </span>
+                    <span className="truncate">{m.home_team} – {m.away_team}</span>
                     {locked && <span className="shrink-0">🔒 uzavřeno</span>}
                   </div>
                   <div className="flex items-center justify-center gap-3">
-                    <Stepper value={s.h} disabled={locked} onChange={(d) => bump(m.id, 'h', d)} />
-                    <span className="text-lg text-slate-500">:</span>
-                    <Stepper value={s.a} disabled={locked} onChange={(d) => bump(m.id, 'a', d)} />
+                    <ScoreInput value={s.h} disabled={locked} onChange={(v) => setVal(m.id, 'h', v)} label={`${m.home_team} góly`} />
+                    <span className="text-xl text-slate-500">:</span>
+                    <ScoreInput value={s.a} disabled={locked} onChange={(v) => setVal(m.id, 'a', v)} label={`${m.away_team} góly`} />
                   </div>
                 </li>
               );
@@ -136,34 +142,30 @@ export function PredictionForm({
   );
 }
 
-function Stepper({
+function ScoreInput({
   value,
   disabled,
   onChange,
+  label,
 }: {
-  value: number;
+  value: string;
   disabled: boolean;
-  onChange: (delta: number) => void;
+  onChange: (v: string) => void;
+  label: string;
 }) {
   return (
-    <div className="flex items-center gap-2">
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange(-1)}
-        className="h-10 w-10 rounded-full border border-line bg-ink text-xl font-bold disabled:opacity-40"
-      >
-        −
-      </button>
-      <span className="w-8 text-center text-2xl font-bold tabular-nums">{value}</span>
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => onChange(1)}
-        className="h-10 w-10 rounded-full border border-line bg-ink text-xl font-bold disabled:opacity-40"
-      >
-        +
-      </button>
-    </div>
+    <input
+      type="text"
+      inputMode="numeric"
+      pattern="[0-9]*"
+      enterKeyHint="done"
+      aria-label={label}
+      placeholder="–"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => onChange(e.target.value)}
+      onFocus={(e) => e.target.select()}
+      className="h-14 w-16 rounded-xl border border-line bg-ink text-center text-3xl font-bold tabular-nums placeholder:text-slate-600 focus:border-brand focus:outline-none disabled:opacity-40"
+    />
   );
 }

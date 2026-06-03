@@ -1,5 +1,5 @@
 import { createServerReadClient } from '@/lib/supabase/server';
-import type { Match, StandingRow, GoalStatRow, MissRow, Player } from '@/lib/types';
+import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player } from '@/lib/types';
 
 export async function getActiveSeasonId(): Promise<number | null> {
   const sb = createServerReadClient();
@@ -70,6 +70,29 @@ export async function getMisses(seasonId: number): Promise<MissRow[]> {
   const sb = createServerReadClient();
   const { data } = await sb.from('v_misses').select('*').eq('season_id', seasonId);
   return (data as MissRow[]) ?? [];
+}
+
+export async function getRoundPredictions(matchIds: number[]): Promise<RoundPrediction[]> {
+  if (matchIds.length === 0) return [];
+  const sb = createServerReadClient();
+  const { data } = await sb
+    .from('predictions')
+    .select('match_id, predicted_home, predicted_away, points, players(name)')
+    .in('match_id', matchIds);
+  type Row = {
+    match_id: number;
+    predicted_home: number;
+    predicted_away: number;
+    points: number | null;
+    players: { name: string } | { name: string }[] | null;
+  };
+  return ((data as Row[]) ?? []).map((r) => ({
+    match_id: r.match_id,
+    predicted_home: r.predicted_home,
+    predicted_away: r.predicted_away,
+    points: r.points,
+    name: Array.isArray(r.players) ? r.players[0]?.name ?? '?' : r.players?.name ?? '?',
+  }));
 }
 
 // ---- Síň slávy: data napříč všemi sezónami ----

@@ -6,6 +6,8 @@ import {
   getStandings,
   getGoalStats,
   getMisses,
+  getPlayers,
+  getRoundPredictions,
 } from '@/lib/queries';
 import { MatchList } from '@/components/MatchList';
 import { StandingsTable } from '@/components/StandingsTable';
@@ -19,11 +21,13 @@ export default async function Home() {
   const seasonId = season.id;
 
   const round = await getCurrentRound(seasonId);
-  const [matches, standings, goals, misses] = await Promise.all([
-    round ? getRoundMatches(seasonId, round) : Promise.resolve([]),
+  const matches = round ? await getRoundMatches(seasonId, round) : [];
+  const [standings, goals, misses, players, predictions] = await Promise.all([
     getStandings(seasonId),
     getGoalStats(seasonId),
     getMisses(seasonId),
+    getPlayers(),
+    getRoundPredictions(matches.map((m) => m.id)),
   ]);
 
   return (
@@ -47,7 +51,7 @@ export default async function Home() {
           {round ? `${round}. kolo` : 'Aktuální kolo'}
         </h2>
         <div className="overflow-hidden rounded-xl border border-line bg-panel">
-          {matches.length ? <MatchList matches={matches} /> : <Empty msg="Rozpis se načte po synchronizaci." />}
+          {matches.length ? <MatchList matches={matches} players={players} predictions={predictions} /> : <Empty msg="Rozpis se načte po synchronizaci." />}
         </div>
       </section>
 

@@ -3,11 +3,11 @@ import Link from 'next/link';
 export const metadata = { title: 'Pravidla' };
 
 const scoring = [
-  { b: '10', barva: 'text-gold', text: 'Přesný výsledek.' },
-  { b: '6', barva: 'text-brand', text: 'Správný vítěz a zároveň správný gólový rozdíl, NEBO přesný počet gólů vítěze, NEBO nepřesně trefená remíza (tip i výsledek remíza, ale jiné skóre).' },
-  { b: '4', barva: 'text-slate-200', text: 'Pouze správný vítěz.' },
-  { b: '2', barva: 'text-slate-200', text: 'Špatný vítěz, ale sedí přesný počet gólů jednoho z týmů.' },
-  { b: '0', barva: 'text-slate-500', text: 'Ostatní případy.' },
+  { b: '10', barva: 'text-green-400', text: 'Přesný výsledek.' },
+  { b: '6', barva: 'text-sky-400', text: 'Správný vítěz a zároveň správný gólový rozdíl, NEBO přesný počet gólů vítěze, NEBO nepřesně trefená remíza (tip i výsledek remíza, ale jiné skóre).' },
+  { b: '4', barva: 'text-slate-300', text: 'Pouze správný vítěz.' },
+  { b: '2', barva: 'text-yellow-400', text: 'Špatný vítěz, ale sedí přesný počet gólů jednoho z týmů.' },
+  { b: '0', barva: 'text-red-400', text: 'Ostatní případy.' },
 ];
 
 const steps = [

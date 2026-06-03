@@ -60,3 +60,11 @@ export interface MissRow {
   zeros: number;
   missed: number;
 }
+
+export interface RoundPrediction {
+  match_id: number;
+  name: string;
+  predicted_home: number;
+  predicted_away: number;
+  points: number | null;
+}

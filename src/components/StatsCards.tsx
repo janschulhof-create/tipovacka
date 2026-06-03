@@ -25,10 +25,9 @@ export function StatsCards({
 
   const cards = [
     { icon: '🎯', label: 'Nejvíce přesných tipů', who: mostExact?.name, val: mostExact ? `${mostExact.exact_hits}×` : '—' },
+    { icon: '📈', label: 'Průměr bodů na zápas', who: bestAvg?.name, val: bestAvg ? `${bestAvg.avg_points}` : '—' },
     { icon: '⚽', label: 'Největší střelec', who: topScorer?.name, val: topScorer ? `Ø ${topScorer.avg_pred_goals} g/zápas` : '—' },
     { icon: '🧱', label: 'Největší betonář', who: topDefender?.name, val: topDefender ? `Ø ${topDefender.avg_pred_goals} g/zápas` : '—' },
-    { icon: '📈', label: 'Průměr bodů na zápas', who: bestAvg?.name, val: bestAvg ? `${bestAvg.avg_points}` : '—' },
-    // Zobraz jen když už někdo nějakou nulu/absenci má (jinak by to bylo "0×")
     { icon: '💀', label: 'Král nuličky', who: kralNulicky && kralNulicky.zeros > 0 ? kralNulicky.name : '—', val: kralNulicky && kralNulicky.zeros > 0 ? `${kralNulicky.zeros}× nula` : '—' },
     { icon: '🧠', label: 'Mr. Alzheimer', who: mrAlzheimer && mrAlzheimer.missed > 0 ? mrAlzheimer.name : '—', val: mrAlzheimer && mrAlzheimer.missed > 0 ? `${mrAlzheimer.missed}× netipoval` : '—' },
   ];

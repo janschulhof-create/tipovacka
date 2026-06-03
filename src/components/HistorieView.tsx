@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { StandingsChart } from './StandingsChart';
+import { pointsTextClass } from '@/lib/points';
 
 type Tip = { h: number | null; a: number | null; pts: number | null };
 type Match = {
@@ -22,6 +23,8 @@ type Stat = {
   roundWins: number;
   zeros: number;
   missed: number;
+  bestRound: number;
+  bestRoundNo: number;
 };
 export type Historie = {
   season: string;
@@ -29,12 +32,6 @@ export type Historie = {
   rounds: Round[];
   stats: Record<string, Stat>;
 };
-
-const ptsColor = (p: number | null) =>
-  p === 10 ? 'text-gold'
-  : p === 6 ? 'text-brand'
-  : p && p > 0 ? 'text-slate-300'
-  : 'text-slate-600';
 
 function leaderName(stats: Record<string, Stat>, pick: (s: Stat) => number, dir: 'max' | 'min' = 'max') {
   const entries = Object.entries(stats);
@@ -58,12 +55,21 @@ export function HistorieView({ data }: { data: Historie }) {
   const kralNulicky = leaderName(data.stats, (s) => s.zeros);
   const mrAlzheimer = leaderName(data.stats, (s) => s.missed);
 
+  // rekord za jedno kolo (s podporou shody – více hráčů se stejným maximem)
+  const maxRound = Math.max(...data.players.map((p) => data.stats[p].bestRound));
+  const recordHolders = data.players
+    .filter((p) => data.stats[p].bestRound === maxRound)
+    .map((p) => `${p} (${data.stats[p].bestRoundNo}. kolo)`)
+    .join(', ');
+
+  // dvojice dlaždic, které logicky patří k sobě
   const cards = [
     { icon: '🎯', label: 'Nejvíce přesných tipů', who: exact.names, val: `${exact.val}× desítka` },
+    { icon: '🏅', label: 'Nejvíce vyhraných kol', who: roundKing.names, val: `${roundKing.val}×` },
+    { icon: '💥', label: 'Rekord za 1 kolo', who: recordHolders, val: `${maxRound} b` },
+    { icon: '📈', label: 'Průměr bodů na zápas', who: bestAvg.names, val: `${bestAvg.val}` },
     { icon: '⚽', label: 'Největší střelec', who: scorer.names, val: `Ø ${scorer.val} g/tip` },
     { icon: '🧱', label: 'Největší betonář', who: defender.names, val: `Ø ${defender.val} g/tip` },
-    { icon: '📈', label: 'Průměr bodů na zápas', who: bestAvg.names, val: `${bestAvg.val}` },
-    { icon: '🏅', label: 'Nejvíce vyhraných kol', who: roundKing.names, val: `${roundKing.val}×` },
     { icon: '💀', label: 'Král nuličky', who: kralNulicky.names, val: `${kralNulicky.val}× nula bodů` },
     { icon: '🧠', label: 'Mr. Alzheimer', who: mrAlzheimer.names, val: `${mrAlzheimer.val}× netipoval` },
   ];
@@ -188,7 +194,7 @@ function RoundAccordion({ round, players }: { round: Round; players: string[] })
                       <span className="tabular-nums">
                         {t ? `${t.h}:${t.a}` : '—'}
                         {t?.pts != null && (
-                          <span className={`ml-1 font-semibold ${ptsColor(t.pts)}`}>·{t.pts}</span>
+                          <span className={`ml-1 font-semibold ${pointsTextClass(t.pts)}`}>·{t.pts}</span>
                         )}
                       </span>
                     </div>
