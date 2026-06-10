@@ -22,6 +22,7 @@ export interface Match {
   home_score: number | null;
   away_score: number | null;
   status: MatchStatus;
+  minute?: number | null;
 }
 
 export interface Prediction {

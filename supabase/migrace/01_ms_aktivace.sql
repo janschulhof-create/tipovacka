@@ -1,0 +1,8 @@
+-- ============================================================
+--  MIGRACE 01 — Přechod živé sezóny na MS 2026
+--  Aditivní. NIC se nemaže. Spusť obsah seed_worldcup.sql,
+--  který: deaktivuje starou sezónu, založí 'MS 2026',
+--  přidá 8 hráčů (on conflict do nothing) a 72 reálných zápasů.
+--  => Zde jen pro přehled; reálně spusť soubor supabase/seed_worldcup.sql
+-- ============================================================
+-- (Obsah je v supabase/seed_worldcup.sql — spusť ten.)

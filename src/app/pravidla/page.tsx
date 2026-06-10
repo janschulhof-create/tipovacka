@@ -1,4 +1,4 @@
-import Link from 'next/link';
+import { PageHeader } from '@/components/PageHeader';
 
 export const metadata = { title: 'Pravidla' };
 
@@ -22,13 +22,10 @@ const steps = [
 export default function PravidlaPage() {
   return (
     <main>
-      <header className="flex items-center gap-3 px-4 pb-2 pt-5">
-        <Link href="/" className="text-slate-400">←</Link>
-        <h1 className="text-lg font-bold">📋 Pravidla</h1>
-      </header>
+      <PageHeader icon="📋" title="Pravidla" subtitle="Jak na to" />
 
-      <section className="px-4 pt-2">
-        <h2 className="pb-2 text-sm font-semibold text-slate-300">Jak to funguje</h2>
+      <section className="pt-1">
+        <h2 className="eyebrow mb-2"><span className="flag-chip" /> Jak to funguje</h2>
         <ol className="space-y-2">
           {steps.map((s, i) => (
             <li key={i} className="flex gap-3 rounded-xl border border-line bg-panel p-3 text-sm">
@@ -41,35 +38,35 @@ export default function PravidlaPage() {
         </ol>
       </section>
 
-      <section className="px-4 pt-6">
-        <h2 className="pb-2 text-sm font-semibold text-slate-300">Bodování</h2>
-        <p className="pb-3 text-xs text-slate-500">Podle pravidel Tipsport Megatipovačky.</p>
+      <section className="pt-6">
+        <h2 className="eyebrow mb-2"><span className="flag-chip" /> Bodování</h2>
+        <p className="pb-3 text-xs text-slate-100/45">Podle pravidel Tipsport Megatipovačky.</p>
         <div className="space-y-2">
           {scoring.map((r) => (
-            <div key={r.b} className="flex gap-3 rounded-xl border border-line bg-panel p-3">
-              <span className={`w-12 shrink-0 text-center text-2xl font-extrabold tabular-nums ${r.barva}`}>
+            <div key={r.b} className="panel flex gap-3 p-3">
+              <span className={`w-12 shrink-0 text-center font-display text-2xl font-extrabold tabular-nums ${r.barva}`}>
                 {r.b}
               </span>
-              <span className="self-center text-sm text-slate-200">{r.text}</span>
+              <span className="self-center text-sm text-slate-100/85">{r.text}</span>
             </div>
           ))}
         </div>
       </section>
 
-      <section className="px-4 pt-6">
-        <h2 className="pb-2 text-sm font-semibold text-slate-300">Příklad</h2>
-        <div className="rounded-xl border border-line bg-panel p-4 text-sm">
+      <section className="pt-6">
+        <h2 className="eyebrow mb-2"><span className="flag-chip" /> Příklad</h2>
+        <div className="panel p-4 text-sm">
           <div className="flex items-center justify-between">
-            <span className="text-slate-400">Výsledek</span>
-            <span className="tabular-nums font-bold">1 : 5</span>
+            <span className="text-slate-100/55">Výsledek</span>
+            <span className="font-display text-lg font-bold tabular-nums">1 : 5</span>
           </div>
           <div className="mt-1 flex items-center justify-between">
-            <span className="text-slate-400">Tvůj tip</span>
-            <span className="tabular-nums font-bold">1 : 3</span>
+            <span className="text-slate-100/55">Tvůj tip</span>
+            <span className="font-display text-lg font-bold tabular-nums">1 : 3</span>
           </div>
-          <div className="mt-3 border-t border-line pt-3 text-slate-300">
+          <div className="mt-3 border-t border-terrain-700 pt-3 text-slate-100/75">
             Trefil jsi vítěze (hosté), ale ne přesný rozdíl ani počet gólů vítěze →{' '}
-            <span className="font-bold text-slate-100">4 body</span>.
+            <span className="font-bold text-white">4 body</span>.
           </div>
         </div>
       </section>
