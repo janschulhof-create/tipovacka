@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { StandingsChart } from './StandingsChart';
+import { PositionsChart } from './PositionsChart';
 import { pointsTextClass } from '@/lib/points';
 
 type Tip = { h: number | null; a: number | null; pts: number | null };
@@ -38,6 +39,9 @@ type RankRow = { name: string; val: string };
 /** Zajímavosti počítané přímo z tipů a výsledků — vrací celé žebříčky. */
 function funFacts(data: Historie) {
   const tipFreq = new Map<string, number>();
+  const readable = new Map<string, number>();   // tip → kolikrát za 10 b
+  const unreadable = new Map<string, number>(); // tip → kolikrát za 0 b
+  const professor: Record<string, number> = Object.fromEntries(data.players.map((p) => [p, 0]));
   const team = new Map<string, { sum: number; cnt: number }>();
   const unlucky: Record<string, number> = Object.fromEntries(data.players.map((p) => [p, 0]));
   const matchAgg: { label: string; result: string; avg: number }[] = [];
@@ -63,6 +67,10 @@ function funFacts(data: Historie) {
           mSum += t.pts;
           mCnt += 1;
           if (Math.abs(t.h - m.hs) + Math.abs(t.a - m.as) === 1) unlucky[name] += 1;
+          const sc = `${t.h}:${t.a}`;
+          if (t.pts === 10) readable.set(sc, (readable.get(sc) ?? 0) + 1);
+          if (t.pts === 0) unreadable.set(sc, (unreadable.get(sc) ?? 0) + 1);
+          if (t.pts === 4) professor[name] += 1;
         }
       }
       if (mCnt > 0) matchAgg.push({ label: `${m.home} – ${m.away}`, result: `${m.hs}:${m.as}`, avg: mSum / mCnt });
@@ -93,7 +101,19 @@ function funFacts(data: Historie) {
     .slice(0, 6)
     .map((m) => ({ name: `${m.label} (${m.result})`, val: `Ø ${m.avg.toFixed(1)} b` }));
 
-  return { tipRows, teamRows, unluckyRows, surpriseRows, bankerRows };
+  const readableRows: RankRow[] = [...readable.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([k, v]) => ({ name: k, val: `${v}× za 10 b` }));
+  const unreadableRows: RankRow[] = [...unreadable.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8)
+    .map(([k, v]) => ({ name: k, val: `${v}× za 0 b` }));
+  const professorRows: RankRow[] = Object.entries(professor)
+    .sort((a, b) => b[1] - a[1])
+    .map(([n, v]) => ({ name: n, val: `${v}× jen vítěz (4 b)` }));
+
+  return { tipRows, teamRows, unluckyRows, surpriseRows, bankerRows, readableRows, unreadableRows, professorRows };
 }
 
 export function HistorieView({ data }: { data: Historie }) {
@@ -119,6 +139,16 @@ export function HistorieView({ data }: { data: Historie }) {
   ];
 
   const ff = funFacts(data);
+
+  // kumulativní body po každém kole → „pořadí po kole" v detailu
+  const cumByRound: Record<string, number>[] = (() => {
+    const run: Record<string, number> = Object.fromEntries(data.players.map((p) => [p, 0]));
+    return data.rounds.map((r) => {
+      for (const m of r.matches)
+        for (const [n, t] of Object.entries(m.tips)) if (t.pts != null) run[n] += t.pts;
+      return { ...run };
+    });
+  })();
   const facts: { icon: string; label: string; accent: string; rows: RankRow[] }[] = [
     { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
     { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light', rows: ff.teamRows },
@@ -126,6 +156,9 @@ export function HistorieView({ data }: { data: Historie }) {
     { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
     { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', rows: ff.surpriseRows },
     { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
+    { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
+    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
+    { icon: '🎓', label: 'Profesorský fotbal (hrál na jistotu)', accent: 'text-slate-300', rows: ff.professorRows },
   ];
 
   return (
@@ -166,10 +199,16 @@ export function HistorieView({ data }: { data: Historie }) {
         </div>
       </section>
 
-      {/* Vývoj pořadí po kolech – NAD statistikami */}
+      {/* Vývoj bodů po kolech */}
       <section className="space-y-2">
         <h2 className="eyebrow"><span className="flag-chip" /> Vývoj bodů po kolech</h2>
         <StandingsChart rounds={data.rounds} players={data.players} />
+      </section>
+
+      {/* Vývoj pořadí po kolech – hned pod body, stejné barvy */}
+      <section className="space-y-2">
+        <h2 className="eyebrow"><span className="flag-chip" /> Vývoj pořadí po kolech</h2>
+        <PositionsChart rounds={data.rounds} players={data.players} />
       </section>
 
       {/* Statistiky – hráči */}
@@ -212,8 +251,8 @@ export function HistorieView({ data }: { data: Historie }) {
       <section className="space-y-2">
         <h2 className="eyebrow"><span className="flag-chip" /> Výsledky po kolech ({data.rounds.length} kol)</h2>
         <div className="space-y-2">
-          {data.rounds.map((r) => (
-            <RoundAccordion key={r.round} round={r} players={data.players} />
+          {data.rounds.map((r, i) => (
+            <RoundAccordion key={r.round} round={r} players={data.players} cumPts={cumByRound[i]} />
           ))}
         </div>
       </section>
@@ -400,7 +439,7 @@ function StatCard({ icon, label, rows, accent }: { icon: string; label: string; 
   );
 }
 
-function RoundAccordion({ round, players }: { round: Round; players: string[] }) {
+function RoundAccordion({ round, players, cumPts }: { round: Round; players: string[]; cumPts: Record<string, number> }) {
   const [open, setOpen] = useState(false);
 
   const roundPts: Record<string, number> = {};
@@ -409,6 +448,9 @@ function RoundAccordion({ round, players }: { round: Round; players: string[] })
     for (const [n, t] of Object.entries(m.tips)) if (t.pts != null) roundPts[n] += t.pts;
   const best = Math.max(...Object.values(roundPts));
   const winners = players.filter((p) => roundPts[p] === best && best > 0);
+
+  const roundRank = [...players].sort((a, b) => roundPts[b] - roundPts[a]);
+  const cumRank = [...players].sort((a, b) => cumPts[b] - cumPts[a]);
 
   return (
     <div className="panel-flush">
@@ -424,7 +466,14 @@ function RoundAccordion({ round, players }: { round: Round; players: string[] })
       </button>
 
       {open && (
-        <div className="divide-y divide-terrain-700 border-t border-terrain-700">
+        <div className="border-t border-terrain-700">
+          {/* pořadí v kole + pořadí po kole */}
+          <div className="grid grid-cols-2 gap-3 px-4 py-3">
+            <MiniRank title="Pořadí v kole" rows={roundRank.map((n) => ({ name: n, pts: roundPts[n] }))} />
+            <MiniRank title={`Pořadí po ${round.round}. kole`} rows={cumRank.map((n) => ({ name: n, pts: cumPts[n] }))} />
+          </div>
+
+          <div className="divide-y divide-terrain-700 border-t border-terrain-700">
           {round.matches.map((m, idx) => (
             <div key={idx} className="px-4 py-3">
               <div className="flex items-center justify-between text-sm">
@@ -453,8 +502,27 @@ function RoundAccordion({ round, players }: { round: Round; players: string[] })
               </div>
             </div>
           ))}
+          </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function MiniRank({ title, rows }: { title: string; rows: { name: string; pts: number }[] }) {
+  return (
+    <div>
+      <div className="pb-1 text-[11px] uppercase tracking-wide text-slate-300/60">{title}</div>
+      <ol className="space-y-0.5">
+        {rows.map((r, i) => (
+          <li key={r.name} className="flex items-center justify-between text-xs">
+            <span className="text-slate-100/80">
+              <span className="mr-1 text-slate-300/45">{i + 1}.</span>{r.name}
+            </span>
+            <span className="tabular-nums text-slate-300/55">{r.pts}</span>
+          </li>
+        ))}
+      </ol>
     </div>
   );
 }
