@@ -253,3 +253,18 @@ export async function getSeasonTipRounds(
     })),
   }));
 }
+
+/** Aktuálně živé zápasy aktivní sezóny (pro zvýraznění na Domů). */
+export async function getLiveMatches(seasonId: number) {
+  const sb = createServerReadClient();
+  const { data } = await sb
+    .from('matches')
+    .select('id, round, home_team, away_team, home_score, away_score, minute, kickoff')
+    .eq('season_id', seasonId)
+    .eq('status', 'live')
+    .order('kickoff', { ascending: true });
+  return (data ?? []) as {
+    id: number; round: number; home_team: string; away_team: string;
+    home_score: number | null; away_score: number | null; minute: number | null; kickoff: string;
+  }[];
+}

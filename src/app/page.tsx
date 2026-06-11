@@ -11,6 +11,7 @@ import {
   getRoundPredictions,
   getSeasonChartData,
   getSeasonTipRounds,
+  getLiveMatches,
 } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
@@ -18,6 +19,7 @@ import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { StatsCards } from '@/components/StatsCards';
 import { SeasonStats } from '@/components/SeasonStats';
+import { LiveBanner } from '@/components/LiveBanner';
 
 export const dynamic = 'force-dynamic';
 
@@ -52,6 +54,7 @@ export default async function Home({
   ]);
 
   const tipRounds = await getSeasonTipRounds(seasonId);
+  const liveMatches = await getLiveMatches(seasonId);
   const activeNames = players.map((p) => p.name);
   const hasResults = tipRounds.some((r) => r.matches.some((m) => m.hs != null));
 
@@ -62,6 +65,8 @@ export default async function Home({
 
   return (
     <main className="space-y-6">
+      <LiveBanner matches={liveMatches} />
+
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}
       <header className="flex items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold tracking-wide text-white sm:text-3xl">
