@@ -288,7 +288,16 @@ function MatchRow({
           </span>
         </button>
       ) : (
-        <div className="px-3 py-3 sm:px-4">{Body}</div>
+        <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
+          <div className="min-w-0 flex-1">{Body}</div>
+          <button
+            onClick={() => setOpen((o) => !o)}
+            aria-label="Detail zápasu"
+            className={`shrink-0 text-slate-300/40 transition-transform ${open ? 'rotate-90' : ''}`}
+          >
+            ›
+          </button>
+        </div>
       )}
 
       {/* odhalené tipy ostatních */}
@@ -310,6 +319,20 @@ function MatchRow({
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* před výkopem → tipy skryté, jen kdo už tipoval (bez hodnot) */}
+      {!locked && open && (
+        <div className="border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 text-xs sm:px-4">
+          <p className="text-slate-100/60">🔒 Tipy se zobrazí po výkopu zápasu.</p>
+          {preds.length > 0 ? (
+            <p className="mt-1 text-[11px] text-slate-300/50">
+              Už tipli ({preds.length}): {preds.map((t) => t.name).join(', ')}
+            </p>
+          ) : (
+            <p className="mt-1 text-[11px] text-slate-300/40">Zatím nikdo netipoval.</p>
+          )}
         </div>
       )}
     </li>

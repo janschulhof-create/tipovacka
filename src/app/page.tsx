@@ -10,12 +10,14 @@ import {
   getPlayers,
   getRoundPredictions,
   getSeasonChartData,
+  getSeasonTipRounds,
 } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { StatsCards } from '@/components/StatsCards';
+import { SeasonStats } from '@/components/SeasonStats';
 
 export const dynamic = 'force-dynamic';
 
@@ -48,6 +50,10 @@ export default async function Home({
     getPlayers(),
     getSeasonChartData(seasonId),
   ]);
+
+  const tipRounds = await getSeasonTipRounds(seasonId);
+  const activeNames = players.map((p) => p.name);
+  const hasResults = tipRounds.some((r) => r.matches.some((m) => m.hs != null));
 
   const [predictions, prevPredictions] = await Promise.all([
     getRoundPredictions(matches.map((m) => m.id)),
@@ -126,6 +132,15 @@ export default async function Home({
           </section>
         </aside>
       </div>
+
+      {hasResults && (
+        <section className="space-y-3">
+          <h2 className="eyebrow">
+            <span className="flag-chip" /> Statistiky sezóny — detailně
+          </h2>
+          <SeasonStats rounds={tipRounds} players={activeNames} />
+        </section>
+      )}
     </main>
   );
 }

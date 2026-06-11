@@ -207,3 +207,49 @@ export async function getPlayers(): Promise<Player[]> {
     .order('name');
   return (data as Player[]) ?? [];
 }
+
+/** Všechna kola sezóny v jednotném "tip" tvaru (pro detailní statistiky živé sezóny). */
+export async function getSeasonTipRounds(
+  seasonId: number
+): Promise<{ round: number; matches: { home: string; away: string; hs: number | null; as: number | null; tips: Record<string, { h: number | null; a: number | null; pts: number | null }> }[] }[]> {
+  const sb = createServerReadClient();
+  const { data: ms } = await sb
+    .from('matches')
+    .select('id, round, home_team, away_team, home_score, away_score')
+    .eq('season_id', seasonId)
+    .order('round', { ascending: true });
+  type M = { id: number; round: number; home_team: string; away_team: string; home_score: number | null; away_score: number | null };
+  const matches = (ms as M[]) ?? [];
+  if (matches.length === 0) return [];
+
+  const { data: ps } = await sb
+    .from('predictions')
+    .select('match_id, predicted_home, predicted_away, points, players(name)')
+    .in('match_id', matches.map((m) => m.id));
+  type P = { match_id: number; predicted_home: number; predicted_away: number; points: number | null; players: { name: string } | { name: string }[] | null };
+  const byMatch = new Map<number, { name: string; h: number; a: number; pts: number | null }[]>();
+  for (const r of (ps as P[]) ?? []) {
+    const name = Array.isArray(r.players) ? r.players[0]?.name : r.players?.name;
+    if (!name) continue;
+    const arr = byMatch.get(r.match_id) ?? [];
+    arr.push({ name, h: r.predicted_home, a: r.predicted_away, pts: r.points });
+    byMatch.set(r.match_id, arr);
+  }
+
+  const roundMap = new Map<number, M[]>();
+  for (const m of matches) {
+    const arr = roundMap.get(m.round) ?? [];
+    arr.push(m);
+    roundMap.set(m.round, arr);
+  }
+  return [...roundMap.keys()].sort((a, b) => a - b).map((round) => ({
+    round,
+    matches: roundMap.get(round)!.map((m) => ({
+      home: m.home_team,
+      away: m.away_team,
+      hs: m.home_score,
+      as: m.away_score,
+      tips: Object.fromEntries((byMatch.get(m.id) ?? []).map((t) => [t.name, { h: t.h, a: t.a, pts: t.pts }])),
+    })),
+  }));
+}

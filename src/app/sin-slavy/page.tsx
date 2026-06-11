@@ -1,5 +1,7 @@
 import historie from '@/data/historie.json';
 import { PageHeader } from '@/components/PageHeader';
+import { StatCard } from '@/components/StatCard';
+import { funFacts, type SRound } from '@/lib/seasonStats';
 
 export const dynamic = 'force-dynamic';
 
@@ -64,6 +66,19 @@ export default function SinSlavyPage() {
   const counts = positionCounts(h);
   const ranking = [...h.players].sort((a, b) => h.stats[b].points - h.stats[a].points);
 
+  const ff = funFacts(h.rounds as unknown as SRound[], h.players);
+  const factCards: { icon: string; label: string; accent: string; rows: { name: string; val: string }[] }[] = [
+    { icon: '🎓', label: 'Profesorský fotbal (na jistotu)', accent: 'text-slate-300', rows: ff.professorRows },
+    { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
+    { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
+    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
+    { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light', rows: ff.teamRows },
+    { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', rows: [...ff.teamRows].reverse() },
+    { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
+    { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', rows: ff.surpriseRows },
+    { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
+  ].filter((c) => c.rows.length > 0);
+
   return (
     <main>
       <PageHeader icon="🏆" title="Síň slávy" subtitle="Rekordy historie" />
@@ -94,6 +109,14 @@ export default function SinSlavyPage() {
         <Hof icon="⚽" label="Největší střelec" rows={[`${topScorer.names} — Ø ${topScorer.val} g/tip`]} />
         <Hof icon="🧱" label="Největší betonář" rows={[`${topDefender.names} — Ø ${topDefender.val} g/tip`]} />
         <Hof icon="🧠" label="Mr. Alzheimer (nejvíc netipoval)" rows={[`${mrAlzheimer.names} — ${mrAlzheimer.val}×`]} />
+      </div>
+
+      {/* Další zajímavosti z historie */}
+      <h2 className="eyebrow mb-2 mt-8"><span className="flag-chip" /> Další zajímavosti historie</h2>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {factCards.map((c) => (
+          <StatCard key={c.label} {...c} />
+        ))}
       </div>
 
       {/* Top 6 umístění */}

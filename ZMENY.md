@@ -51,3 +51,27 @@ Spustit v Supabase → SQL Editor v tomto pořadí:
 6. **Pravidla**: beze změny.
 7. **API** (po vyplnění ENV): `/api/sync?key=...` vrátí `{updated, inserted}`;
    v Table editoru se u zápasů doplní `external_api_id` a po zápasech skóre.
+
+---
+
+## Aktualizace v2 (doladění)
+
+**Časy:** přidána `supabase/migrace/04_casy_round1.sql` se správnými časy výkopů
+1. kola (UTC; aplikace zobrazuje v Europe/Prague). Časy 2.–3. kola doplní API sync.
+
+**Statistiky všude:** sdílený výpočet (`src/lib/seasonStats.ts`).
+- **Domů (MS)** — nová sekce „Statistiky sezóny — detailně" (zobrazí se po prvních
+  výsledcích): vyhraných kol, rekord za kolo, profesorský fotbal, nejčastější/čitelný/
+  nečitelný tip, čitelnost týmů, smolař, překvapení, jistota.
+- **Síň slávy** — doplněny stejné bohaté statistiky z historie.
+- **Historie** — beze změny (zdroj pravdy).
+
+**Domů – rozklik zápasu:** každý zápas jde rozkliknout. Před výkopem → „tipy se
+zobrazí po výkopu" + kdo už tipoval (bez hodnot). Po výkopu/konci → tipy + body + výsledek.
+
+**Profesorský fotbal** = nejvíc tipů „jen vítěz" (4 b). **Čitelný/Nečitelný tip** =
+skóre, které nejčastěji vyšlo (10 b) / nevyšlo (0 b).
+
+### Nasazení v2
+Jen **soubory** + v Supabase spustit **`migrace/04_casy_round1.sql`** (správné časy
+1. kola). Nic se nemaže, tipy zůstávají.
