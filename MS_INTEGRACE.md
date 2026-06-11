@@ -1,60 +1,37 @@
-# Napojení API pro MS 2026
+# Napojení API pro MS 2026 (football-data.org)
 
-## 1) Jak získat API klíč (API-Football, zdarma)
+> Pozn.: free plán API-Football **nepouští sezónu 2026**, proto používáme
+> **football-data.org**, kde je FIFA World Cup dostupný i v bezplatném tieru.
 
-1. Otevři **https://dashboard.api-football.com** a dej **Register** (e-mail + heslo).
-2. Po přihlášení najdeš v sekci **„My Access" / „Account"** svůj **API key**
-   (dlouhý řetězec). To je vše — free plán dává **100 requestů/den**, což na
-   tipovačku bohatě stačí (jeden sync rozpisu = 1 request).
-   *(Pozn.: jde to i přes RapidAPI, ale přímý účet api-sports je jednodušší.)*
+## 1) Free token
+1. Jdi na **football-data.org/client/register**, vyplň e-mail → přijde ti **API token**.
+2. Zkopíruj ho.
 
-## 2) Kam vložit ENV proměnné (Vercel)
-
-Vercel → tvůj projekt → **Settings → Environment Variables** (Production):
+## 2) ENV proměnné ve Vercelu
+Vercel → projekt → **Settings → Environment Variables** (Production):
 
 ```
-API_FOOTBALL_KEY        = <tvůj klíč>
-API_FOOTBALL_LEAGUE_ID  = 1            # Mistrovství světa
-API_FOOTBALL_SEASON     = 2026
-CRON_SECRET             = <už máš z dřívějška>
+FOOTBALL_DATA_TOKEN  = <tvůj token>
+CRON_SECRET          = <už máš>
 ```
+(Volitelně `FOOTBALL_DATA_COMPETITION = WC`, default je stejně WC.)
 
-Ověření league ID: `GET /leagues?search=World Cup` (mělo by být **1**).
-Po uložení dej **Redeploy**.
+Staré `API_FOOTBALL_*` proměnné můžeš smazat — už se nepoužívají.
+Po uložení dej **Deployments → ⋯ → Redeploy**.
 
-## 3) Jak spustit synchronizaci
+## 3) Synchronizace
+- Ručně: `https://tvuj-projekt.vercel.app/api/sync?key=<CRON_SECRET>`
+- Automaticky: cron-job.org nebo Vercel Cron (Hobby = 1×/den).
 
-- **Ručně:** otevři v prohlížeči
-  `https://tvuj-projekt.vercel.app/api/sync?key=<CRON_SECRET>`
-  Vrátí např. `{"updated": 72, "inserted": 0}`.
-- **Automaticky:** Vercel Cron (viz `vercel.json`). Na **Hobby plánu jde cron
-  jen 1×/den** — pro častější běh buď Vercel Pro, nebo externí cron (např.
-  cron-job.org) volající stejnou URL.
+Odpověď `{"updated":N,"inserted":M,"fetched":K}`:
+- `fetched` = kolik zápasů přišlo z API,
+- `updated` = doplněno k existujícím (tipy zůstávají),
+- `inserted` = nově přidané (typicky play-off po losu).
 
-### Co sync dělá (a proč jsou tipy v bezpečí)
-Sync stáhne zápasy z API, přeloží názvy týmů do češtiny a **spáruje je na už
-existující (naseedované) zápasy** podle (kolo, domácí, hosté). Existující zápas
-jen **doplní** (skóre, stav, čas, minuta, external_api_id) — jeho `id` zůstává,
-takže **tipy na něj zůstávají navázané**. Nový řádek vznikne jen pro zápas, který
-v DB ještě není (typicky play-off po losu).
+## 4) Limity
+Free = **10 requestů/min**. Jeden sync = 1 request. Pohodlně i sync každých pár minut.
 
-## 4) Jak řešit limity API
-
-- Free = **100 req/den**. `fetchSeasonFixtures` = **1 request** na sync.
-- Takže klidně i ruční sync několikrát denně. Necachujeme (chceme aktuální data).
-- Kdyby přišla chyba 429 (limit), počkej do dalšího dne nebo navyš plán.
-
-## 5) Live skóre + minuta — architektura
-
-Aplikace **umí zobrazit** živé skóre a minutu (`Argentina 1:0 Německo 67′`):
-- DB má sloupec `matches.minute`, sync ho plní z `fixture.status.elapsed`,
-  panel zápasů zobrazí `živě 67′` u zápasů ve stavu `live`.
-
-**Aby to bylo opravdu „živé", musí sync běžet často** (à 2–5 min během zápasů).
-Možnosti:
-- **Vercel Pro** → cron à minutu (`*/3 * * * *` apod.),
-- **externí cron** (cron-job.org) na `/api/sync?key=...` během zápasů,
-- nebo prostě **ruční** refresh syncu.
-
-Na Vercel **Hobby** (1×/den cron) se skóre aktualizuje jen při ručním/denním
-syncu — plumbing je hotové, stačí zvýšit frekvenci syncu.
+## 5) Live
+football-data.org dává stav „živě" a skóre, ale **ne minutu zápasu**
+(sloupec `minute` zůstane prázdný). Pro skutečně živé skóre je potřeba
+spouštět sync často (cron-job.org), na Vercel Hobby jinak 1×/den.

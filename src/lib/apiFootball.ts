@@ -1,52 +1,60 @@
 /**
- * Integrace API-Football (api-sports.io, v3) — pro MS 2026.
+ * Integrace football-data.org (v4) — pro MS 2026.
+ * Soutěž FIFA World Cup (kód "WC", id 2000) je dostupná i v BEZPLATNÉM tieru.
  *
  * ENV:
- *   API_FOOTBALL_KEY        – tvůj klíč z dashboard.api-football.com
- *   API_FOOTBALL_LEAGUE_ID  – Mistrovství světa = 1
- *   API_FOOTBALL_SEASON     – 2026
+ *   FOOTBALL_DATA_TOKEN        – tvůj free token z football-data.org/client/register
+ *   FOOTBALL_DATA_COMPETITION  – volitelně, default "WC"
  *
- * Pozn.: API vrací anglické názvy týmů; my je překládáme do češtiny (TEAM_CZ),
- * aby šly spárovat s naseedovanými zápasy (které mají české názvy) a aby
- * sync jen DOPLNIL skóre/stav k existujícím zápasům, ne vytvořil duplicity.
- * Free plán: 100 requestů/den (rozpis = pár volání). Live data jsou na free
- * plánu zpožděná — viz dokumentace (LIVE.md).
+ * Free tier: 10 requestů/min (jeden sync = 1 request). Endpoint vrací anglické
+ * názvy týmů; překládáme je do češtiny (TEAM_CZ), aby šly spárovat s naseedovanými
+ * zápasy a sync jen DOPLNIL skóre/stav (tipy zůstanou).
+ *
+ * Pozn.: tento endpoint nevrací živou minutu, takže u živých zápasů uvidíš stav
+ * "živě" a skóre, ale ne minutu.
  */
 
-const BASE = 'https://v3.football.api-sports.io';
+const BASE = 'https://api.football-data.org/v4';
 
-// EN → CZ názvy 48 týmů MS (klíč = malými písmeny bez diakritiky)
+// EN → CZ názvy 48 týmů MS (klíč = malými písmeny, bez diakritiky a interpunkce)
 const TEAM_CZ: Record<string, string> = {
-  mexico: 'Mexiko', 'south africa': 'Jižní Afrika', 'south korea': 'Jižní Korea',
+  mexico: 'Mexiko', 'south africa': 'Jižní Afrika',
+  'south korea': 'Jižní Korea', 'korea republic': 'Jižní Korea', korea: 'Jižní Korea',
   'czech republic': 'Česko', czechia: 'Česko', canada: 'Kanada',
-  'bosnia and herzegovina': 'Bosna a Hercegovina', qatar: 'Katar', switzerland: 'Švýcarsko',
-  brazil: 'Brazílie', morocco: 'Maroko', haiti: 'Haiti', scotland: 'Skotsko',
-  usa: 'USA', 'united states': 'USA', paraguay: 'Paraguay', australia: 'Austrálie',
-  turkey: 'Turecko', turkiye: 'Turecko', germany: 'Německo', curacao: 'Curaçao',
-  'ivory coast': 'Pobřeží slonoviny', 'cote divoire': 'Pobřeží slonoviny', ecuador: 'Ekvádor',
-  netherlands: 'Nizozemsko', japan: 'Japonsko', sweden: 'Švédsko', tunisia: 'Tunisko',
-  belgium: 'Belgie', egypt: 'Egypt', iran: 'Írán', 'new zealand': 'Nový Zéland',
-  spain: 'Španělsko', 'cape verde': 'Kapverdy', 'cabo verde': 'Kapverdy',
+  'bosnia and herzegovina': 'Bosna a Hercegovina', 'bosnia herzegovina': 'Bosna a Hercegovina',
+  qatar: 'Katar', switzerland: 'Švýcarsko', brazil: 'Brazílie', morocco: 'Maroko',
+  haiti: 'Haiti', scotland: 'Skotsko', usa: 'USA', 'united states': 'USA',
+  paraguay: 'Paraguay', australia: 'Austrálie', turkey: 'Turecko', turkiye: 'Turecko',
+  germany: 'Německo', curacao: 'Curaçao',
+  'ivory coast': 'Pobřeží slonoviny', 'cote divoire': 'Pobřeží slonoviny',
+  ecuador: 'Ekvádor', netherlands: 'Nizozemsko', japan: 'Japonsko', sweden: 'Švédsko',
+  tunisia: 'Tunisko', belgium: 'Belgie', egypt: 'Egypt', iran: 'Írán', 'ir iran': 'Írán',
+  'new zealand': 'Nový Zéland', spain: 'Španělsko',
+  'cape verde': 'Kapverdy', 'cabo verde': 'Kapverdy',
   'saudi arabia': 'Saúdská Arábie', uruguay: 'Uruguay', france: 'Francie', senegal: 'Senegal',
   iraq: 'Irák', norway: 'Norsko', argentina: 'Argentina', algeria: 'Alžírsko',
   austria: 'Rakousko', jordan: 'Jordánsko', portugal: 'Portugalsko',
-  'dr congo': 'DR Kongo', 'congo dr': 'DR Kongo', uzbekistan: 'Uzbekistán',
-  colombia: 'Kolumbie', england: 'Anglie', croatia: 'Chorvatsko', ghana: 'Ghana', panama: 'Panama',
+  'dr congo': 'DR Kongo', 'congo dr': 'DR Kongo', 'democratic republic of congo': 'DR Kongo',
+  uzbekistan: 'Uzbekistán', colombia: 'Kolumbie', england: 'Anglie', croatia: 'Chorvatsko',
+  ghana: 'Ghana', panama: 'Panama',
 };
 
-function deaccent(s: string): string {
-  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+function normKey(name: string): string {
+  return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
 }
 function toCz(name: string): string {
-  const key = deaccent(name).toLowerCase().trim();
-  return TEAM_CZ[key] ?? name; // neznámý tým necháme tak, jak přišel
+  return TEAM_CZ[normKey(name)] ?? name;
 }
 
-interface ApiFixture {
-  fixture: { id: number; date: string; status: { short: string; elapsed: number | null } };
-  league: { round: string };
-  teams: { home: { name: string }; away: { name: string } };
-  goals: { home: number | null; away: number | null };
+interface FdMatch {
+  id: number;
+  utcDate: string;
+  status: string;
+  matchday: number | null;
+  stage: string;
+  homeTeam: { name: string | null };
+  awayTeam: { name: string | null };
+  score: { fullTime: { home: number | null; away: number | null } };
 }
 
 export interface NormalizedMatch {
@@ -61,61 +69,56 @@ export interface NormalizedMatch {
   minute: number | null;
 }
 
-function mapStatus(short: string): NormalizedMatch['status'] {
-  if (['NS', 'TBD'].includes(short)) return 'scheduled';
-  if (['1H', 'HT', '2H', 'ET', 'BT', 'P', 'LIVE', 'INT'].includes(short)) return 'live';
-  if (['FT', 'AET', 'PEN'].includes(short)) return 'finished';
-  if (['PST'].includes(short)) return 'postponed';
-  if (['CANC', 'ABD', 'AWD', 'WO', 'SUSP'].includes(short)) return 'cancelled';
+function mapStatus(s: string): NormalizedMatch['status'] {
+  if (['SCHEDULED', 'TIMED'].includes(s)) return 'scheduled';
+  if (['IN_PLAY', 'PAUSED'].includes(s)) return 'live';
+  if (['FINISHED', 'AWARDED'].includes(s)) return 'finished';
+  if (['POSTPONED'].includes(s)) return 'postponed';
+  if (['SUSPENDED', 'CANCELLED'].includes(s)) return 'cancelled';
   return 'scheduled';
 }
 
-/**
- * Číslo „kola" z textu API:
- *  - skupinová fáze ("Group Stage - 1", "Group A - 1") => 1/2/3 (hrací den)
- *  - vyřazovací fáze => pevná čísla 4..9 (kvůli řazení po skupinách)
- */
-function parseRound(round: string): number {
-  const r = round.toLowerCase();
-  if (r.includes('round of 32')) return 4;
-  if (r.includes('round of 16')) return 5;
-  if (r.includes('quarter')) return 6;
-  if (r.includes('semi')) return 7;
-  if (r.includes('3rd place') || r.includes('third place')) return 8;
-  if (r.includes('final')) return 9;
-  const m = round.match(/(\d+)\s*$/); // "Group Stage - 2" => 2
-  return m ? parseInt(m[1], 10) : 0;
+/** Skupina → hrací den (1/2/3), play-off → pevná čísla 4..9. */
+function parseRound(stage: string, matchday: number | null): number {
+  switch (stage) {
+    case 'LAST_32': return 4;
+    case 'LAST_16': return 5;
+    case 'QUARTER_FINALS': return 6;
+    case 'SEMI_FINALS': return 7;
+    case 'THIRD_PLACE': return 8;
+    case 'FINAL': return 9;
+    default: return matchday ?? 0; // GROUP_STAGE
+  }
 }
 
-async function apiGet(path: string): Promise<{ response: ApiFixture[]; results?: number }> {
-  const key = process.env.API_FOOTBALL_KEY;
-  if (!key) throw new Error('Chybí ENV API_FOOTBALL_KEY (nenastaveno nebo bez redeploye).');
+async function apiGet(path: string): Promise<{ matches: FdMatch[] }> {
+  const token = process.env.FOOTBALL_DATA_TOKEN;
+  if (!token) throw new Error('Chybí ENV FOOTBALL_DATA_TOKEN (nenastaveno nebo bez redeploye).');
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'x-apisports-key': key },
+    headers: { 'X-Auth-Token': token },
     cache: 'no-store',
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`API-Football HTTP ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
-  const errs = (json as { errors?: unknown }).errors;
-  const hasErr = Array.isArray(errs) ? errs.length > 0 : !!errs && typeof errs === 'object' && Object.keys(errs).length > 0;
-  if (hasErr) throw new Error('API-Football vrátil chybu: ' + JSON.stringify(errs));
-  return json as { response: ApiFixture[]; results?: number };
+  if (!res.ok) {
+    const msg = (json as { message?: string }).message ?? JSON.stringify(json).slice(0, 300);
+    throw new Error(`football-data.org HTTP ${res.status}: ${msg}`);
+  }
+  return json as { matches: FdMatch[] };
 }
 
-/** Stáhne všechny zápasy soutěže pro danou sezónu a znormalizuje je (české názvy). */
+/** Stáhne zápasy MS a znormalizuje je (české názvy týmů). */
 export async function fetchSeasonFixtures(): Promise<NormalizedMatch[]> {
-  const league = process.env.API_FOOTBALL_LEAGUE_ID ?? '1';
-  const season = process.env.API_FOOTBALL_SEASON ?? '2026';
-  const data = await apiGet(`/fixtures?league=${league}&season=${season}`);
-  return data.response.map((f) => ({
-    external_api_id: f.fixture.id,
-    round: parseRound(f.league.round),
-    kickoff: f.fixture.date,
-    home_team: toCz(f.teams.home.name),
-    away_team: toCz(f.teams.away.name),
-    home_score: f.goals.home,
-    away_score: f.goals.away,
-    status: mapStatus(f.fixture.status.short),
-    minute: f.fixture.status.elapsed,
+  const comp = process.env.FOOTBALL_DATA_COMPETITION ?? 'WC';
+  const data = await apiGet(`/competitions/${comp}/matches`);
+  return (data.matches ?? []).map((m) => ({
+    external_api_id: m.id,
+    round: parseRound(m.stage, m.matchday),
+    kickoff: m.utcDate,
+    home_team: toCz(m.homeTeam?.name ?? ''),
+    away_team: toCz(m.awayTeam?.name ?? ''),
+    home_score: m.score?.fullTime?.home ?? null,
+    away_score: m.score?.fullTime?.away ?? null,
+    status: mapStatus(m.status),
+    minute: null,
   }));
 }

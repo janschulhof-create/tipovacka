@@ -41,9 +41,8 @@ export async function GET(req: NextRequest) {
   } catch (e) {
     return NextResponse.json({
       error: String(e),
-      keySet: !!process.env.API_FOOTBALL_KEY,
-      league: process.env.API_FOOTBALL_LEAGUE_ID ?? '1',
-      season: process.env.API_FOOTBALL_SEASON ?? '2026',
+      tokenSet: !!process.env.FOOTBALL_DATA_TOKEN,
+      competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC',
     }, { status: 502 });
   }
 
@@ -91,5 +90,5 @@ export async function GET(req: NextRequest) {
     inserted = count ?? inserts.length;
   }
 
-  return NextResponse.json({ updated, inserted, fetched: fixtures.length, league: process.env.API_FOOTBALL_LEAGUE_ID ?? '1', season: process.env.API_FOOTBALL_SEASON ?? '2026', at: new Date().toISOString() });
+  return NextResponse.json({ updated, inserted, fetched: fixtures.length, competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC', at: new Date().toISOString() });
 }
