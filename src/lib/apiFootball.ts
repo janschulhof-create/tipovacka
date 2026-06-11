@@ -87,13 +87,19 @@ function parseRound(round: string): number {
   return m ? parseInt(m[1], 10) : 0;
 }
 
-async function apiGet(path: string): Promise<{ response: ApiFixture[] }> {
+async function apiGet(path: string): Promise<{ response: ApiFixture[]; results?: number }> {
+  const key = process.env.API_FOOTBALL_KEY;
+  if (!key) throw new Error('Chybí ENV API_FOOTBALL_KEY (nenastaveno nebo bez redeploye).');
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'x-apisports-key': process.env.API_FOOTBALL_KEY! },
+    headers: { 'x-apisports-key': key },
     cache: 'no-store',
   });
-  if (!res.ok) throw new Error(`API-Football ${res.status}: ${await res.text()}`);
-  return res.json();
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`API-Football HTTP ${res.status}: ${JSON.stringify(json).slice(0, 300)}`);
+  const errs = (json as { errors?: unknown }).errors;
+  const hasErr = Array.isArray(errs) ? errs.length > 0 : !!errs && typeof errs === 'object' && Object.keys(errs).length > 0;
+  if (hasErr) throw new Error('API-Football vrátil chybu: ' + JSON.stringify(errs));
+  return json as { response: ApiFixture[]; results?: number };
 }
 
 /** Stáhne všechny zápasy soutěže pro danou sezónu a znormalizuje je (české názvy). */

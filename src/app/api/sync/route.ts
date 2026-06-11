@@ -39,7 +39,12 @@ export async function GET(req: NextRequest) {
   try {
     fixtures = await fetchSeasonFixtures();
   } catch (e) {
-    return NextResponse.json({ error: String(e) }, { status: 502 });
+    return NextResponse.json({
+      error: String(e),
+      keySet: !!process.env.API_FOOTBALL_KEY,
+      league: process.env.API_FOOTBALL_LEAGUE_ID ?? '1',
+      season: process.env.API_FOOTBALL_SEASON ?? '2026',
+    }, { status: 502 });
   }
 
   // existující zápasy aktivní sezóny → klíč podle (round|home|away)
@@ -86,5 +91,5 @@ export async function GET(req: NextRequest) {
     inserted = count ?? inserts.length;
   }
 
-  return NextResponse.json({ updated, inserted, at: new Date().toISOString() });
+  return NextResponse.json({ updated, inserted, fetched: fixtures.length, league: process.env.API_FOOTBALL_LEAGUE_ID ?? '1', season: process.env.API_FOOTBALL_SEASON ?? '2026', at: new Date().toISOString() });
 }
