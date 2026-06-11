@@ -242,9 +242,9 @@ function MatchRow({
     </div>
   ) : locked ? (
     <div className={`flex items-center gap-2 rounded-lg px-3 py-1 font-display text-xl font-bold tabular-nums ${live ? 'bg-flag/15 text-flag' : 'bg-terrain-900/70 text-white'}`}>
-      <span>{m.home_score ?? 0}</span>
+      <span>{m.home_score ?? '–'}</span>
       <span className="text-slate-300/40">:</span>
-      <span>{m.away_score ?? 0}</span>
+      <span>{m.away_score ?? '–'}</span>
     </div>
   ) : (
     <span className="text-sm text-slate-300/30">vs</span>
