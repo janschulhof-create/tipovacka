@@ -46,14 +46,18 @@ export async function GET(req: NextRequest) {
     }, { status: 502 });
   }
 
-  // existující zápasy aktivní sezóny → klíč podle (round|home|away)
+  // existující zápasy aktivní sezóny:
+  //  - primárně párujeme podle stabilního API id (external_api_id),
+  //  - sekundárně podle (round|home|away) — kvůli prvotnímu napárování seedu.
   const { data: existing } = await supabase
     .from('matches')
-    .select('id, round, home_team, away_team')
+    .select('id, external_api_id, round, home_team, away_team')
     .eq('season_id', season.id);
   const keyOf = (r: number, h: string, a: string) => `${r}|${h}|${a}`;
+  const idByApi = new Map<number, number>();
   const idByKey = new Map<string, number>();
-  for (const m of (existing as { id: number; round: number; home_team: string; away_team: string }[]) ?? []) {
+  for (const m of (existing as { id: number; external_api_id: number | null; round: number; home_team: string; away_team: string }[]) ?? []) {
+    if (m.external_api_id != null) idByApi.set(m.external_api_id, m.id);
     idByKey.set(keyOf(m.round, m.home_team, m.away_team), m.id);
   }
 
@@ -62,7 +66,7 @@ export async function GET(req: NextRequest) {
   const inserts: Record<string, unknown>[] = [];
 
   for (const f of fixtures) {
-    const id = idByKey.get(keyOf(f.round, f.home_team, f.away_team));
+    const id = idByApi.get(f.external_api_id) ?? idByKey.get(keyOf(f.round, f.home_team, f.away_team));
     if (id) {
       // jen doplníme dynamická pole — id (a tím i tipy) zůstává
       const { error } = await supabase
