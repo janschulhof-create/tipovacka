@@ -4,9 +4,9 @@ export const metadata = { title: 'Pravidla' };
 
 const scoring = [
   { b: '10', barva: 'text-green-400', text: 'Přesný výsledek.' },
-  { b: '6', barva: 'text-sky-400', text: 'Správný vítěz a zároveň správný gólový rozdíl, NEBO přesný počet gólů vítěze, NEBO nepřesně trefená remíza (tip i výsledek remíza, ale jiné skóre).' },
+  { b: '6', barva: 'text-sky-400', text: 'Správný vítěz a zároveň správný gólový rozdíl, NEBO správný celkový počet gólů v zápase, NEBO nepřesně trefená remíza (tip i výsledek remíza, ale jiné skóre).' },
   { b: '4', barva: 'text-slate-300', text: 'Pouze správný vítěz.' },
-  { b: '2', barva: 'text-yellow-400', text: 'Špatný vítěz, ale sedí přesný počet gólů jednoho z týmů.' },
+  { b: '2', barva: 'text-yellow-400', text: 'Trefil jsi přesný celkový počet gólů v zápase, ale ne vítěze.' },
   { b: '0', barva: 'text-red-400', text: 'Ostatní případy.' },
 ];
 
@@ -65,7 +65,7 @@ export default function PravidlaPage() {
             <span className="font-display text-lg font-bold tabular-nums">1 : 3</span>
           </div>
           <div className="mt-3 border-t border-terrain-700 pt-3 text-slate-100/75">
-            Trefil jsi vítěze (hosté), ale ne přesný rozdíl ani počet gólů vítěze →{' '}
+            Trefil jsi vítěze (hosté), ale ne přesný rozdíl ani celkový počet gólů →{' '}
             <span className="font-bold text-white">4 body</span>.
           </div>
         </div>

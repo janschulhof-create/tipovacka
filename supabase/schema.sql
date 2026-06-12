@@ -77,7 +77,7 @@ create or replace function calculate_points(
 ) returns int
 language plpgsql immutable as $$
 declare
-  at int; pt int; diff_ok boolean; winner_goals_ok boolean;
+  at int; pt int; diff_ok boolean; total_ok boolean;
 begin
   if actual_home is null or actual_away is null then
     return null;                              -- zápas ještě nedohrán
@@ -90,24 +90,21 @@ begin
 
   at := sign(actual_home - actual_away);      -- 1 / 0 / -1
   pt := sign(pred_home  - pred_away);
+  total_ok := (pred_home + pred_away) = (actual_home + actual_away);
 
   if at = pt then                             -- správná tendence/vítěz
     if at = 0 then
       return 6;                               -- nepřesně trefená remíza
     end if;
     diff_ok := (pred_home - pred_away) = (actual_home - actual_away);
-    winner_goals_ok := case
-      when at = 1  then pred_home = actual_home
-      else              pred_away = actual_away
-    end;
-    if diff_ok or winner_goals_ok then
+    if diff_ok or total_ok then               -- rozdíl NEBO celkový počet gólů
       return 6;
     end if;
     return 4;                                 -- jen vítěz
   end if;
 
-  -- špatný vítěz, ale sedí přesný počet gólů jednoho týmu
-  if pred_home = actual_home or pred_away = actual_away then
+  -- špatný vítěz, ale sedí celkový počet gólů v zápase
+  if total_ok then
     return 2;
   end if;
 
@@ -143,6 +140,13 @@ language plpgsql as $$
 declare
   m matches%rowtype;
 begin
+  -- Povolit update, ktery nemeni samotny tip (zapis bodu po zapase)
+  if TG_OP = 'UPDATE'
+     and NEW.predicted_home is not distinct from OLD.predicted_home
+     and NEW.predicted_away is not distinct from OLD.predicted_away then
+    NEW.updated_at := now();
+    return NEW;
+  end if;
   select * into m from matches where id = NEW.match_id;
   if m.kickoff <= now() or m.status <> 'scheduled' then
     raise exception 'Tipovani uzavreno: zapas % uz zacal nebo je dohrany.', NEW.match_id

@@ -8,10 +8,10 @@
  *  10 b – přesný výsledek
  *   6 b – správný vítěz/tendence A ZÁROVEŇ:
  *          a) správný gólový rozdíl, NEBO
- *          b) přesný počet gólů vítěze, NEBO
+ *          b) správný celkový počet gólů v zápase, NEBO
  *          c) nepřesně trefená remíza (tip remíza & výsledek remíza, ale jiné skóre)
  *   4 b – pouze správný vítěz/tendence (žádná z podmínek pro 6 b)
- *   2 b – ŠPATNÝ vítěz, ale přesný počet gólů jednoho z týmů
+ *   2 b – ŠPATNÝ vítěz, ale správný celkový počet gólů v zápase
  *   0 b – ostatní
  *
  * Tato funkce je referenční (TS) a je 1:1 zrcadlena v SQL funkci
@@ -36,15 +36,14 @@ export function calculatePoints(
     if (actualTendency === 0) return 6;
 
     const diffCorrect = predHome - predAway === actualHome - actualAway;
-    const winnerGoalsCorrect =
-      actualTendency === 1 ? predHome === actualHome : predAway === actualAway;
+    const totalCorrect = predHome + predAway === actualHome + actualAway;
 
-    if (diffCorrect || winnerGoalsCorrect) return 6;
+    if (diffCorrect || totalCorrect) return 6;
     return 4; // jen vítěz
   }
 
-  // Špatný vítěz – ale sedí přesný počet gólů jednoho týmu
-  if (predHome === actualHome || predAway === actualAway) return 2;
+  // Špatný vítěz – ale sedí celkový počet gólů v zápase
+  if (predHome + predAway === actualHome + actualAway) return 2;
 
   return 0;
 }
