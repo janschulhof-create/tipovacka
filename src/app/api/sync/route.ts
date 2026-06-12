@@ -61,6 +61,31 @@ export async function GET(req: NextRequest) {
     idByKey.set(keyOf(m.round, m.home_team, m.away_team), m.id);
   }
 
+  // Diagnostika (?debug=1): nic nezapisuje, jen ukáže, co se děje.
+  if (req.nextUrl.searchParams.get('debug')) {
+    const ex = (existing as { id: number; external_api_id: number | null; round: number; home_team: string; away_team: string }[]) ?? [];
+    const orphans = ex.filter((m) => m.external_api_id == null);
+    const keyCount = new Map<string, number>();
+    for (const m of ex) {
+      const k = keyOf(m.round, m.home_team, m.away_team);
+      keyCount.set(k, (keyCount.get(k) ?? 0) + 1);
+    }
+    const dupKeys = [...keyCount.entries()].filter(([, c]) => c > 1).map(([k]) => k);
+    const finishedFromApi = fixtures
+      .filter((f) => f.status === 'finished')
+      .slice(0, 8)
+      .map((f) => ({ round: f.round, home: f.home_team, away: f.away_team, hs: f.home_score, as: f.away_score, api: f.external_api_id }));
+    return NextResponse.json({
+      existingCount: ex.length,
+      fetched: fixtures.length,
+      orphanCount: orphans.length,
+      orphansSample: orphans.slice(0, 12).map((m) => ({ round: m.round, home: m.home_team, away: m.away_team })),
+      dupKeyCount: dupKeys.length,
+      dupKeys: dupKeys.slice(0, 24),
+      finishedFromApi,
+    });
+  }
+
   let updated = 0;
   let inserted = 0;
   const inserts: Record<string, unknown>[] = [];
