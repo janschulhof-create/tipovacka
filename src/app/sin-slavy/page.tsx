@@ -45,23 +45,29 @@ export default function SinSlavyPage() {
   }
   const titleRows = [...titles.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
 
-  const bestSeasonPoints = pick(seasons, (s, n) => s.stats[n].points, 'max');
-  const bestSeasonExact = pick(seasons, (s, n) => s.stats[n].tens, 'max');
-  const topScorer = pick(seasons, (s, n) => s.stats[n].avgGoals, 'max');
-  const topDefender = pick(seasons, (s, n) => s.stats[n].avgGoals, 'min');
-  const mostRoundWins = pick(seasons, (s, n) => s.stats[n].roundWins, 'max');
-  const bestAvg = pick(seasons, (s, n) => s.stats[n].avgPoints, 'max');
   const kralNulicky = pick(seasons, (s, n) => s.stats[n].zeros, 'max');
-  const mrAlzheimer = pick(seasons, (s, n) => s.stats[n].missed, 'max');
 
-  let recMax = -1;
-  const recHolders: string[] = [];
-  for (const s of seasons)
-    for (const n of s.players) {
-      const v = s.stats[n].bestRound;
-      if (v > recMax) { recMax = v; recHolders.length = 0; }
-      if (v === recMax) recHolders.push(`${n} (${s.stats[n].bestRoundNo}. kolo)`);
-    }
+  // celá pořadí pro rozbalovací karty rekordů (zatím jedna dokončená sezóna)
+  const rankHist = (
+    val: (s: Stat) => number,
+    dir: 'max' | 'min',
+    fmt: (s: Stat) => string
+  ): { name: string; val: string }[] =>
+    [...h.players]
+      .sort((a, b) => (dir === 'max' ? val(h.stats[b]) - val(h.stats[a]) : val(h.stats[a]) - val(h.stats[b])))
+      .map((n) => ({ name: n, val: fmt(h.stats[n]) }));
+
+  const recordCards: { icon: string; label: string; accent: string; rows: { name: string; val: string }[] }[] = [
+    { icon: '👑', label: 'Nejvíce vítězství', accent: 'text-gold', rows: titleRows.map((t) => ({ name: t.name, val: `${t.count}×` })) },
+    { icon: '💯', label: 'Nejvíce bodů za sezónu', accent: 'text-pitch-light', rows: rankHist((s) => s.points, 'max', (s) => `${s.points} b`) },
+    { icon: '🎯', label: 'Nejvíce přesných tipů', accent: 'text-pitch-light', rows: rankHist((s) => s.tens, 'max', (s) => `${s.tens}× desítka`) },
+    { icon: '💥', label: 'Nejlepší kolo', accent: 'text-flag', rows: rankHist((s) => s.bestRound, 'max', (s) => `${s.bestRound} b (${s.bestRoundNo}. kolo)`) },
+    { icon: '📈', label: 'Nejvyšší průměr na zápas', accent: 'text-pitch-light', rows: rankHist((s) => s.avgPoints, 'max', (s) => `${s.avgPoints}`) },
+    { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rankHist((s) => s.roundWins, 'max', (s) => `${s.roundWins}×`) },
+    { icon: '⚽', label: 'Největší střelec', accent: 'text-flag', rows: rankHist((s) => s.avgGoals, 'max', (s) => `Ø ${s.avgGoals} g/tip`) },
+    { icon: '🧱', label: 'Největší betonář', accent: 'text-sky-400', rows: rankHist((s) => s.avgGoals, 'min', (s) => `Ø ${s.avgGoals} g/tip`) },
+    { icon: '🧠', label: 'Mr. Alzheimer (nejvíc netipoval)', accent: 'text-control', rows: rankHist((s) => s.missed, 'max', (s) => `${s.missed}× netipoval`) },
+  ];
 
   const counts = positionCounts(h);
   const ranking = [...h.players].sort((a, b) => h.stats[b].points - h.stats[a].points);
@@ -99,16 +105,11 @@ export default function SinSlavyPage() {
 
       {/* Historické rekordy */}
       <h2 className="eyebrow mb-2"><span className="flag-chip" /> Historické rekordy</h2>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Hof icon="👑" label="Nejvíce vítězství" rows={titleRows.map((t) => `${t.name} — ${t.count}×`)} />
-        <Hof icon="💯" label="Nejvíce bodů za sezónu" rows={[`${bestSeasonPoints.names} — ${bestSeasonPoints.val} b`]} />
-        <Hof icon="🎯" label="Nejvíce přesných tipů" rows={[`${bestSeasonExact.names} — ${bestSeasonExact.val}× desítka`]} />
-        <Hof icon="💥" label="Nejlepší kolo" rows={[`${recMax} b — ${recHolders.join(', ')}`]} />
-        <Hof icon="📈" label="Nejvyšší průměr na zápas" rows={[`${bestAvg.names} — ${bestAvg.val}`]} />
-        <Hof icon="🏅" label="Nejvíce vyhraných kol" rows={[`${mostRoundWins.names} — ${mostRoundWins.val}×`]} />
-        <Hof icon="⚽" label="Největší střelec" rows={[`${topScorer.names} — Ø ${topScorer.val} g/tip`]} />
-        <Hof icon="🧱" label="Největší betonář" rows={[`${topDefender.names} — Ø ${topDefender.val} g/tip`]} />
-        <Hof icon="🧠" label="Mr. Alzheimer (nejvíc netipoval)" rows={[`${mrAlzheimer.names} — ${mrAlzheimer.val}×`]} />
+      <p className="mb-2 text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        {recordCards.map((c) => (
+          <StatCard key={c.label} {...c} />
+        ))}
       </div>
 
       {/* Další zajímavosti z historie */}
@@ -146,21 +147,6 @@ export default function SinSlavyPage() {
         </table>
       </div>
     </main>
-  );
-}
-
-function Hof({ icon, label, rows }: { icon: string; label: string; rows: string[] }) {
-  return (
-    <div className="panel p-4">
-      <div className="flex items-center gap-2 text-[11px] uppercase tracking-wide text-slate-100/50">
-        <span className="text-base">{icon}</span> {label}
-      </div>
-      <ul className="mt-2 space-y-1">
-        {rows.map((r, i) => (
-          <li key={i} className="font-display text-base font-semibold text-white">{r}</li>
-        ))}
-      </ul>
-    </div>
   );
 }
 
