@@ -68,7 +68,7 @@ export default function SinSlavyPage() {
 
   const ff = funFacts(h.rounds as unknown as SRound[], h.players);
   const factCards: { icon: string; label: string; accent: string; rows: { name: string; val: string }[] }[] = [
-    { icon: '🎓', label: 'Profesorský fotbal (na jistotu)', accent: 'text-slate-300', rows: ff.professorRows },
+    { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
     { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
     { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
     { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },

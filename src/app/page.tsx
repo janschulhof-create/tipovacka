@@ -129,23 +129,15 @@ export default async function Home({
             </section>
           )}
 
-          <section className="space-y-3">
+          <section className="space-y-4">
             <h2 className="eyebrow">
               <span className="flag-chip" /> Statistiky sezóny
             </h2>
             <StatsCards standings={standings} goals={goals} misses={misses} />
+            {hasResults && <SeasonStats rounds={tipRounds} players={activeNames} />}
           </section>
         </aside>
       </div>
-
-      {hasResults && (
-        <section className="space-y-3">
-          <h2 className="eyebrow">
-            <span className="flag-chip" /> Statistiky sezóny — detailně
-          </h2>
-          <SeasonStats rounds={tipRounds} players={activeNames} />
-        </section>
-      )}
     </main>
   );
 }

@@ -158,7 +158,7 @@ export function HistorieView({ data }: { data: Historie }) {
     { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
     { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
     { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
-    { icon: '🎓', label: 'Profesorský fotbal (hrál na jistotu)', accent: 'text-slate-300', rows: ff.professorRows },
+    { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
   ];
 
   return (
