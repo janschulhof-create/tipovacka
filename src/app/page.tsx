@@ -12,6 +12,7 @@ import {
   getSeasonChartData,
   getSeasonTipRounds,
   getLiveMatches,
+  getLivePointsByPlayer,
 } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
@@ -55,6 +56,7 @@ export default async function Home({
 
   const tipRounds = await getSeasonTipRounds(seasonId);
   const liveMatches = await getLiveMatches(seasonId);
+  const liveInc = await getLivePointsByPlayer(seasonId);
   const activeNames = players.map((p) => p.name);
   const hasResults = tipRounds.some((r) => r.matches.some((m) => m.hs != null));
 
@@ -116,7 +118,7 @@ export default async function Home({
               <span className="flag-chip" /> Průběžné pořadí
             </h2>
             <div className="panel-flush">
-              <StandingsTable rows={standings} />
+              <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
             </div>
           </section>
 

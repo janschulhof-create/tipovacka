@@ -235,7 +235,11 @@ function MatchRow({
   );
 
   const Center = showSteppers ? (
-    <div className="flex items-center gap-1.5">
+    <div
+      className="flex items-center gap-1.5"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
       <Stepper value={score.h} onBump={(d) => onBump(m.id, 'h', d)} onChange={(v) => onChange(m.id, 'h', v)} label={`${m.home_team} góly`} />
       <span className="font-display text-lg text-slate-300/40">:</span>
       <Stepper value={score.a} onBump={(d) => onBump(m.id, 'a', d)} onChange={(v) => onChange(m.id, 'a', v)} label={`${m.away_team} góly`} />
@@ -273,32 +277,29 @@ function MatchRow({
 
   return (
     <li>
-      {/* odehraný/živý zápas → celý řádek klikací, odhalí tipy (chevron vpravo) */}
-      {locked ? (
-        <button
-          onClick={() => setOpen((o) => !o)}
-          className="flex w-full items-center gap-3 px-3 py-3 text-left transition hover:bg-terrain-900/40 sm:px-4"
+      {/* celý box klikací (mobil-friendly) — políčka na tipování mají stopPropagation */}
+      <div
+        role="button"
+        tabIndex={0}
+        aria-label="Detail zápasu"
+        aria-expanded={open}
+        onClick={() => setOpen((o) => !o)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            setOpen((o) => !o);
+          }
+        }}
+        className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left transition hover:bg-terrain-900/40 sm:px-4"
+      >
+        <div className="min-w-0 flex-1">{Body}</div>
+        <span
+          className={`shrink-0 text-slate-300/40 transition-transform ${open ? 'rotate-90' : ''}`}
+          aria-hidden
         >
-          <div className="min-w-0 flex-1">{Body}</div>
-          <span
-            className={`shrink-0 text-slate-300/40 transition-transform ${open ? 'rotate-90' : ''}`}
-            aria-hidden
-          >
-            ›
-          </span>
-        </button>
-      ) : (
-        <div className="flex items-center gap-3 px-3 py-3 sm:px-4">
-          <div className="min-w-0 flex-1">{Body}</div>
-          <button
-            onClick={() => setOpen((o) => !o)}
-            aria-label="Detail zápasu"
-            className={`shrink-0 text-slate-300/40 transition-transform ${open ? 'rotate-90' : ''}`}
-          >
-            ›
-          </button>
-        </div>
-      )}
+          ›
+        </span>
+      </div>
 
       {/* odhalené tipy ostatních */}
       {locked && open && (

@@ -1,5 +1,6 @@
 import { createServerReadClient } from '@/lib/supabase/server';
 import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player } from '@/lib/types';
+import { calculatePoints } from './scoring';
 
 export async function getActiveSeasonId(): Promise<number | null> {
   const sb = createServerReadClient();
@@ -267,4 +268,20 @@ export async function getLiveMatches(seasonId: number) {
     id: number; round: number; home_team: string; away_team: string;
     home_score: number | null; away_score: number | null; minute: number | null; kickoff: string;
   }[];
+}
+
+
+/** Body, které hráči právě nabírají z PRÁVĚ BĚŽÍCÍCH zápasů (pro živé pořadí). */
+export async function getLivePointsByPlayer(seasonId: number): Promise<Record<string, number>> {
+  const live = await getLiveMatches(seasonId);
+  if (live.length === 0) return {};
+  const scoreById = new Map(live.map((m) => [m.id, { hs: m.home_score, as: m.away_score }]));
+  const preds = await getRoundPredictions(live.map((m) => m.id));
+  const out: Record<string, number> = {};
+  for (const pr of preds) {
+    const sc = scoreById.get(pr.match_id);
+    if (!sc || sc.hs == null || sc.as == null) continue;
+    out[pr.name] = (out[pr.name] ?? 0) + (calculatePoints(sc.hs, sc.as, pr.predicted_home, pr.predicted_away) ?? 0);
+  }
+  return out;
 }
