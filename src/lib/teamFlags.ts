@@ -24,5 +24,10 @@ const CODES: Record<string, string> = {
 
 export function flagCode(name: string): string | null {
   if (!name) return null;
-  return CODES[norm(name)] ?? null;
+  const k = norm(name);
+  if (CODES[k]) return CODES[k];
+  // robustní fallback pro problematické/odlišně psané názvy
+  if (k.includes('bosn')) return 'ba';
+  if (k.includes('verde') || k.includes('kapverd')) return 'cv';
+  return null;
 }

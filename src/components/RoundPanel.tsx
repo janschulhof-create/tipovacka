@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
 import { pointsBadgeClass } from '@/lib/points';
+import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
 
 type Scores = Record<number, { h: string; a: string }>;
@@ -311,21 +312,37 @@ function MatchRow({
       {/* odhalené tipy ostatních */}
       {locked && open && (
         <div className="border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
+          {live && m.home_score != null && m.away_score != null && (
+            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-flag">
+              <span className="live-dot" /> Live body z aktuálního skóre {m.home_score}:{m.away_score}
+            </p>
+          )}
           <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
             {preds.length === 0 && <span className="text-xs text-slate-300/30">Nikdo netipoval.</span>}
-            {preds.map((t) => (
-              <div key={t.name} className="flex items-center justify-between border-b border-terrain-800/60 py-1 last:border-0">
-                <span className="text-slate-100/60">{t.name}</span>
-                <span className="flex items-center gap-1.5 tabular-nums">
-                  <span className="font-medium text-white">{t.predicted_home}:{t.predicted_away}</span>
-                  {t.points != null && (
-                    <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(t.points)}`}>
-                      {t.points} b
-                    </span>
-                  )}
-                </span>
-              </div>
-            ))}
+            {preds.map((t) => {
+              const livePts =
+                live && m.home_score != null && m.away_score != null
+                  ? calculatePoints(m.home_score, m.away_score, t.predicted_home, t.predicted_away)
+                  : null;
+              return (
+                <div key={t.name} className="flex items-center justify-between border-b border-terrain-800/60 py-1 last:border-0">
+                  <span className="text-slate-100/60">{t.name}</span>
+                  <span className="flex items-center gap-1.5 tabular-nums">
+                    <span className="font-medium text-white">{t.predicted_home}:{t.predicted_away}</span>
+                    {t.points != null ? (
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(t.points)}`}>
+                        {t.points} b
+                      </span>
+                    ) : livePts != null ? (
+                      <span className="flex items-center gap-1 rounded bg-flag/15 px-1.5 py-0.5 text-xs font-bold text-flag">
+                        <span className="live-dot" />
+                        {livePts} b
+                      </span>
+                    ) : null}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
