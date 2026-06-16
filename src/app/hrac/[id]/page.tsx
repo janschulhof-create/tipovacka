@@ -58,7 +58,7 @@ function H2HView({ h2h }: { h2h: H2HResult }) {
   const cls = (x: number, y: number, hi: 'high' | 'low' | 'none') => {
     if (hi === 'none' || x === y) return 'text-white';
     const better = hi === 'high' ? x > y : x < y;
-    return better ? 'text-pitch-light' : 'text-slate-300/45';
+    return better ? 'text-pitch-light' : 'text-red-400';
   };
 
   type StrRow = { lbl: string; a: TipCount | null; b: TipCount | null; suffix: string };
