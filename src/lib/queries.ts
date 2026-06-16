@@ -287,6 +287,8 @@ export async function getLivePointsByPlayer(seasonId: number): Promise<Record<st
 }
 
 // ===== Profil tipéra + H2H =====
+export interface TipCount { tip: string; count: number }
+
 export interface PlayerProfile {
   player_id: number;
   name: string;
@@ -301,13 +303,26 @@ export interface PlayerProfile {
   best_round: { round: number; points: number } | null;
   worst_round: { round: number; points: number } | null;
   rounds: { round: number; points: number }[];
+  zeros: number;
+  unlucky: number;
+  avg_goals: number;
+  most_common_tip: TipCount | null;
+  most_successful_tip: TipCount | null;
+  matchPoints: Record<number, number>;
 }
 
 export interface H2HSide {
-  id: number; name: string; points: number; exact: number; avg: number; success: number; roundsWon: number;
+  id: number; name: string; points: number; exact: number; avg: number; success: number;
+  matchWins: number; zeros: number; unlucky: number; avgGoals: number;
+  mostCommonTip: TipCount | null; mostSuccessfulTip: TipCount | null;
 }
-export interface H2HResult {
-  a: H2HSide; b: H2HSide; ties: number; rounds: { round: number; a: number; b: number }[];
+export interface H2HResult { a: H2HSide; b: H2HSide; ties: number; commonMatches: number }
+
+function topTip(m: Map<string, number>): TipCount | null {
+  let bk: string | null = null;
+  let bc = 0;
+  for (const [k, c] of m) if (c > bc) { bc = c; bk = k; }
+  return bk ? { tip: bk, count: bc } : null;
 }
 
 export async function getPlayerProfile(seasonId: number, playerId: number): Promise<PlayerProfile | null> {
@@ -316,29 +331,47 @@ export async function getPlayerProfile(seasonId: number, playerId: number): Prom
   if (!pl) return null;
   const { data } = await sb
     .from('predictions')
-    .select('points, matches!inner(round, status, season_id)')
+    .select('predicted_home, predicted_away, points, matches!inner(id, round, status, season_id, home_score, away_score)')
     .eq('player_id', playerId)
     .eq('matches.season_id', seasonId);
-  type M = { round: number; status: string; season_id: number };
-  type Row = { points: number | null; matches: M | M[] | null };
+  type M = { id: number; round: number; status: string; home_score: number | null; away_score: number | null };
+  type Row = { predicted_home: number; predicted_away: number; points: number | null; matches: M | M[] | null };
   const rows = ((data as Row[]) ?? []).map((r) => ({
-    points: r.points,
+    ph: r.predicted_home, pa: r.predicted_away, points: r.points,
     m: Array.isArray(r.matches) ? r.matches[0] : r.matches,
   }));
-  const fin = rows.filter((r) => r.m && r.m.status === 'finished' && r.points != null) as { points: number; m: M }[];
+
+  const tipCount = new Map<string, number>();
+  let predGoals = 0;
+  for (const r of rows) {
+    tipCount.set(`${r.ph}:${r.pa}`, (tipCount.get(`${r.ph}:${r.pa}`) ?? 0) + 1);
+    predGoals += r.ph + r.pa;
+  }
+
+  const fin = rows.filter((r) => r.m && r.m.status === 'finished' && r.points != null) as
+    { ph: number; pa: number; points: number; m: M }[];
   const dist = { p10: 0, p6: 0, p4: 0, p2: 0, p0: 0 };
   const byRound = new Map<number, number>();
+  const matchPoints: Record<number, number> = {};
+  const exactTip = new Map<string, number>();
   let points = 0;
+  let unlucky = 0;
   for (const r of fin) {
     const pts = r.points;
     points += pts;
-    if (pts === 10) dist.p10++;
+    if (pts === 10) { dist.p10++; exactTip.set(`${r.ph}:${r.pa}`, (exactTip.get(`${r.ph}:${r.pa}`) ?? 0) + 1); }
     else if (pts === 6) dist.p6++;
     else if (pts === 4) dist.p4++;
     else if (pts === 2) dist.p2++;
     else dist.p0++;
     byRound.set(r.m.round, (byRound.get(r.m.round) ?? 0) + pts);
+    matchPoints[r.m.id] = pts;
+    if (r.m.home_score != null && r.m.away_score != null) {
+      const off = Math.abs(r.ph - r.m.home_score) + Math.abs(r.pa - r.m.away_score);
+      if (off === 1) unlucky++;
+    }
   }
+
   const scored = fin.length;
   const avg = scored ? Math.round((points / scored) * 100) / 100 : 0;
   const success = scored ? Math.round((100 * fin.filter((r) => r.points > 0).length) / scored) : 0;
@@ -349,6 +382,7 @@ export async function getPlayerProfile(seasonId: number, playerId: number): Prom
     if (!best || r.points > best.points) best = r;
     if (!worst || r.points < worst.points) worst = r;
   }
+
   const standings = await getStandings(seasonId);
   const idx = standings.findIndex((s) => s.player_id === playerId);
   return {
@@ -356,29 +390,31 @@ export async function getPlayerProfile(seasonId: number, playerId: number): Prom
     rank: idx >= 0 ? idx + 1 : 0, total_players: standings.length,
     points, scored_matches: scored, exact_hits: dist.p10, avg_points: avg, success_rate: success,
     dist, best_round: best, worst_round: worst, rounds: roundsArr,
+    zeros: dist.p0, unlucky,
+    avg_goals: rows.length ? Math.round((predGoals / rows.length) * 100) / 100 : 0,
+    most_common_tip: topTip(tipCount), most_successful_tip: topTip(exactTip),
+    matchPoints,
   };
 }
 
 export async function getH2H(seasonId: number, aId: number, bId: number): Promise<H2HResult | null> {
   const [pa, pb] = await Promise.all([getPlayerProfile(seasonId, aId), getPlayerProfile(seasonId, bId)]);
   if (!pa || !pb) return null;
-  const rmap = new Map<number, { a: number; b: number }>();
-  for (const r of pa.rounds) rmap.set(r.round, { a: r.points, b: 0 });
-  for (const r of pb.rounds) {
-    const e = rmap.get(r.round) ?? { a: 0, b: 0 };
-    e.b = r.points;
-    rmap.set(r.round, e);
-  }
-  const rounds = [...rmap.entries()].sort((x, y) => x[0] - y[0]).map(([round, v]) => ({ round, a: v.a, b: v.b }));
-  let aw = 0, bw = 0, ties = 0;
-  for (const r of rounds) {
-    if (r.a > r.b) aw++;
-    else if (r.b > r.a) bw++;
+  let aWins = 0, bWins = 0, ties = 0, common = 0;
+  const ids = new Set<number>([...Object.keys(pa.matchPoints), ...Object.keys(pb.matchPoints)].map(Number));
+  for (const id of ids) {
+    const av = pa.matchPoints[id];
+    const bv = pb.matchPoints[id];
+    if (av == null || bv == null) continue;
+    common++;
+    if (av > bv) aWins++;
+    else if (bv > av) bWins++;
     else ties++;
   }
-  return {
-    a: { id: aId, name: pa.name, points: pa.points, exact: pa.exact_hits, avg: pa.avg_points, success: pa.success_rate, roundsWon: aw },
-    b: { id: bId, name: pb.name, points: pb.points, exact: pb.exact_hits, avg: pb.avg_points, success: pb.success_rate, roundsWon: bw },
-    ties, rounds,
-  };
+  const side = (p: PlayerProfile, wins: number): H2HSide => ({
+    id: p.player_id, name: p.name, points: p.points, exact: p.exact_hits, avg: p.avg_points,
+    success: p.success_rate, matchWins: wins, zeros: p.zeros, unlucky: p.unlucky, avgGoals: p.avg_goals,
+    mostCommonTip: p.most_common_tip, mostSuccessfulTip: p.most_successful_tip,
+  });
+  return { a: side(pa, aWins), b: side(pb, bWins), ties, commonMatches: common };
 }
