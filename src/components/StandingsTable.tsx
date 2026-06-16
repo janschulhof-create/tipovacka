@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import type { StandingRow } from '@/lib/types';
 
 export function StandingsTable({
@@ -56,8 +57,12 @@ export function StandingsTable({
           const move = showLive ? (baseRank.get(r.name) ?? rank) - rank : 0;
           const total = showLive ? d.total : r.points;
           return (
-            <li key={r.player_id} className="relative z-10 flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-terrain-900/50">
-              <span className={`control-badge ${podium}`}>{rank}</span>
+            <li key={r.player_id} className="relative z-10">
+              <Link
+                href={`/hrac/${r.player_id}`}
+                className="flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-terrain-900/50"
+              >
+                <span className={`control-badge ${podium}`}>{rank}</span>
 
               {showLive && (
                 <span className="flex w-6 shrink-0 items-center justify-center text-[11px] font-bold tabular-nums">
@@ -88,6 +93,8 @@ export function StandingsTable({
                 <div className="font-display text-xl font-bold tabular-nums leading-none text-pitch-light">{total}</div>
                 <div className="text-[10px] uppercase tracking-wider text-slate-300/40">bodů</div>
               </div>
+                <span className="shrink-0 pl-0.5 text-slate-300/30" aria-hidden>›</span>
+              </Link>
             </li>
           );
         })}

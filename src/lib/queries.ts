@@ -285,3 +285,100 @@ export async function getLivePointsByPlayer(seasonId: number): Promise<Record<st
   }
   return out;
 }
+
+// ===== Profil tipéra + H2H =====
+export interface PlayerProfile {
+  player_id: number;
+  name: string;
+  rank: number;
+  total_players: number;
+  points: number;
+  scored_matches: number;
+  exact_hits: number;
+  avg_points: number;
+  success_rate: number;
+  dist: { p10: number; p6: number; p4: number; p2: number; p0: number };
+  best_round: { round: number; points: number } | null;
+  worst_round: { round: number; points: number } | null;
+  rounds: { round: number; points: number }[];
+}
+
+export interface H2HSide {
+  id: number; name: string; points: number; exact: number; avg: number; success: number; roundsWon: number;
+}
+export interface H2HResult {
+  a: H2HSide; b: H2HSide; ties: number; rounds: { round: number; a: number; b: number }[];
+}
+
+export async function getPlayerProfile(seasonId: number, playerId: number): Promise<PlayerProfile | null> {
+  const sb = createServerReadClient();
+  const { data: pl } = await sb.from('players').select('name').eq('id', playerId).single();
+  if (!pl) return null;
+  const { data } = await sb
+    .from('predictions')
+    .select('points, matches!inner(round, status, season_id)')
+    .eq('player_id', playerId)
+    .eq('matches.season_id', seasonId);
+  type M = { round: number; status: string; season_id: number };
+  type Row = { points: number | null; matches: M | M[] | null };
+  const rows = ((data as Row[]) ?? []).map((r) => ({
+    points: r.points,
+    m: Array.isArray(r.matches) ? r.matches[0] : r.matches,
+  }));
+  const fin = rows.filter((r) => r.m && r.m.status === 'finished' && r.points != null) as { points: number; m: M }[];
+  const dist = { p10: 0, p6: 0, p4: 0, p2: 0, p0: 0 };
+  const byRound = new Map<number, number>();
+  let points = 0;
+  for (const r of fin) {
+    const pts = r.points;
+    points += pts;
+    if (pts === 10) dist.p10++;
+    else if (pts === 6) dist.p6++;
+    else if (pts === 4) dist.p4++;
+    else if (pts === 2) dist.p2++;
+    else dist.p0++;
+    byRound.set(r.m.round, (byRound.get(r.m.round) ?? 0) + pts);
+  }
+  const scored = fin.length;
+  const avg = scored ? Math.round((points / scored) * 100) / 100 : 0;
+  const success = scored ? Math.round((100 * fin.filter((r) => r.points > 0).length) / scored) : 0;
+  const roundsArr = [...byRound.entries()].sort((a, b) => a[0] - b[0]).map(([round, pts]) => ({ round, points: pts }));
+  let best: { round: number; points: number } | null = null;
+  let worst: { round: number; points: number } | null = null;
+  for (const r of roundsArr) {
+    if (!best || r.points > best.points) best = r;
+    if (!worst || r.points < worst.points) worst = r;
+  }
+  const standings = await getStandings(seasonId);
+  const idx = standings.findIndex((s) => s.player_id === playerId);
+  return {
+    player_id: playerId, name: pl.name,
+    rank: idx >= 0 ? idx + 1 : 0, total_players: standings.length,
+    points, scored_matches: scored, exact_hits: dist.p10, avg_points: avg, success_rate: success,
+    dist, best_round: best, worst_round: worst, rounds: roundsArr,
+  };
+}
+
+export async function getH2H(seasonId: number, aId: number, bId: number): Promise<H2HResult | null> {
+  const [pa, pb] = await Promise.all([getPlayerProfile(seasonId, aId), getPlayerProfile(seasonId, bId)]);
+  if (!pa || !pb) return null;
+  const rmap = new Map<number, { a: number; b: number }>();
+  for (const r of pa.rounds) rmap.set(r.round, { a: r.points, b: 0 });
+  for (const r of pb.rounds) {
+    const e = rmap.get(r.round) ?? { a: 0, b: 0 };
+    e.b = r.points;
+    rmap.set(r.round, e);
+  }
+  const rounds = [...rmap.entries()].sort((x, y) => x[0] - y[0]).map(([round, v]) => ({ round, a: v.a, b: v.b }));
+  let aw = 0, bw = 0, ties = 0;
+  for (const r of rounds) {
+    if (r.a > r.b) aw++;
+    else if (r.b > r.a) bw++;
+    else ties++;
+  }
+  return {
+    a: { id: aId, name: pa.name, points: pa.points, exact: pa.exact_hits, avg: pa.avg_points, success: pa.success_rate, roundsWon: aw },
+    b: { id: bId, name: pb.name, points: pb.points, exact: pb.exact_hits, avg: pb.avg_points, success: pb.success_rate, roundsWon: bw },
+    ties, rounds,
+  };
+}
