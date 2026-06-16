@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
 import { pointsBadgeClass } from '@/lib/points';
+import { Flag } from './Flag';
 
 type Scores = Record<number, { h: string; a: string }>;
 
@@ -258,9 +259,15 @@ function MatchRow({
     <>
       {StatusLine}
       <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3">
-        <span className="truncate text-right text-sm font-medium text-white">{m.home_team}</span>
+        <span className="flex min-w-0 items-center justify-end gap-2">
+          <span className="truncate text-sm font-medium text-white">{m.home_team}</span>
+          <Flag team={m.home_team} />
+        </span>
         {Center}
-        <span className="truncate text-left text-sm font-medium text-white">{m.away_team}</span>
+        <span className="flex min-w-0 items-center justify-start gap-2">
+          <Flag team={m.away_team} />
+          <span className="truncate text-sm font-medium text-white">{m.away_team}</span>
+        </span>
       </div>
       {locked && myTip && (
         <div className="mt-2 text-center text-xs text-slate-100/60">

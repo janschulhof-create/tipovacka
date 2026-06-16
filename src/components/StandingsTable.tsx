@@ -48,8 +48,7 @@ export function StandingsTable({
         </div>
       )}
 
-      <ol className="relative px-3 py-3">
-        <span className="absolute bottom-7 left-[31px] top-7 -z-0 border-l border-dashed border-terrain-600" />
+      <ol className="px-3 py-3">
         {sorted.map((d, i) => {
           const r = d.r;
           const rank = i + 1;
