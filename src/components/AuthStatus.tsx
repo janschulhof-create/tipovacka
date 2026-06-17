@@ -15,7 +15,7 @@ export function AuthStatus({ player, className = '' }: { player: SessionPlayer |
   }
   return (
     <div className={`flex items-center gap-2 ${className}`}>
-      <Link href="/ucet" className="flex items-center gap-1.5 rounded-lg bg-terrain-800 px-3 py-1.5 text-sm text-white transition hover:bg-terrain-700">
+      <Link href="/profil" className="flex items-center gap-1.5 rounded-lg bg-terrain-800 px-3 py-1.5 text-sm text-white transition hover:bg-terrain-700">
         <span className="h-1.5 w-1.5 rounded-full bg-pitch" />
         {player.name}
       </Link>
