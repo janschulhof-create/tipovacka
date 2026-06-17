@@ -334,8 +334,7 @@ function MatchRow({
                         {t.points} b
                       </span>
                     ) : livePts != null ? (
-                      <span className="flex items-center gap-1 rounded bg-flag/15 px-1.5 py-0.5 text-xs font-bold text-flag">
-                        <span className="live-dot" />
+                      <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(livePts)}`}>
                         {livePts} b
                       </span>
                     ) : null}
