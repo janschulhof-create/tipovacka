@@ -21,6 +21,8 @@ import { StandingsChart } from '@/components/StandingsChart';
 import { StatsCards } from '@/components/StatsCards';
 import { SeasonStats } from '@/components/SeasonStats';
 import { LiveBanner } from '@/components/LiveBanner';
+import Link from 'next/link';
+import { getSessionPlayer } from '@/lib/auth';
 
 export const dynamic = 'force-dynamic';
 
@@ -57,6 +59,7 @@ export default async function Home({
   const tipRounds = await getSeasonTipRounds(seasonId);
   const liveMatches = await getLiveMatches(seasonId);
   const liveInc = await getLivePointsByPlayer(seasonId);
+  const sessionPlayer = await getSessionPlayer();
   const activeNames = players.map((p) => p.name);
   const hasResults = tipRounds.some((r) => r.matches.some((m) => m.hs != null));
 
@@ -86,12 +89,19 @@ export default async function Home({
         {/* ---------- LEVÝ SLOUPEC: ZÁPASY ---------- */}
         <div className="space-y-8 lg:col-span-2">
           <section className="space-y-3">
+            {selectedRound === currentRound && !sessionPlayer && (
+              <p className="rounded-xl border border-terrain-700 bg-terrain-900/40 px-4 py-2.5 text-[13px] text-slate-300/70">
+                Pro tipování se <Link href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
+              </p>
+            )}
             {matches.length ? (
               <RoundPanel
                 matches={matches}
                 players={players}
                 predictions={predictions}
-                editable={selectedRound === currentRound}
+                editable={selectedRound === currentRound && !!sessionPlayer}
+                playerId={sessionPlayer?.id ?? ''}
+                showSelector={false}
               />
             ) : (
               <div className="panel">

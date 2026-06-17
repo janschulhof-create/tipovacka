@@ -4,6 +4,8 @@ import { Inter, Oswald } from 'next/font/google';
 import './globals.css';
 import { SideRail, BottomNav } from '@/components/Nav';
 import { BrandMark } from '@/components/Brand';
+import { AuthStatus } from '@/components/AuthStatus';
+import { getSessionPlayer } from '@/lib/auth';
 
 const inter = Inter({ subsets: ['latin', 'latin-ext'], variable: '--font-sans', display: 'swap' });
 const oswald = Oswald({ subsets: ['latin', 'latin-ext'], variable: '--font-display', display: 'swap' });
@@ -20,11 +22,17 @@ export const viewport: Viewport = {
   maximumScale: 1,
 };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  const player = await getSessionPlayer();
   return (
     <html lang="cs" className={`${inter.variable} ${oswald.variable}`}>
       <body className="min-h-dvh font-sans antialiased">
         <SideRail />
+
+        {/* přihlašovací stav – desktop (vpravo nahoře) */}
+        <div className="fixed right-4 top-4 z-40 hidden lg:flex">
+          <AuthStatus player={player} />
+        </div>
 
         {/* horní brand lišta jen na mobilu */}
         <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-terrain-700 bg-terrain-900/80 px-4 py-3 backdrop-blur lg:hidden">
@@ -34,6 +42,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               Tipovačka
             </span>
           </Link>
+          <AuthStatus player={player} className="ml-auto" />
         </header>
 
         <div className="relative z-10 lg:pl-60">
