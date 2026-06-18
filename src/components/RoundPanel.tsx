@@ -212,12 +212,6 @@ export function RoundPanel({
           <button onClick={save} disabled={saving} className="btn-pitch">
             {saving ? 'Ukládám…' : '💾 Uložit tipy'}
           </button>
-          <button
-            onClick={() => { setTipping(false); setMsg(null); }}
-            className="mt-2 w-full text-center text-xs text-slate-300/55 transition hover:text-white"
-          >
-            Zrušit
-          </button>
         </div>
       )}
 

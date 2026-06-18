@@ -64,16 +64,14 @@ button {
     box-shadow: inset 0 0 0 2px #d08b52;
   }
 
-  /* ---------- primární akce = fotbalové hřiště ---------- */
+  /* ---------- primární akce – decentní, zvýrazněný text ---------- */
   .btn-pitch {
-    @apply relative block w-full rounded-xl bg-pitch py-3 text-center font-display text-base
-           font-bold uppercase tracking-wider text-terrain-950
-           transition active:scale-[0.99] disabled:opacity-50;
-    background-image: linear-gradient(180deg, #4ade80, #16a34a);
-    box-shadow: 0 4px 14px -8px rgba(34, 197, 94, 0.55);
+    @apply block w-full rounded-xl border border-pitch/35 bg-pitch/10 py-2.5 text-center
+           text-sm font-semibold tracking-wide text-pitch-light transition
+           hover:border-pitch/55 hover:bg-pitch/15 active:scale-[0.99] disabled:opacity-50;
   }
 
-  /* ---------- sekundární / decentní akce ---------- */
+  /* ---------- sekundární / neutrální akce ---------- */
   .btn-soft {
     @apply block w-full rounded-xl border border-terrain-600 bg-terrain-800/50 py-2.5 text-center
            text-sm font-semibold text-slate-100/85 transition
