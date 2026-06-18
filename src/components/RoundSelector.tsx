@@ -23,46 +23,23 @@ export function RoundSelector({
     return () => document.removeEventListener('mousedown', onDoc);
   }, [open]);
 
-  const idx = rounds.indexOf(current);
-  const prev = idx > 0 ? rounds[idx - 1] : null;
-  const next = idx >= 0 && idx < rounds.length - 1 ? rounds[idx + 1] : null;
-
-  const go = (r: number | null) => {
-    if (r == null) return;
+  const go = (r: number) => {
     setOpen(false);
     router.push(`/?kolo=${r}`, { scroll: false });
   };
 
   return (
-    <div ref={ref} className="relative flex items-center gap-1">
-      <button
-        aria-label="Předchozí kolo"
-        onClick={() => go(prev)}
-        disabled={prev == null}
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-flag transition hover:bg-terrain-800 disabled:opacity-25"
-      >
-        ‹
-      </button>
-
+    <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 font-display text-sm font-semibold tracking-wide text-white transition hover:bg-terrain-800"
+        className="flex items-center gap-2 rounded-lg border border-terrain-600 bg-terrain-900/60 px-3.5 py-2 font-display text-sm font-semibold tracking-wide text-white transition hover:bg-terrain-800"
       >
         {current}. kolo
         <span className="text-xs text-slate-300/50">{open ? '▲' : '▼'}</span>
       </button>
 
-      <button
-        aria-label="Další kolo"
-        onClick={() => go(next)}
-        disabled={next == null}
-        className="flex h-9 w-9 items-center justify-center rounded-lg text-xl text-flag transition hover:bg-terrain-800 disabled:opacity-25"
-      >
-        ›
-      </button>
-
       {open && (
-        <div className="absolute right-0 top-11 z-40 max-h-72 w-36 overflow-auto rounded-xl border border-terrain-600 bg-terrain-900 p-1 shadow-xl">
+        <div className="absolute right-0 top-12 z-40 max-h-72 w-40 overflow-auto rounded-xl border border-terrain-600 bg-terrain-900 p-1 shadow-xl">
           {[...rounds].reverse().map((r) => (
             <button
               key={r}

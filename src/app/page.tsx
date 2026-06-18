@@ -109,13 +109,8 @@ export default async function Home({
 
         {/* ---------- PRAVÝ SLOUPEC: POŘADÍ / GRAF / STATISTIKY ---------- */}
         <aside className="space-y-6">
-          <section className="space-y-3">
-            <h2 className="eyebrow">
-              <span className="flag-chip" /> Průběžné pořadí
-            </h2>
-            <div className="panel-flush">
-              <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
-            </div>
+          <section>
+            <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
           </section>
 
           {chart.rounds.length > 0 && (

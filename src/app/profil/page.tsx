@@ -37,7 +37,13 @@ export default async function ProfilPage({
 
   return (
     <main className="pb-10">
-      <section className="panel mb-6 p-5">
+      {profile ? (
+        <ProfileView profile={profile} h2h={h2h} others={others} vsId={vsId} basePath="/profil" title="Můj profil" />
+      ) : (
+        <p className="px-1 py-6 text-sm text-slate-100/50">Zatím žádné statistiky — začni tipovat.</p>
+      )}
+
+      <section className="panel mt-6 p-5">
         <div className="eyebrow mb-4"><span className="flag-chip" /> Můj účet</div>
 
         <div className="grid gap-5 sm:grid-cols-2">
@@ -60,12 +66,6 @@ export default async function ProfilPage({
           </button>
         </form>
       </section>
-
-      {profile ? (
-        <ProfileView profile={profile} h2h={h2h} others={others} vsId={vsId} basePath="/profil" title="Můj profil" />
-      ) : (
-        <p className="px-1 py-6 text-sm text-slate-100/50">Zatím žádné statistiky — začni tipovat.</p>
-      )}
     </main>
   );
 }
