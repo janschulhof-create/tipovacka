@@ -1,7 +1,6 @@
 import {
   getActiveSeason,
   getCurrentRound,
-  getPreviousRound,
   getSeasonRounds,
   getRoundMatches,
   getStandings,
@@ -44,11 +43,8 @@ export default async function Home({
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
   const selectedRound =
     !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : currentRound;
-  const prevRound = selectedRound ? await getPreviousRound(seasonId, selectedRound) : null;
-
-  const [matches, prevMatches, standings, goals, misses, players, chart] = await Promise.all([
+  const [matches, standings, goals, misses, players, chart] = await Promise.all([
     selectedRound ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
-    prevRound ? getRoundMatches(seasonId, prevRound) : Promise.resolve([]),
     getStandings(seasonId),
     getGoalStats(seasonId),
     getMisses(seasonId),
@@ -66,10 +62,7 @@ export default async function Home({
   const activeNames = players.map((p) => p.name);
   const hasResults = tipRounds.some((r) => r.matches.some((m) => m.hs != null));
 
-  const [predictions, prevPredictions] = await Promise.all([
-    getRoundPredictions(matches.map((m) => m.id)),
-    getRoundPredictions(prevMatches.map((m) => m.id)),
-  ]);
+  const predictions = await getRoundPredictions(matches.map((m) => m.id));
 
   return (
     <main className="space-y-6">
@@ -112,16 +105,6 @@ export default async function Home({
               </div>
             )}
           </section>
-
-          {prevMatches.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="font-display text-lg font-semibold tracking-wide text-slate-100/80">
-                {prevRound}. kolo{' '}
-                <span className="text-sm font-normal text-slate-300/40">— výsledky</span>
-              </h2>
-              <RoundPanel matches={prevMatches} players={players} predictions={prevPredictions} />
-            </section>
-          )}
         </div>
 
         {/* ---------- PRAVÝ SLOUPEC: POŘADÍ / GRAF / STATISTIKY ---------- */}

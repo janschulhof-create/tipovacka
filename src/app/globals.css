@@ -64,11 +64,12 @@ button {
     box-shadow: inset 0 0 0 2px #d08b52;
   }
 
-  /* ---------- primární akce – decentní, zvýrazněný text ---------- */
+  /* ---------- primární akce – viditelná, ale ne křiklavá ---------- */
   .btn-pitch {
-    @apply block w-full rounded-xl border border-pitch/35 bg-pitch/10 py-2.5 text-center
-           text-sm font-semibold tracking-wide text-pitch-light transition
-           hover:border-pitch/55 hover:bg-pitch/15 active:scale-[0.99] disabled:opacity-50;
+    @apply block w-full rounded-xl border border-pitch/55 bg-pitch/20 py-3 text-center
+           text-base font-bold tracking-wide text-pitch-light transition
+           hover:border-pitch/75 hover:bg-pitch/25 active:scale-[0.99] disabled:opacity-50;
+    box-shadow: 0 2px 12px -6px rgba(74, 222, 128, 0.4);
   }
 
   /* ---------- sekundární / neutrální akce ---------- */

@@ -159,7 +159,7 @@ export function RoundPanel({
             🎯 Tipovat
           </button>
           <p className="mt-2 text-center text-xs text-slate-300/45">
-            {openCount} {openCount === 1 ? 'zápas' : openCount < 5 ? 'zápasy' : 'zápasů'} k tipnutí — klikni a vyplň skóre
+            {openCount} {openCount === 1 ? 'zápas' : openCount < 5 ? 'zápasy' : 'zápasů'} k tipnutí — klikni, vyplň skóre a ulož
           </p>
         </div>
       )}
