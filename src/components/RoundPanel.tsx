@@ -42,6 +42,7 @@ export function RoundPanel({
   const [scores, setScores] = useState<Scores>({});
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [tipping, setTipping] = useState(false);
 
   const isLocked = (m: Match) =>
     m.status !== 'scheduled' || new Date(m.kickoff).getTime() <= Date.now();
@@ -103,7 +104,12 @@ export function RoundPanel({
       .from('predictions')
       .upsert(rows, { onConflict: 'player_id,match_id' });
     setSaving(false);
-    setMsg(error ? `Chyba: ${error.message}` : `✅ Uloženo (${rows.length} tipů)!`);
+    if (error) {
+      setMsg(`Chyba: ${error.message}`);
+    } else {
+      setMsg(`✅ Tipy uložené (${rows.length})`);
+      setTipping(false);
+    }
   }
 
   const selectedName = players.find((p) => p.id === playerId)?.name;
@@ -146,6 +152,18 @@ export function RoundPanel({
         </div>
       )}
 
+      {/* vědomá akce: spustit tipování */}
+      {editable && openCount > 0 && !tipping && (
+        <div className="p-4">
+          <button onClick={() => { setMsg(null); setTipping(true); }} className="btn-pitch">
+            🎯 Tipovat
+          </button>
+          <p className="mt-2 text-center text-xs text-slate-300/45">
+            {openCount} {openCount === 1 ? 'zápas' : openCount < 5 ? 'zápasy' : 'zápasů'} k tipnutí — klikni a vyplň skóre
+          </p>
+        </div>
+      )}
+
       {/* zápasy */}
       <ul className="divide-y divide-terrain-700">
         {matches.map((m) => (
@@ -154,6 +172,7 @@ export function RoundPanel({
             m={m}
             locked={isLocked(m)}
             canTip={editable && playerId !== ''}
+            tipping={tipping}
             selectedName={selectedName}
             preds={predictions.filter((p) => p.match_id === m.id)}
             score={scores[m.id] ?? { h: '', a: '' }}
@@ -187,13 +206,27 @@ export function RoundPanel({
         </div>
       )}
 
-      {/* uložit (jen editovatelné a je co tipovat) */}
-      {editable && playerId !== '' && openCount > 0 && (
+      {/* uložit (jen v režimu tipování) */}
+      {editable && tipping && openCount > 0 && (
         <div className="p-4">
           <button onClick={save} disabled={saving} className="btn-pitch">
             {saving ? 'Ukládám…' : '💾 Uložit tipy'}
           </button>
-          {msg && <p className="mt-2 text-center text-sm text-slate-100/80">{msg}</p>}
+          <button
+            onClick={() => { setTipping(false); setMsg(null); }}
+            className="mt-2 w-full text-center text-xs text-slate-300/55 transition hover:text-white"
+          >
+            Zrušit
+          </button>
+        </div>
+      )}
+
+      {/* potvrzení / chyba */}
+      {msg && (
+        <div className="px-4 py-3">
+          <p className={`text-center text-sm ${msg.startsWith('Chyba') ? 'text-red-400' : 'text-pitch-light'}`}>
+            {msg}
+          </p>
         </div>
       )}
     </div>
@@ -204,6 +237,7 @@ function MatchRow({
   m,
   locked,
   canTip,
+  tipping,
   selectedName,
   preds,
   score,
@@ -213,6 +247,7 @@ function MatchRow({
   m: Match;
   locked: boolean;
   canTip: boolean;
+  tipping: boolean;
   selectedName?: string;
   preds: RoundPrediction[];
   score: { h: string; a: string };
@@ -223,7 +258,7 @@ function MatchRow({
   const live = m.status === 'live';
   const done = m.status === 'finished';
   const myTip = selectedName ? preds.find((p) => p.name === selectedName) : undefined;
-  const showSteppers = !locked && canTip;
+  const showSteppers = !locked && canTip && tipping;
 
   const StatusLine = (
     <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-100/45">

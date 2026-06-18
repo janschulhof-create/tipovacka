@@ -60,6 +60,9 @@ export default async function Home({
   const liveMatches = await getLiveMatches(seasonId);
   const liveInc = await getLivePointsByPlayer(seasonId);
   const sessionPlayer = await getSessionPlayer();
+  const roundOpen = matches.some(
+    (m) => m.status === 'scheduled' && new Date(m.kickoff).getTime() > Date.now()
+  );
   const activeNames = players.map((p) => p.name);
   const hasResults = tipRounds.some((r) => r.matches.some((m) => m.hs != null));
 
@@ -89,8 +92,8 @@ export default async function Home({
         {/* ---------- LEVÝ SLOUPEC: ZÁPASY ---------- */}
         <div className="space-y-8 lg:col-span-2">
           <section className="space-y-3">
-            {selectedRound === currentRound && !sessionPlayer && (
-              <p className="rounded-xl border border-terrain-700 bg-terrain-900/40 px-4 py-2.5 text-[13px] text-slate-300/70">
+            {roundOpen && !sessionPlayer && (
+              <p className="px-1 text-center text-[13px] text-slate-300/60">
                 Pro tipování se <Link href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
               </p>
             )}
@@ -99,7 +102,7 @@ export default async function Home({
                 matches={matches}
                 players={players}
                 predictions={predictions}
-                editable={selectedRound === currentRound && !!sessionPlayer}
+                editable={!!sessionPlayer}
                 playerId={sessionPlayer?.id ?? ''}
                 showSelector={false}
               />

@@ -6,7 +6,6 @@ import { BrandMark } from './Brand';
 
 const ITEMS = [
   { href: '/', label: 'Dashboard', icon: '🏠' },
-  { href: '/tipovat', label: 'Tipovat', icon: '🎯' },
   { href: '/profil', label: 'Můj profil', icon: '👤' },
   { href: '/historie', label: 'Historie', icon: '📚' },
   { href: '/sin-slavy', label: 'Síň slávy', icon: '🏆' },

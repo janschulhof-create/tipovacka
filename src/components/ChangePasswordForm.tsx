@@ -25,7 +25,7 @@ export function ChangePasswordForm() {
       />
       {state.error && <p className="text-sm text-red-400">{state.error}</p>}
       {state.ok && <p className="text-sm text-pitch-light">Heslo změněno ✓</p>}
-      <button type="submit" disabled={pending} className="btn-pitch w-full justify-center disabled:opacity-60">
+      <button type="submit" disabled={pending} className="btn-soft disabled:opacity-60">
         {pending ? 'Měním…' : 'Změnit heslo'}
       </button>
     </form>

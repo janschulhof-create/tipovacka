@@ -66,10 +66,18 @@ button {
 
   /* ---------- primární akce = fotbalové hřiště ---------- */
   .btn-pitch {
-    @apply relative block w-full rounded-2xl bg-pitch py-4 text-center font-display text-lg
-           font-bold uppercase tracking-wider text-terrain-950 shadow-pitch
-           transition active:scale-[0.99] disabled:opacity-50 disabled:shadow-none;
+    @apply relative block w-full rounded-xl bg-pitch py-3 text-center font-display text-base
+           font-bold uppercase tracking-wider text-terrain-950
+           transition active:scale-[0.99] disabled:opacity-50;
     background-image: linear-gradient(180deg, #4ade80, #16a34a);
+    box-shadow: 0 4px 14px -8px rgba(34, 197, 94, 0.55);
+  }
+
+  /* ---------- sekundární / decentní akce ---------- */
+  .btn-soft {
+    @apply block w-full rounded-xl border border-terrain-600 bg-terrain-800/50 py-2.5 text-center
+           text-sm font-semibold text-slate-100/85 transition
+           hover:bg-terrain-700 hover:text-white active:scale-[0.99] disabled:opacity-50;
   }
 
   .chip {
