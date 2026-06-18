@@ -6,6 +6,7 @@ import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
+import { MatchInsight } from './MatchInsight';
 
 type Scores = Record<number, { h: string; a: string }>;
 
@@ -43,6 +44,7 @@ export function RoundPanel({
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [tipping, setTipping] = useState(false);
+  const [insightMatch, setInsightMatch] = useState<number | null>(null);
 
   const isLocked = (m: Match) =>
     m.status !== 'scheduled' || new Date(m.kickoff).getTime() <= Date.now();
@@ -127,6 +129,7 @@ export function RoundPanel({
     .sort((a, b) => b.pts - a.pts);
 
   return (
+    <>
     <div className="panel-flush divide-y divide-terrain-700">
       {/* výběr hráče (jen editovatelné kolo) */}
       {editable && showSelector && (
@@ -178,6 +181,7 @@ export function RoundPanel({
             score={scores[m.id] ?? { h: '', a: '' }}
             onBump={bump}
             onChange={setVal}
+            onInsight={() => setInsightMatch(m.id)}
           />
         ))}
       </ul>
@@ -224,6 +228,8 @@ export function RoundPanel({
         </div>
       )}
     </div>
+    {insightMatch != null && <MatchInsight matchId={insightMatch} onClose={() => setInsightMatch(null)} />}
+    </>
   );
 }
 
@@ -237,6 +243,7 @@ function MatchRow({
   score,
   onBump,
   onChange,
+  onInsight,
 }: {
   m: Match;
   locked: boolean;
@@ -247,6 +254,7 @@ function MatchRow({
   score: { h: string; a: string };
   onBump: (mid: number, side: 'h' | 'a', d: number) => void;
   onChange: (mid: number, side: 'h' | 'a', v: string) => void;
+  onInsight: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const live = m.status === 'live';
@@ -255,13 +263,24 @@ function MatchRow({
   const showSteppers = !locked && canTip && tipping;
 
   const StatusLine = (
-    <div className="mb-2 flex items-center justify-between text-[11px] uppercase tracking-wide text-slate-100/45">
+    <div className="mb-2 flex items-start justify-between text-[11px] uppercase tracking-wide text-slate-100/45">
       <span className="flex items-center gap-1.5">
         {live ? (
           <><span className="live-dot" /> <span className="text-flag">živě{m.minute != null ? ` ${m.minute}\u2032` : ''}</span></>
         ) : done ? 'konec' : locked ? '🔒 uzavřeno' : '🟢 otevřeno'}
       </span>
-      <span>{dt(m.kickoff)}</span>
+      <span className="flex flex-col items-end gap-1.5">
+        <span>{dt(m.kickoff)}</span>
+        {tipping && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onInsight(); }}
+            className="flex items-center gap-1 rounded-md bg-terrain-900 px-2 py-1 text-[10px] font-semibold normal-case text-slate-300/70 transition hover:text-white"
+            aria-label="Vzájemné zápasy a tvoje forma"
+          >
+            📊 H2H
+          </button>
+        )}
+      </span>
     </div>
   );
 
