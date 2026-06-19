@@ -73,18 +73,18 @@ export async function getSeasonRounds(seasonId: number): Promise<number[]> {
   return [...new Set((data ?? []).map((r: { round: number }) => r.round))].sort((a, b) => a - b);
 }
 
-/** Kumulativní data pro graf vývoje pořadí (tvar pro StandingsChart). */
+/** Kumulativní data pro graf vývoje pořadí (po zápasech – seskupení řeší komponenta). */
 export async function getSeasonChartData(
   seasonId: number
-): Promise<{ rounds: { round: number; matches: { tips: Record<string, { pts: number }> }[] }[]; players: string[] }> {
+): Promise<{ matches: { round: number; kickoff: string; pts: Record<string, number> }[]; players: string[] }> {
   const sb = createServerReadClient();
   const { data: ms } = await sb
     .from('matches')
-    .select('id, round')
-    .eq('season_id', seasonId);
-  const matchRows = (ms as { id: number; round: number }[]) ?? [];
-  if (matchRows.length === 0) return { rounds: [], players: [] };
-  const roundOf = new Map(matchRows.map((m) => [m.id, m.round]));
+    .select('id, round, kickoff')
+    .eq('season_id', seasonId)
+    .order('kickoff', { ascending: true });
+  const matchRows = (ms as { id: number; round: number; kickoff: string }[]) ?? [];
+  if (matchRows.length === 0) return { matches: [], players: [] };
 
   const { data: ps } = await sb
     .from('predictions')
@@ -93,33 +93,22 @@ export async function getSeasonChartData(
     .not('points', 'is', null);
 
   type Row = { match_id: number; points: number; players: { name: string } | { name: string }[] | null };
-  const byRound = new Map<number, Record<string, number>>();
+  const ptsByMatch = new Map<number, Record<string, number>>();
   const names = new Set<string>();
   for (const r of (ps as Row[]) ?? []) {
-    const round = roundOf.get(r.match_id);
-    if (round == null) continue;
     const name = Array.isArray(r.players) ? r.players[0]?.name : r.players?.name;
     if (!name) continue;
     names.add(name);
-    const bucket = byRound.get(round) ?? {};
+    const bucket = ptsByMatch.get(r.match_id) ?? {};
     bucket[name] = (bucket[name] ?? 0) + (r.points ?? 0);
-    byRound.set(round, bucket);
+    ptsByMatch.set(r.match_id, bucket);
   }
 
-  const rounds = [...byRound.keys()]
-    .sort((a, b) => a - b)
-    .map((round) => ({
-      round,
-      matches: [
-        {
-          tips: Object.fromEntries(
-            Object.entries(byRound.get(round)!).map(([n, pts]) => [n, { pts }])
-          ),
-        },
-      ],
-    }));
+  const matches = matchRows
+    .filter((m) => ptsByMatch.has(m.id))
+    .map((m) => ({ round: m.round, kickoff: m.kickoff, pts: ptsByMatch.get(m.id)! }));
 
-  return { rounds, players: [...names] };
+  return { matches, players: [...names] };
 }
 
 export async function getRoundMatches(seasonId: number, round: number): Promise<Match[]> {

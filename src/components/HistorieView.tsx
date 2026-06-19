@@ -203,7 +203,19 @@ export function HistorieView({ data }: { data: Historie }) {
       {/* Vývoj bodů po kolech */}
       <section className="space-y-2">
         <h2 className="eyebrow"><span className="flag-chip" /> Vývoj bodů po kolech</h2>
-        <StandingsChart rounds={data.rounds} players={data.players} />
+        <StandingsChart
+          matches={data.rounds.flatMap((r) =>
+            r.matches.map((m) => ({
+              round: r.round,
+              pts: Object.fromEntries(
+                Object.entries(m.tips)
+                  .filter(([, t]) => t.pts != null)
+                  .map(([name, t]) => [name, t.pts as number])
+              ),
+            }))
+          )}
+          players={data.players}
+        />
       </section>
 
       {/* Vývoj pořadí po kolech – hned pod body, stejné barvy */}

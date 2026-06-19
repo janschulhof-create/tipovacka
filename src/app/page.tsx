@@ -113,12 +113,12 @@ export default async function Home({
             <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
           </section>
 
-          {chart.rounds.length > 0 && (
+          {chart.matches.length > 0 && (
             <section className="space-y-3">
               <h2 className="eyebrow">
                 <span className="flag-chip" /> Vývoj bodů
               </h2>
-              <StandingsChart rounds={chart.rounds} players={chart.players} />
+              <StandingsChart matches={chart.matches} players={chart.players} />
             </section>
           )}
 
