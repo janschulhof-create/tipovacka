@@ -103,7 +103,7 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
                     <div className="flex min-w-0 flex-1 items-center justify-center gap-1.5 text-[12.5px] text-white">
                       <span className="min-w-0 flex-1 truncate text-right">{x.home}</span>
                       <Flag team={x.home} />
-                      <b className="shrink-0 px-0.5 font-display font-bold tabular-nums">{x.hs}–{x.as}</b>
+                      <b className="shrink-0 px-0.5 font-display font-bold tabular-nums">{x.hs}:{x.as}</b>
                       <Flag team={x.away} />
                       <span className="min-w-0 flex-1 truncate">{x.away}</span>
                     </div>
@@ -125,7 +125,7 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
                       <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[12.5px] text-white">
                         <span className="min-w-0 flex-1 truncate text-right">{f.home}</span>
                         <Flag team={f.home} />
-                        <b className="shrink-0 px-0.5 font-display font-bold tabular-nums">{f.hs}–{f.as}</b>
+                        <b className="shrink-0 px-0.5 font-display font-bold tabular-nums">{f.hs}:{f.as}</b>
                         <Flag team={f.away} />
                         <span className="min-w-0 flex-1 truncate">{f.away}</span>
                       </div>
