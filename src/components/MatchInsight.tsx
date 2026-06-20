@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import { pointsBadgeClass } from '@/lib/points';
 import { Flag } from './Flag';
 
@@ -151,7 +152,7 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
   const tabCls = (active: boolean) =>
     `flex-1 rounded-md px-2 py-1.5 text-center transition ${active ? 'bg-terrain-700 font-semibold text-white' : 'text-slate-300/60 hover:text-slate-200'}`;
 
-  return (
+  const modal = (
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/55 sm:items-center" onClick={onClose}>
       <div
         className="max-h-[88vh] w-full overflow-auto rounded-t-2xl border border-terrain-700 bg-terrain-900 px-4 pt-3 sm:max-w-md sm:rounded-2xl"
@@ -232,4 +233,6 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modal, document.body) : null;
 }
