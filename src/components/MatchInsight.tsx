@@ -191,8 +191,8 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
         {data && (
           <div className="mt-4">
             <div className="mb-3 flex gap-1 rounded-lg border border-terrain-700 bg-terrain-900/50 p-1 text-[12px]">
-              <button onClick={() => setTab('h2h')} className={tabCls(tab === 'h2h')}>Vzájemné{data.h2h.length ? ` (${data.h2h.length})` : ''}</button>
-              <button onClick={() => setTab('form')} className={tabCls(tab === 'form')}>Tvoje forma</button>
+              <button onClick={() => setTab('h2h')} className={tabCls(tab === 'h2h')}>⚽️ Vzájemné</button>
+              <button onClick={() => setTab('form')} className={tabCls(tab === 'form')}>🎯 Tvoje forma</button>
             </div>
 
             {tab === 'h2h' ? (
