@@ -6,6 +6,7 @@ import { SideRail, BottomNav } from '@/components/Nav';
 import { BrandMark } from '@/components/Brand';
 import { AuthStatus } from '@/components/AuthStatus';
 import { getSessionPlayer } from '@/lib/auth';
+import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
 
 const inter = Inter({ subsets: ['latin', 'latin-ext'], variable: '--font-sans', display: 'swap' });
 const oswald = Oswald({ subsets: ['latin', 'latin-ext'], variable: '--font-display', display: 'swap' });
@@ -13,6 +14,15 @@ const oswald = Oswald({ subsets: ['latin', 'latin-ext'], variable: '--font-displ
 export const metadata: Metadata = {
   title: 'Tipovačka',
   description: 'Soukromá fotbalová tipovačka',
+  applicationName: 'Tipovačka',
+  appleWebApp: { capable: true, statusBarStyle: 'black', title: 'Tipovačka' },
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: [{ url: '/icons/apple-touch-icon.png', sizes: '180x180' }],
+  },
 };
 
 export const viewport: Viewport = {
@@ -27,6 +37,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="cs" className={`${inter.variable} ${oswald.variable}`}>
       <body className="min-h-dvh font-sans antialiased">
+        <ServiceWorkerRegister />
         <SideRail />
 
         {/* přihlašovací stav – desktop (vpravo nahoře) */}
