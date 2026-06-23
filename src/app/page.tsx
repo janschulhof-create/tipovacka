@@ -18,7 +18,6 @@ import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
-import { StoppageStats } from '@/components/StoppageStats';
 import { StatsCards } from '@/components/StatsCards';
 import { SeasonStats } from '@/components/SeasonStats';
 import { LiveBanner } from '@/components/LiveBanner';
@@ -125,21 +124,12 @@ export default async function Home({
             </section>
           )}
 
-          {stoppage.length > 0 && (
-            <section className="space-y-3">
-              <h2 className="eyebrow">
-                <span className="flag-chip" /> Pán nastavení
-              </h2>
-              <StoppageStats rows={stoppage} />
-            </section>
-          )}
-
           <section className="space-y-4">
             <h2 className="eyebrow">
               <span className="flag-chip" /> Statistiky sezóny
             </h2>
             <StatsCards standings={standings} goals={goals} misses={misses} />
-            {hasResults && <SeasonStats rounds={tipRounds} players={activeNames} />}
+            {hasResults && <SeasonStats rounds={tipRounds} players={activeNames} stoppage={stoppage} />}
           </section>
         </aside>
       </div>
