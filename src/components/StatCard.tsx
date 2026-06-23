@@ -5,7 +5,7 @@ import type { RankRow } from '@/lib/seasonStats';
 
 /** Zkrátí hodnotu na úvodní metriku (např. "63× jen vítěz (4 b)" → "63×"). */
 function shortVal(val: string): string {
-  const m = val.match(/^\s*(Ø\s*[\d.]+(?:\s*[a-z]+)?|\d+\s*[b×x]|\d+:\d+|\d+)/i);
+  const m = val.match(/^\s*(Ø\s*[\d.]+(?:\s*[a-z]+)?|\d+\s*[b×x]|\d+:\d+|\d+(?:\.\d+)?)/i);
   return m ? m[0].trim() : val;
 }
 
@@ -28,13 +28,12 @@ export function StatCard({
   const topNames = top ? rows.filter((r) => r.val === top.val).map((r) => r.name).join(', ') : '—';
   const expandable = rows.length > 1;
 
-  const nums = scale ? rows.map((r) => r.n).filter((x): x is number => typeof x === 'number') : [];
-  const nMin = nums.length ? Math.min(...nums) : 0;
-  const nMax = nums.length ? Math.max(...nums) : 0;
+  const best = scale ? rows[0]?.n : undefined;
+  const worst = scale ? rows[rows.length - 1]?.n : undefined;
   const scaleColor = (n?: number): string | undefined => {
-    if (!scale || typeof n !== 'number') return undefined;
-    if (nMax === nMin) return 'hsl(140, 64%, 56%)';
-    const t = (n - nMin) / (nMax - nMin); // 0 = min (červená), 1 = max (zelená)
+    if (!scale || typeof n !== 'number' || typeof best !== 'number' || typeof worst !== 'number') return undefined;
+    if (best === worst) return 'hsl(140, 64%, 56%)';
+    const t = Math.max(0, Math.min(1, (n - worst) / (best - worst))); // 1 = 1. místo (zelená), 0 = poslední (červená)
     return `hsl(${Math.round(t * 140)}, 70%, 56%)`;
   };
 
@@ -83,7 +82,7 @@ export function StatCard({
                 className={`shrink-0 tabular-nums ${scale ? '' : i === 0 ? accent : 'text-slate-100/55'}`}
                 style={scale ? { color: scaleColor(r.n) } : undefined}
               >
-                {scale ? r.val : shortVal(r.val)}
+                {shortVal(r.val)}
               </span>
             </div>
           ))}

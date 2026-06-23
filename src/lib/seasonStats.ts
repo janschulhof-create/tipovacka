@@ -98,15 +98,15 @@ export function funFacts(rounds: SRound[], players: string[]) {
     }
   }
 
-  const tipRows: RankRow[] = [...tipFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ name: k, val: `${v}× vsazeno` }));
-  const teamRows: RankRow[] = [...team.entries()].filter(([, v]) => v.cnt >= 3).map(([t, v]) => ({ t, avg: v.sum / v.cnt })).sort((a, b) => b.avg - a.avg).map((x) => ({ name: x.t, val: `Ø ${x.avg.toFixed(1)} b/tip` }));
-  const unluckyRows: RankRow[] = Object.entries(unlucky).sort((a, b) => b[1] - a[1]).map(([n, v]) => ({ name: n, val: `${v}× gól od desítky` }));
+  const tipRows: RankRow[] = [...tipFreq.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ name: k, val: `${v}× vsazeno`, n: v }));
+  const teamRows: RankRow[] = [...team.entries()].filter(([, v]) => v.cnt >= 3).map(([t, v]) => ({ t, avg: v.sum / v.cnt })).sort((a, b) => b.avg - a.avg).map((x) => ({ name: x.t, val: `Ø ${x.avg.toFixed(1)} b/tip`, n: x.avg }));
+  const unluckyRows: RankRow[] = Object.entries(unlucky).sort((a, b) => b[1] - a[1]).map(([n, v]) => ({ name: n, val: `${v}× gól od desítky`, n: v }));
   const matchSorted = [...matchAgg].sort((a, b) => a.avg - b.avg);
-  const surpriseRows: RankRow[] = matchSorted.slice(0, 6).map((m) => ({ name: `${m.label} (${m.result})`, val: `Ø ${m.avg.toFixed(1)} b` }));
-  const bankerRows: RankRow[] = [...matchSorted].reverse().slice(0, 6).map((m) => ({ name: `${m.label} (${m.result})`, val: `Ø ${m.avg.toFixed(1)} b` }));
-  const readableRows: RankRow[] = [...readable.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ name: k, val: `${v}× za 10 b` }));
-  const unreadableRows: RankRow[] = [...unreadable.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ name: k, val: `${v}× za 0 b` }));
-  const professorRows: RankRow[] = Object.entries(professor).sort((a, b) => b[1] - a[1]).map(([n, v]) => ({ name: n, val: `${v}× jen vítěz (4 b)` }));
+  const surpriseRows: RankRow[] = matchSorted.slice(0, 6).map((m) => ({ name: `${m.label} (${m.result})`, val: `Ø ${m.avg.toFixed(1)} b`, n: m.avg }));
+  const bankerRows: RankRow[] = [...matchSorted].reverse().slice(0, 6).map((m) => ({ name: `${m.label} (${m.result})`, val: `Ø ${m.avg.toFixed(1)} b`, n: m.avg }));
+  const readableRows: RankRow[] = [...readable.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ name: k, val: `${v}× za 10 b`, n: v }));
+  const unreadableRows: RankRow[] = [...unreadable.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([k, v]) => ({ name: k, val: `${v}× za 0 b`, n: v }));
+  const professorRows: RankRow[] = Object.entries(professor).sort((a, b) => b[1] - a[1]).map(([n, v]) => ({ name: n, val: `${v}× jen vítěz (4 b)`, n: v }));
 
   return { tipRows, teamRows, unluckyRows, surpriseRows, bankerRows, readableRows, unreadableRows, professorRows };
 }
