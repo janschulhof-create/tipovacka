@@ -22,15 +22,15 @@ export function SeasonStats({
     [...players].sort((a, b) => (dir === 'max' ? pick(b) - pick(a) : pick(a) - pick(b))).map((n) => ({ name: n, val: fmt(n) }));
 
   const fmtBal = (b: number) => (b > 0 ? `+${b} b` : b < 0 ? `\u2212${Math.abs(b)} b` : '0 b');
-  const stoppageRows: RankRow[] = stoppage.map((r) => ({ name: r.name, val: fmtBal(r.balance) }));
+  const stoppageRows: RankRow[] = stoppage.map((r) => ({ name: r.name, val: fmtBal(r.balance), n: r.balance }));
 
   // Pořadí karet = logické dvojice (po řádcích, 2 sloupce).
-  const cards: { icon: string; label: string; accent: string; rows: RankRow[] }[] = [
+  const cards: { icon: string; label: string; accent: string; rows: RankRow[]; scale?: boolean }[] = [
     { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rank((n) => pp[n].roundWins, 'max', (n) => `${pp[n].roundWins}×`) },
     { icon: '💥', label: 'Rekord za 1 kolo', accent: 'text-flag', rows: rank((n) => pp[n].bestRound, 'max', (n) => `${pp[n].bestRound} b · ${pp[n].bestRoundNo}. kolo`) },
     { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
     { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
-    { icon: '⏱️', label: 'Pán nastavení', accent: 'text-green-400', rows: stoppageRows },
+    { icon: '⏱️', label: 'Pán nastavení', accent: 'text-green-400', scale: true, rows: stoppageRows },
     { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
     { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
     { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },

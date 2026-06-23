@@ -9,11 +9,34 @@ function shortVal(val: string): string {
   return m ? m[0].trim() : val;
 }
 
-export function StatCard({ icon, label, rows, accent }: { icon: string; label: string; rows: RankRow[]; accent: string }) {
+export function StatCard({
+  icon,
+  label,
+  rows,
+  accent,
+  scale = false,
+}: {
+  icon: string;
+  label: string;
+  rows: RankRow[];
+  accent: string;
+  /** Obarví hodnotu každého řádku škálou min→max (červená→zelená) podle r.n. */
+  scale?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const top = rows[0];
   const topNames = top ? rows.filter((r) => r.val === top.val).map((r) => r.name).join(', ') : '—';
   const expandable = rows.length > 1;
+
+  const nums = scale ? rows.map((r) => r.n).filter((x): x is number => typeof x === 'number') : [];
+  const nMin = nums.length ? Math.min(...nums) : 0;
+  const nMax = nums.length ? Math.max(...nums) : 0;
+  const scaleColor = (n?: number): string | undefined => {
+    if (!scale || typeof n !== 'number') return undefined;
+    if (nMax === nMin) return 'hsl(140, 64%, 56%)';
+    const t = (n - nMin) / (nMax - nMin); // 0 = min (červená), 1 = max (zelená)
+    return `hsl(${Math.round(t * 140)}, 70%, 56%)`;
+  };
 
   return (
     <div className="panel p-3.5">
@@ -29,7 +52,12 @@ export function StatCard({ icon, label, rows, accent }: { icon: string; label: s
             <span className="leading-tight">{label}</span>
           </div>
           <div className="mt-1.5 truncate font-display text-base font-semibold leading-tight text-white">{topNames}</div>
-          <div className={`truncate text-xs font-medium ${accent}`}>{top?.val ?? '—'}</div>
+          <div
+            className={`truncate text-xs font-medium ${scale ? '' : accent}`}
+            style={scale ? { color: scaleColor(top?.n) } : undefined}
+          >
+            {top?.val ?? '—'}
+          </div>
         </div>
         {expandable && (
           <svg
@@ -51,7 +79,12 @@ export function StatCard({ icon, label, rows, accent }: { icon: string; label: s
                 <span className="w-3 shrink-0 text-right tabular-nums text-slate-300/40">{i + 1}</span>
                 <span className="truncate text-slate-50/90">{r.name}</span>
               </span>
-              <span className={`shrink-0 tabular-nums ${i === 0 ? accent : 'text-slate-100/55'}`}>{shortVal(r.val)}</span>
+              <span
+                className={`shrink-0 tabular-nums ${scale ? '' : i === 0 ? accent : 'text-slate-100/55'}`}
+                style={scale ? { color: scaleColor(r.n) } : undefined}
+              >
+                {scale ? r.val : shortVal(r.val)}
+              </span>
             </div>
           ))}
         </div>

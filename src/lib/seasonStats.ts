@@ -4,7 +4,7 @@
 export type Tip = { h: number | null; a: number | null; pts: number | null };
 export type SMatch = { home: string; away: string; hs: number | null; as: number | null; tips: Record<string, Tip> };
 export type SRound = { round: number; matches: SMatch[] };
-export type RankRow = { name: string; val: string };
+export type RankRow = { name: string; val: string; n?: number };
 
 export type PerPlayer = {
   points: number; count: number; tens: number; zeros: number; fours: number;
