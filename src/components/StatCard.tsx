@@ -15,6 +15,7 @@ export function StatCard({
   rows,
   accent,
   scale = false,
+  scaleInvert = false,
 }: {
   icon: string;
   label: string;
@@ -22,6 +23,8 @@ export function StatCard({
   accent: string;
   /** Obarví hodnotu každého řádku škálou min→max (červená→zelená) podle r.n. */
   scale?: boolean;
+  /** Obrátí škálu – 1. místo červené, poslední zelené (pro „špatná" prvenství). */
+  scaleInvert?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const top = rows[0];
@@ -33,7 +36,8 @@ export function StatCard({
   const scaleColor = (n?: number): string | undefined => {
     if (!scale || typeof n !== 'number' || typeof best !== 'number' || typeof worst !== 'number') return undefined;
     if (best === worst) return 'hsl(140, 64%, 56%)';
-    const t = Math.max(0, Math.min(1, (n - worst) / (best - worst))); // 1 = 1. místo (zelená), 0 = poslední (červená)
+    let t = Math.max(0, Math.min(1, (n - worst) / (best - worst))); // 1 = 1. místo, 0 = poslední
+    if (scaleInvert) t = 1 - t; // špatné prvenství: 1. místo červené
     return `hsl(${Math.round(t * 140)}, 70%, 56%)`;
   };
 

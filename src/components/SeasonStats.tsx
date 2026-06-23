@@ -27,18 +27,18 @@ export function SeasonStats({
   const stoppageRows: RankRow[] = stoppage.map((r) => ({ name: r.name, val: fmtBal(r.balance), n: r.balance }));
 
   // Pořadí karet = logické dvojice (po řádcích, 2 sloupce). Všechny mají škálu min→max.
-  const cards: { icon: string; label: string; accent: string; rows: RankRow[]; scale?: boolean }[] = [
+  const cards: { icon: string; label: string; accent: string; rows: RankRow[]; scale?: boolean; scaleInvert?: boolean }[] = [
     { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', scale: true, rows: rank((n) => pp[n].roundWins, 'max', (n) => `${pp[n].roundWins}×`) },
     { icon: '💥', label: 'Rekord za 1 kolo', accent: 'text-flag', scale: true, rows: rank((n) => pp[n].bestRound, 'max', (n) => `${pp[n].bestRound} b · ${pp[n].bestRoundNo}. kolo`) },
     { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', scale: true, rows: ff.professorRows },
-    { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', scale: true, rows: ff.unluckyRows },
+    { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', scale: true, scaleInvert: true, rows: ff.unluckyRows },
     { icon: '⏱️', label: 'Pán nastavení', accent: 'text-green-400', scale: true, rows: stoppageRows },
     { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', scale: true, rows: ff.tipRows },
     { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', scale: true, rows: ff.readableRows },
-    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', scale: true, rows: ff.unreadableRows },
+    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', scale: true, scaleInvert: true, rows: ff.unreadableRows },
     { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light', scale: true, rows: ff.teamRows },
-    { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', scale: true, rows: [...ff.teamRows].reverse() },
-    { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', scale: true, rows: ff.surpriseRows },
+    { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', scale: true, scaleInvert: true, rows: [...ff.teamRows].reverse() },
+    { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', scale: true, scaleInvert: true, rows: ff.surpriseRows },
     { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', scale: true, rows: ff.bankerRows },
   ].filter((c) => c.rows.length > 0);
 

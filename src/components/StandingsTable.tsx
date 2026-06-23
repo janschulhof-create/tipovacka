@@ -20,6 +20,16 @@ export function StandingsTable({
   const liveData = rows.map((r) => ({ r, inc: liveInc[r.name] ?? 0, total: r.points + (liveInc[r.name] ?? 0) }));
   const sorted = showLive ? [...liveData].sort((a, b) => b.total - a.total) : liveData;
 
+  // Barevná škála bodů: nejvíc = zelená, nejmíň = červená (stejná logika jako karty statistik).
+  const totalsArr = sorted.map((d) => (showLive ? d.total : d.r.points));
+  const maxPts = totalsArr.length ? Math.max(...totalsArr) : 0;
+  const minPts = totalsArr.length ? Math.min(...totalsArr) : 0;
+  const ptsColor = (v: number): string | undefined => {
+    if (totalsArr.length < 2 || maxPts === minPts) return undefined;
+    const t = Math.max(0, Math.min(1, (v - minPts) / (maxPts - minPts)));
+    return `hsl(${Math.round(t * 140)}, 70%, 56%)`;
+  };
+
   return (
     <div className="panel-flush">
       {/* hlavička: nadpis + přepínač Živě na jednom řádku */}
@@ -98,7 +108,7 @@ export function StandingsTable({
                   )}
 
                   <div className="w-12 shrink-0 text-right">
-                    <div className="font-display text-xl font-bold tabular-nums leading-none text-pitch-light">{total}</div>
+                    <div className="font-display text-xl font-bold tabular-nums leading-none text-pitch-light" style={{ color: ptsColor(total) }}>{total}</div>
                     <div className="text-[10px] uppercase tracking-wider text-slate-300/40">bodů</div>
                   </div>
                   <span className="shrink-0 pl-0.5 text-slate-300/30" aria-hidden>›</span>
