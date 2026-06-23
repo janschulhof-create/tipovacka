@@ -57,14 +57,18 @@ export function BottomNav() {
   const pathname = usePathname();
   return (
     <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-terrain-700 bg-terrain-900/95 backdrop-blur lg:hidden">
-      <div className="mx-auto flex max-w-md items-stretch justify-around px-1 py-1.5">
+      <div
+        className="mx-auto flex max-w-md items-stretch justify-around px-1 pt-1"
+        style={{ paddingBottom: 'calc(env(safe-area-inset-bottom) + 0.25rem)' }}
+      >
         {ITEMS.map((it) => {
           const active = isActive(pathname, it.href);
           return (
             <Link
               key={it.href}
               href={it.href}
-              className={`flex flex-1 flex-col items-center gap-0.5 rounded-lg py-1.5 text-[10px] font-medium transition ${
+              aria-current={active ? 'page' : undefined}
+              className={`flex min-h-[52px] flex-1 touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[10px] font-medium transition active:bg-terrain-800/70 ${
                 active ? 'text-white' : 'text-slate-100/60'
               }`}
             >

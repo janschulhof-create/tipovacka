@@ -407,3 +407,51 @@ export async function getH2H(seasonId: number, aId: number, bId: number): Promis
   });
   return { a: side(pa, aWins), b: side(pb, bWins), ties, commonMatches: common };
 }
+
+/** „Pán nastavení": bilance bodů ze gólů v nastavení 2. poločasu (finále vs. stav v 90:00). */
+export async function getStoppageStats(
+  seasonId: number
+): Promise<{ name: string; balance: number; affected: number }[]> {
+  const sb = createServerReadClient();
+  const { data: ms } = await sb
+    .from('matches')
+    .select('id, home_score, away_score, reg_home, reg_away')
+    .eq('season_id', seasonId)
+    .eq('status', 'finished')
+    .not('home_score', 'is', null)
+    .not('reg_home', 'is', null);
+
+  type M = { id: number; home_score: number; away_score: number; reg_home: number; reg_away: number };
+  const relevant = ((ms as M[]) ?? []).filter(
+    (m) => m.reg_home !== m.home_score || m.reg_away !== m.away_score
+  );
+  if (relevant.length === 0) return [];
+
+  const ids = relevant.map((m) => m.id);
+  const byId = new Map(relevant.map((m) => [m.id, m]));
+
+  const { data: ps } = await sb
+    .from('predictions')
+    .select('match_id, predicted_home, predicted_away, players(name)')
+    .in('match_id', ids);
+
+  type Row = { match_id: number; predicted_home: number; predicted_away: number; players: { name: string } | { name: string }[] | null };
+  const agg = new Map<string, { balance: number; affected: number }>();
+  for (const r of (ps as Row[]) ?? []) {
+    const m = byId.get(r.match_id);
+    if (!m) continue;
+    const name = Array.isArray(r.players) ? r.players[0]?.name : r.players?.name;
+    if (!name) continue;
+    const after = calculatePoints(m.home_score, m.away_score, r.predicted_home, r.predicted_away);
+    const before = calculatePoints(m.reg_home, m.reg_away, r.predicted_home, r.predicted_away);
+    const swing = after - before;
+    const cur = agg.get(name) ?? { balance: 0, affected: 0 };
+    cur.balance += swing;
+    if (swing !== 0) cur.affected += 1;
+    agg.set(name, cur);
+  }
+
+  return [...agg.entries()]
+    .map(([name, v]) => ({ name, ...v }))
+    .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
+}

@@ -9,6 +9,7 @@ import {
   getPlayers,
   getRoundPredictions,
   getSeasonChartData,
+  getStoppageStats,
   getSeasonTipRounds,
   getLiveMatches,
   getLivePointsByPlayer,
@@ -17,6 +18,7 @@ import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
+import { StoppageStats } from '@/components/StoppageStats';
 import { StatsCards } from '@/components/StatsCards';
 import { SeasonStats } from '@/components/SeasonStats';
 import { LiveBanner } from '@/components/LiveBanner';
@@ -43,13 +45,14 @@ export default async function Home({
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
   const selectedRound =
     !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : currentRound;
-  const [matches, standings, goals, misses, players, chart] = await Promise.all([
+  const [matches, standings, goals, misses, players, chart, stoppage] = await Promise.all([
     selectedRound ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
     getStandings(seasonId),
     getGoalStats(seasonId),
     getMisses(seasonId),
     getPlayers(),
     getSeasonChartData(seasonId),
+    getStoppageStats(seasonId),
   ]);
 
   const tipRounds = await getSeasonTipRounds(seasonId);
@@ -119,6 +122,15 @@ export default async function Home({
                 <span className="flag-chip" /> Vývoj bodů
               </h2>
               <StandingsChart matches={chart.matches} players={chart.players} />
+            </section>
+          )}
+
+          {stoppage.length > 0 && (
+            <section className="space-y-3">
+              <h2 className="eyebrow">
+                <span className="flag-chip" /> Pán nastavení
+              </h2>
+              <StoppageStats rows={stoppage} />
             </section>
           )}
 
