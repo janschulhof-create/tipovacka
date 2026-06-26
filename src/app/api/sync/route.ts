@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-import { fetchSeasonFixtures, type NormalizedMatch } from '@/lib/apiFootball';
+import { fetchSeasonFixtures, fetchMatchDetailReg, type NormalizedMatch } from '@/lib/apiFootball';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -119,5 +119,53 @@ export async function GET(req: NextRequest) {
     inserted = count ?? inserts.length;
   }
 
-  return NextResponse.json({ updated, inserted, fetched: fixtures.length, competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC', at: new Date().toISOString() });
+  // ── „Pán nastavení": dopočítej skóre v 90:00 u odehraných, ještě neověřených zápasů.
+  // Z detailu zápasu (góly + nastavení). Omezeno na pár zápasů na běh kvůli rate limitu
+  // (free tier 10 req/min); zbytek se dobere v dalších bězích.
+  let regSet = 0;
+  let regNoStoppage = 0;
+  let regNoData = 0;
+  try {
+    const { data: toCheck } = await supabase
+      .from('matches')
+      .select('id, external_api_id')
+      .eq('season_id', season.id)
+      .eq('status', 'finished')
+      .eq('reg_checked', false)
+      .not('external_api_id', 'is', null)
+      .limit(6);
+    for (const m of (toCheck as { id: number; external_api_id: number }[]) ?? []) {
+      try {
+        const r = await fetchMatchDetailReg(m.external_api_id);
+        if (!r.available) {
+          regNoData++;
+          await supabase.from('matches').update({ reg_checked: true }).eq('id', m.id);
+          continue;
+        }
+        if (r.hadStoppage) {
+          await supabase
+            .from('matches')
+            .update({ reg_home: r.regHome, reg_away: r.regAway, reg_checked: true })
+            .eq('id', m.id);
+          regSet++;
+        } else {
+          await supabase.from('matches').update({ reg_checked: true }).eq('id', m.id);
+          regNoStoppage++;
+        }
+      } catch {
+        /* přechodná chyba detailu – necháme reg_checked=false, zkusí se příště */
+      }
+    }
+  } catch {
+    /* sloupec reg_checked nemusí existovat (chybí migrace) – feature jen přeskočíme */
+  }
+
+  return NextResponse.json({
+    updated,
+    inserted,
+    fetched: fixtures.length,
+    reg: { set: regSet, noStoppage: regNoStoppage, noData: regNoData },
+    competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC',
+    at: new Date().toISOString(),
+  });
 }

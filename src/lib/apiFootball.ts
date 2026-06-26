@@ -122,3 +122,64 @@ export async function fetchSeasonFixtures(): Promise<NormalizedMatch[]> {
     minute: null,
   }));
 }
+
+// ── Detail zápasu: skóre v 90:00 pro „Pán nastavení" ────────────────────────────
+interface FdGoalEvent {
+  minute: number | null;
+  injuryTime: number | null;
+  score: { home: number | null; away: number | null } | null;
+}
+interface FdMatchDetail {
+  status: string;
+  score?: { fullTime?: { home: number | null; away: number | null } };
+  goals?: FdGoalEvent[] | null;
+}
+
+async function apiGetRaw<T>(path: string): Promise<T> {
+  const token = process.env.FOOTBALL_DATA_TOKEN;
+  if (!token) throw new Error('Chybí ENV FOOTBALL_DATA_TOKEN.');
+  const res = await fetch(`${BASE}${path}`, { headers: { 'X-Auth-Token': token }, cache: 'no-store' });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const msg = (json as { message?: string }).message ?? `HTTP ${res.status}`;
+    throw new Error(`football-data.org ${msg}`);
+  }
+  return json as T;
+}
+
+/**
+ * Z detailu zápasu spočítá skóre v 90:00 (před góly v nastavení 2. poločasu).
+ * Gól v nastavení 2. poločasu = minute === 90 && injuryTime > 0 (tj. 90'+X).
+ * `45'+X` i řádné `90'` (injuryTime null) se počítají do skóre v 90:00.
+ * available=false, pokud feed góly nevrací (např. free tier je u zápasu skrývá).
+ */
+export async function fetchMatchDetailReg(externalId: number): Promise<{
+  available: boolean;
+  hadStoppage: boolean;
+  regHome: number | null;
+  regAway: number | null;
+}> {
+  const d = await apiGetRaw<FdMatchDetail>(`/matches/${externalId}`);
+  const fh = d.score?.fullTime?.home ?? 0;
+  const fa = d.score?.fullTime?.away ?? 0;
+  const goals = Array.isArray(d.goals) ? d.goals : null;
+  if (!goals || (fh + fa > 0 && goals.length === 0)) {
+    return { available: false, hadStoppage: false, regHome: null, regAway: null };
+  }
+  let regH = 0;
+  let regA = 0;
+  let hadStoppage = false;
+  for (const g of goals) {
+    const isStoppage2H = (g.minute ?? 0) === 90 && (g.injuryTime ?? 0) > 0;
+    if (isStoppage2H) {
+      hadStoppage = true;
+      continue;
+    }
+    if (typeof g.score?.home === 'number' && typeof g.score?.away === 'number') {
+      regH = g.score.home;
+      regA = g.score.away;
+    }
+  }
+  if (!hadStoppage) return { available: true, hadStoppage: false, regHome: null, regAway: null };
+  return { available: true, hadStoppage: true, regHome: regH, regAway: regA };
+}
