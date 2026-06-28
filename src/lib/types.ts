@@ -23,6 +23,11 @@ export interface Match {
   away_score: number | null;
   status: MatchStatus;
   minute?: number | null;
+  duration?: 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT';
+  extra_home?: number | null;
+  extra_away?: number | null;
+  pen_home?: number | null;
+  pen_away?: number | null;
 }
 
 export interface Prediction {

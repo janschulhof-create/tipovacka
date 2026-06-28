@@ -103,6 +103,11 @@ export async function GET(req: NextRequest) {
         away_score: f.away_score,
         status: f.status,
         minute: f.minute,
+        duration: f.duration,
+        extra_home: f.extra_home,
+        extra_away: f.extra_away,
+        pen_home: f.pen_home,
+        pen_away: f.pen_away,
       };
       // Play-off placeholdery: když má zápas v DB prázdné týmy a los je už znám,
       // doplníme týmy + kolo. Správně naseedované skupiny zůstávají netknuté.

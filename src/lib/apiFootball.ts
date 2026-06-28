@@ -54,7 +54,13 @@ interface FdMatch {
   stage: string;
   homeTeam: { name: string | null };
   awayTeam: { name: string | null };
-  score: { fullTime: { home: number | null; away: number | null } };
+  score: {
+    duration?: string;
+    fullTime: { home: number | null; away: number | null };
+    regularTime?: { home: number | null; away: number | null } | null;
+    extraTime?: { home: number | null; away: number | null } | null;
+    penalties?: { home: number | null; away: number | null } | null;
+  };
 }
 
 export interface NormalizedMatch {
@@ -67,6 +73,11 @@ export interface NormalizedMatch {
   away_score: number | null;
   status: 'scheduled' | 'live' | 'finished' | 'postponed' | 'cancelled';
   minute: number | null;
+  duration: 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT';
+  extra_home: number | null;
+  extra_away: number | null;
+  pen_home: number | null;
+  pen_away: number | null;
 }
 
 function mapStatus(s: string): NormalizedMatch['status'] {
@@ -110,17 +121,60 @@ async function apiGet(path: string): Promise<{ matches: FdMatch[] }> {
 export async function fetchSeasonFixtures(): Promise<NormalizedMatch[]> {
   const comp = process.env.FOOTBALL_DATA_COMPETITION ?? 'WC';
   const data = await apiGet(`/competitions/${comp}/matches`);
-  return (data.matches ?? []).map((m) => ({
-    external_api_id: m.id,
-    round: parseRound(m.stage, m.matchday),
-    kickoff: m.utcDate,
-    home_team: toCz(m.homeTeam?.name ?? ''),
-    away_team: toCz(m.awayTeam?.name ?? ''),
-    home_score: m.score?.fullTime?.home ?? null,
-    away_score: m.score?.fullTime?.away ?? null,
-    status: mapStatus(m.status),
-    minute: null,
-  }));
+  return (data.matches ?? []).map((m) => {
+    const s = m.score ?? ({} as FdMatch['score']);
+    const ft = s.fullTime ?? { home: null, away: null };
+    const rt = s.regularTime ?? null;
+    const et = s.extraTime ?? null;
+    const pen = s.penalties ?? null;
+    const duration: NormalizedMatch['duration'] =
+      s.duration === 'EXTRA_TIME' || s.duration === 'PENALTY_SHOOTOUT' ? s.duration : 'REGULAR';
+
+    // Body se počítají podle stavu po 90 minutách:
+    //  - regularTime (u prodloužení/penalt), jinak fullTime (skupiny / rozhodnuto v 90').
+    const home90 = rt?.home ?? ft.home ?? null;
+    const away90 = rt?.away ?? ft.away ?? null;
+
+    // Skutečný výsledek (prodloužení/penalty) – jen pro zobrazení, bez vlivu na body.
+    let extra_home: number | null = null;
+    let extra_away: number | null = null;
+    let pen_home: number | null = null;
+    let pen_away: number | null = null;
+    if (duration === 'EXTRA_TIME') {
+      extra_home = ft.home ?? null; // fullTime = regularTime + extraTime
+      extra_away = ft.away ?? null;
+    } else if (duration === 'PENALTY_SHOOTOUT') {
+      pen_home = pen?.home ?? null;
+      pen_away = pen?.away ?? null;
+      if (rt && et) {
+        extra_home = (rt.home ?? 0) + (et.home ?? 0);
+        extra_away = (rt.away ?? 0) + (et.away ?? 0);
+      } else if (ft.home != null && pen_home != null) {
+        extra_home = ft.home - pen_home; // fullTime sčítá i penalty
+        extra_away = (ft.away ?? 0) - (pen_away ?? 0);
+      } else {
+        extra_home = ft.home ?? null;
+        extra_away = ft.away ?? null;
+      }
+    }
+
+    return {
+      external_api_id: m.id,
+      round: parseRound(m.stage, m.matchday),
+      kickoff: m.utcDate,
+      home_team: toCz(m.homeTeam?.name ?? ''),
+      away_team: toCz(m.awayTeam?.name ?? ''),
+      home_score: home90,
+      away_score: away90,
+      status: mapStatus(m.status),
+      minute: null,
+      duration,
+      extra_home,
+      extra_away,
+      pen_home,
+      pen_away,
+    };
+  });
 }
 
 // ── Detail zápasu: skóre v 90:00 pro „Pán nastavení" ────────────────────────────

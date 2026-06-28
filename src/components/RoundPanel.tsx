@@ -318,6 +318,14 @@ function MatchRow({
           <span className="truncate text-sm font-medium text-white">{m.away_team}</span>
         </span>
       </div>
+      {done && (m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT') && (
+        <div className="mt-1.5 text-center text-[11px] leading-tight text-slate-300/45">
+          {m.duration === 'PENALTY_SHOOTOUT'
+            ? `po prodl. ${m.extra_home ?? '?'}:${m.extra_away ?? '?'}, na penalty ${m.pen_home ?? '?'}:${m.pen_away ?? '?'}`
+            : `po prodloužení ${m.extra_home ?? '?'}:${m.extra_away ?? '?'}`}
+          <span className="text-slate-300/30"> · body za stav po 90′</span>
+        </div>
+      )}
       {locked && myTip && (
         <div className="mt-2 text-center text-xs text-slate-100/60">
           tvůj tip {myTip.predicted_home}:{myTip.predicted_away}
