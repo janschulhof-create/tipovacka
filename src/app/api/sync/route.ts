@@ -56,9 +56,11 @@ export async function GET(req: NextRequest) {
   const keyOf = (r: number, h: string, a: string) => `${r}|${h}|${a}`;
   const idByApi = new Map<number, number>();
   const idByKey = new Map<string, number>();
+  const idToTeams = new Map<number, { home: string; away: string }>();
   for (const m of (existing as { id: number; external_api_id: number | null; round: number; home_team: string; away_team: string }[]) ?? []) {
     if (m.external_api_id != null) idByApi.set(m.external_api_id, m.id);
     idByKey.set(keyOf(m.round, m.home_team, m.away_team), m.id);
+    idToTeams.set(m.id, { home: m.home_team, away: m.away_team });
   }
 
   // Diagnostika (?debug=1): nic nezapisuje, jen ukáže, co se děje.
@@ -94,17 +96,23 @@ export async function GET(req: NextRequest) {
     const id = idByApi.get(f.external_api_id) ?? idByKey.get(keyOf(f.round, f.home_team, f.away_team));
     if (id) {
       // jen doplníme dynamická pole — id (a tím i tipy) zůstává
-      const { error } = await supabase
-        .from('matches')
-        .update({
-          external_api_id: f.external_api_id,
-          kickoff: f.kickoff,
-          home_score: f.home_score,
-          away_score: f.away_score,
-          status: f.status,
-          minute: f.minute,
-        })
-        .eq('id', id);
+      const patch: Record<string, unknown> = {
+        external_api_id: f.external_api_id,
+        kickoff: f.kickoff,
+        home_score: f.home_score,
+        away_score: f.away_score,
+        status: f.status,
+        minute: f.minute,
+      };
+      // Play-off placeholdery: když má zápas v DB prázdné týmy a los je už znám,
+      // doplníme týmy + kolo. Správně naseedované skupiny zůstávají netknuté.
+      const cur = idToTeams.get(id);
+      if ((!cur?.home || !cur?.away) && f.home_team && f.away_team) {
+        patch.home_team = f.home_team;
+        patch.away_team = f.away_team;
+        patch.round = f.round;
+      }
+      const { error } = await supabase.from('matches').update(patch).eq('id', id);
       if (!error) updated++;
     } else {
       inserts.push({ ...f, season_id: season.id });
