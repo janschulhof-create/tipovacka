@@ -101,16 +101,20 @@ export async function GET(req: NextRequest) {
         kickoff: f.kickoff,
         status: f.status,
         minute: f.minute,
-        duration: f.duration,
-        extra_home: f.extra_home,
-        extra_away: f.extra_away,
-        pen_home: f.pen_home,
-        pen_away: f.pen_away,
       };
-      // Skóre po 90' přepíšeme jen když ho známe. U prodloužení/penalt bez regularTime
-      // (free tier) je null → ponecháme ručně doplněný stav po 90', ať ho sync nepřemaže.
+      // Skóre po 90' přepíšeme jen když ho známe. U prodloužení rozhodnutého gólem
+      // (bez rozpadu z feedu) je null → ponecháme ručně doplněný stav po 90'.
       if (f.home_score !== null) patch.home_score = f.home_score;
       if (f.away_score !== null) patch.away_score = f.away_score;
+      // Detail prodloužení/penalt přepíšeme jen když feed potvrdí prodloužení – jinak
+      // neklobrujeme ručně doplněné údaje (a REGULAR zápasům necháme výchozí hodnoty).
+      if (f.duration !== 'REGULAR') {
+        patch.duration = f.duration;
+        patch.extra_home = f.extra_home;
+        patch.extra_away = f.extra_away;
+        patch.pen_home = f.pen_home;
+        patch.pen_away = f.pen_away;
+      }
       // Play-off placeholdery: když má zápas v DB prázdné týmy a los je už znám,
       // doplníme týmy + kolo. Správně naseedované skupiny zůstávají netknuté.
       const cur = idToTeams.get(id);

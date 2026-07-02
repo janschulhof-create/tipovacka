@@ -130,34 +130,42 @@ export async function fetchSeasonFixtures(): Promise<NormalizedMatch[]> {
     const duration: NormalizedMatch['duration'] =
       s.duration === 'EXTRA_TIME' || s.duration === 'PENALTY_SHOOTOUT' ? s.duration : 'REGULAR';
 
-    // Body se počítají podle stavu po 90 minutách:
-    //  - regularTime (pokud přijde), jinak fullTime u zápasů rozhodnutých v 90' (skupiny apod.).
-    //  - u prodloužení/penalt BEZ regularTime necháme null → skóre po 90' se doplní ručně
-    //    (a sync ho níže nepřepíše výsledkem po prodloužení).
-    const home90 = rt?.home ?? (duration === 'REGULAR' ? ft.home ?? null : null);
-    const away90 = rt?.away ?? (duration === 'REGULAR' ? ft.away ?? null : null);
+    const penHome = pen?.home ?? null;
+    const penAway = pen?.away ?? null;
 
-    // Skutečný výsledek (prodloužení/penalty) – jen pro zobrazení, bez vlivu na body.
+    // Skóre po 90 minutách (na body):
+    //  1) regularTime, pokud přijde;
+    //  2) fullTime u zápasů rozhodnutých v základní době (skupiny, vyřazovák bez prodloužení);
+    //  3) u prodloužení/penalt dopočet fullTime − prodloužení − penalty (football-data extraTime/
+    //     penalty posílá) → penaltové zápasy se spraví samy;
+    //  4) jinak (prodloužení bez rozpadu, typicky gól v prodloužení) null → doplní se ručně
+    //     a sync ho níže nepřepíše.
+    let home90 = rt?.home ?? null;
+    let away90 = rt?.away ?? null;
+    if (home90 === null || away90 === null) {
+      if (duration === 'REGULAR') {
+        home90 = ft.home ?? null;
+        away90 = ft.away ?? null;
+      } else if (ft.home != null && ft.away != null && (pen != null || et != null)) {
+        home90 = ft.home - (et?.home ?? 0) - (penHome ?? 0);
+        away90 = ft.away - (et?.away ?? 0) - (penAway ?? 0);
+      } else {
+        home90 = null;
+        away90 = null;
+      }
+    }
+
+    // Skutečný výsledek pro zobrazení (jen prodloužení/penalty), bez vlivu na body.
+    // Stav po prodloužení = fullTime − penalty; penalty zvlášť.
     let extra_home: number | null = null;
     let extra_away: number | null = null;
     let pen_home: number | null = null;
     let pen_away: number | null = null;
-    if (duration === 'EXTRA_TIME') {
-      extra_home = ft.home ?? null; // fullTime = regularTime + extraTime
-      extra_away = ft.away ?? null;
-    } else if (duration === 'PENALTY_SHOOTOUT') {
-      pen_home = pen?.home ?? null;
-      pen_away = pen?.away ?? null;
-      if (rt && et) {
-        extra_home = (rt.home ?? 0) + (et.home ?? 0);
-        extra_away = (rt.away ?? 0) + (et.away ?? 0);
-      } else if (ft.home != null && pen_home != null) {
-        extra_home = ft.home - pen_home; // fullTime sčítá i penalty
-        extra_away = (ft.away ?? 0) - (pen_away ?? 0);
-      } else {
-        extra_home = ft.home ?? null;
-        extra_away = ft.away ?? null;
-      }
+    if (duration !== 'REGULAR') {
+      pen_home = penHome;
+      pen_away = penAway;
+      extra_home = ft.home != null ? ft.home - (penHome ?? 0) : null;
+      extra_away = ft.away != null ? ft.away - (penAway ?? 0) : null;
     }
 
     return {

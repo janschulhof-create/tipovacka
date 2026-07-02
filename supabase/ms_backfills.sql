@@ -92,19 +92,34 @@ update matches set
 
 -- ═══ 19_fix_regulation_scores ═══════════════════════════════════════════
 
--- Oprava skóre po 90' (home_score/away_score = body) u vyřazovacích zápasů, co šly do
--- prodloužení/penalt. football-data ve free tieru neposílá regularTime → sync omylem uložil
--- výsledek po prodloužení. Nastavujeme stav po základní hrací době (vždy remíza).
--- Skutečný výsledek (po prodl./penalty) zůstává v extra_*/pen_* pro zobrazení.
+-- Vyřazovací zápasy, co šly do prodloužení/penalt – KOMPLETNÍ údaje.
+-- home_score/away_score = stav po 90' (body); extra_* = stav po prodloužení; pen_* = penalty.
+-- Nastavujeme vše najednou, ať je zápas správně hned po spuštění (nezávisle na syncu),
+-- a sync to už nepřepíše (skóre po 90' u těchto zápasů neplní, detail jen když potvrdí prodl.).
 
--- Německo–Paraguay: po 90' 1:1 (pak prodl./penalty)
-update matches set home_score = 1, away_score = 1
+-- Německo–Paraguay: po 90' 1:1, prodl. 1:1, na penalty Německo 3 : Paraguay 4 (postup Paraguay)
+update matches set
+  home_score = 1, away_score = 1,
+  duration = 'PENALTY_SHOOTOUT',
+  extra_home = 1, extra_away = 1,
+  pen_home = case when home_team = 'Německo' then 3 else 4 end,
+  pen_away = case when home_team = 'Německo' then 4 else 3 end
   where (home_team, away_team) in (('Německo','Paraguay'), ('Paraguay','Německo'));
 
--- Nizozemsko–Maroko: po 90' 1:1 (pak prodl./penalty)
-update matches set home_score = 1, away_score = 1
+-- Nizozemsko–Maroko: po 90' 1:1, prodl. 1:1, na penalty Nizozemsko 2 : Maroko 3 (postup Maroko)
+update matches set
+  home_score = 1, away_score = 1,
+  duration = 'PENALTY_SHOOTOUT',
+  extra_home = 1, extra_away = 1,
+  pen_home = case when home_team = 'Nizozemsko' then 2 else 3 end,
+  pen_away = case when home_team = 'Nizozemsko' then 3 else 2 end
   where (home_team, away_team) in (('Nizozemsko','Maroko'), ('Maroko','Nizozemsko'));
 
--- Belgie–Senegal: po 90' 2:2 (Belgie dotáhla z 0:2 v 89'), vítězný gól až ve 120'
-update matches set home_score = 2, away_score = 2
+-- Belgie–Senegal: po 90' 2:2 (Belgie dotáhla z 0:2 v 89'), v prodloužení vítězný gól → 3:2
+update matches set
+  home_score = 2, away_score = 2,
+  duration = 'EXTRA_TIME',
+  extra_home = case when home_team = 'Belgie' then 3 else 2 end,
+  extra_away = case when home_team = 'Belgie' then 2 else 3 end,
+  pen_home = null, pen_away = null
   where (home_team, away_team) in (('Belgie','Senegal'), ('Senegal','Belgie'));
