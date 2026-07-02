@@ -131,9 +131,11 @@ export async function fetchSeasonFixtures(): Promise<NormalizedMatch[]> {
       s.duration === 'EXTRA_TIME' || s.duration === 'PENALTY_SHOOTOUT' ? s.duration : 'REGULAR';
 
     // Body se počítají podle stavu po 90 minutách:
-    //  - regularTime (u prodloužení/penalt), jinak fullTime (skupiny / rozhodnuto v 90').
-    const home90 = rt?.home ?? ft.home ?? null;
-    const away90 = rt?.away ?? ft.away ?? null;
+    //  - regularTime (pokud přijde), jinak fullTime u zápasů rozhodnutých v 90' (skupiny apod.).
+    //  - u prodloužení/penalt BEZ regularTime necháme null → skóre po 90' se doplní ručně
+    //    (a sync ho níže nepřepíše výsledkem po prodloužení).
+    const home90 = rt?.home ?? (duration === 'REGULAR' ? ft.home ?? null : null);
+    const away90 = rt?.away ?? (duration === 'REGULAR' ? ft.away ?? null : null);
 
     // Skutečný výsledek (prodloužení/penalty) – jen pro zobrazení, bez vlivu na body.
     let extra_home: number | null = null;

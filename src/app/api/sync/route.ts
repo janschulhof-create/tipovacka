@@ -99,8 +99,6 @@ export async function GET(req: NextRequest) {
       const patch: Record<string, unknown> = {
         external_api_id: f.external_api_id,
         kickoff: f.kickoff,
-        home_score: f.home_score,
-        away_score: f.away_score,
         status: f.status,
         minute: f.minute,
         duration: f.duration,
@@ -109,6 +107,10 @@ export async function GET(req: NextRequest) {
         pen_home: f.pen_home,
         pen_away: f.pen_away,
       };
+      // Skóre po 90' přepíšeme jen když ho známe. U prodloužení/penalt bez regularTime
+      // (free tier) je null → ponecháme ručně doplněný stav po 90', ať ho sync nepřemaže.
+      if (f.home_score !== null) patch.home_score = f.home_score;
+      if (f.away_score !== null) patch.away_score = f.away_score;
       // Play-off placeholdery: když má zápas v DB prázdné týmy a los je už znám,
       // doplníme týmy + kolo. Správně naseedované skupiny zůstávají netknuté.
       const cur = idToTeams.get(id);
