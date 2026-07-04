@@ -28,10 +28,13 @@ export interface CardEvent {
 export interface TeamStats {
   xg?: string;
   bigChances?: string;
+  shots?: string; // střely celkem
   sot?: string; // střely na branku
+  corners?: string; // rohy
   possession?: string;
   passes?: string; // přesné přihrávky
   fouls?: string;
+  cards?: string; // karty (žluté + červené)
 }
 export interface MatchDetail {
   venue?: string;
@@ -200,16 +203,32 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
       reg90_home >= 0 &&
       reg90_away >= 0;
 
+    const cardsHome = cards.filter((c) => c.side === 'home').length;
+    const cardsAway = cards.filter((c) => c.side === 'away').length;
     const detail: MatchDetail = {
       venue: comp.venue?.fullName,
       city: comp.venue?.address?.city,
       attendance: comp.attendance,
       goals: goals.length ? goals : undefined,
       cards: cards.length ? cards : undefined,
-      // záložní statistiky ze scoreboardu (summary je pak přepíše bohatšími)
+      // záložní statistiky ze scoreboardu (summary je pak doplní/přepíše bohatšími)
       stats: {
-        home: { possession: sbStat(home, 'possessionPct'), sot: sbStat(home, 'shotsOnTarget'), fouls: sbStat(home, 'foulsCommitted') },
-        away: { possession: sbStat(away, 'possessionPct'), sot: sbStat(away, 'shotsOnTarget'), fouls: sbStat(away, 'foulsCommitted') },
+        home: {
+          shots: sbStat(home, 'totalShots'),
+          sot: sbStat(home, 'shotsOnTarget'),
+          corners: sbStat(home, 'wonCorners'),
+          possession: sbStat(home, 'possessionPct'),
+          fouls: sbStat(home, 'foulsCommitted'),
+          cards: cards.length ? String(cardsHome) : undefined,
+        },
+        away: {
+          shots: sbStat(away, 'totalShots'),
+          sot: sbStat(away, 'shotsOnTarget'),
+          corners: sbStat(away, 'wonCorners'),
+          possession: sbStat(away, 'possessionPct'),
+          fouls: sbStat(away, 'foulsCommitted'),
+          cards: cards.length ? String(cardsAway) : undefined,
+        },
       },
     };
 
@@ -259,10 +278,12 @@ export async function fetchEspnStats(
       return {
         xg: pick('expected goals'),
         bigChances: pick('big chances created'),
+        shots: pick('total shots', 'shot attempts'),
         sot: pick('shots on goal', 'shots on target'),
+        corners: pick('corner'),
         possession: pick('possession'),
         passes: pick('accurate passes'),
-        fouls: pick('fouls committed', 'fouls'),
+        fouls: pick('fouls'),
       };
     };
     const byId = new Map(teams.map((t) => [t?.team?.id, t]));
@@ -272,6 +293,21 @@ export async function fetchEspnStats(
   } catch {
     return null;
   }
+}
+
+/** Sloučí staty: hodnoty ze summary mají přednost, scoreboard doplní chybějící (a karty). */
+export function mergeStats(base: TeamStats, extra: TeamStats): TeamStats {
+  return {
+    xg: extra.xg ?? base.xg,
+    bigChances: extra.bigChances ?? base.bigChances,
+    shots: extra.shots ?? base.shots,
+    sot: extra.sot ?? base.sot,
+    corners: extra.corners ?? base.corners,
+    possession: extra.possession ?? base.possession,
+    passes: extra.passes ?? base.passes,
+    fouls: extra.fouls ?? base.fouls,
+    cards: base.cards ?? extra.cards,
+  };
 }
 
 /** Otočí detail do orientace zápasu v DB (home = domácí v appce). */

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { fetchSeasonFixtures, normKey, type NormalizedMatch } from '@/lib/apiFootball';
-import { fetchEspnResults, fetchEspnStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
+import { fetchEspnResults, fetchEspnStats, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -194,7 +194,15 @@ export async function GET(req: NextRequest) {
         const stats = statsList[i];
         const same = normKey(m.home_team) === normKey(r.homeCz);
         const pick = <T,>(h: T, a: T): T => (same ? h : a);
-        const detail = stats ? { ...r.detail, stats } : r.detail;
+        const detail = stats
+          ? {
+              ...r.detail,
+              stats: {
+                home: mergeStats(r.detail.stats?.home ?? {}, stats.home),
+                away: mergeStats(r.detail.stats?.away ?? {}, stats.away),
+              },
+            }
+          : r.detail;
         const { error } = await supabase
           .from('matches')
           .update({
@@ -215,14 +223,29 @@ export async function GET(req: NextRequest) {
         if (!error) espnSet++;
       }
 
-      // živé: jen živá minuta + detail (skóre nechává football-data, žádné reg_checked)
-      for (const m of liveMatches) {
-        const r = espn.get(pairKey(m.home_team, m.away_team));
-        if (!r) continue;
+      // živé: živá minuta + detail vč. bohatých statistik (přepočítává se každý běh)
+      const liveJobs = liveMatches
+        .map((m) => ({ m, r: espn.get(pairKey(m.home_team, m.away_team)) }))
+        .filter((j): j is { m: Row; r: EspnResult } => !!j.r);
+      const liveStats = await Promise.all(
+        liveJobs.map((j) => (j.r.eventId ? fetchEspnStats(j.r.eventId, j.r.homeId, j.r.awayId) : Promise.resolve(null))),
+      );
+      for (let i = 0; i < liveJobs.length; i++) {
+        const { m, r } = liveJobs[i];
+        const stats = liveStats[i];
         const same = normKey(m.home_team) === normKey(r.homeCz);
+        const detail = stats
+          ? {
+              ...r.detail,
+              stats: {
+                home: mergeStats(r.detail.stats?.home ?? {}, stats.home),
+                away: mergeStats(r.detail.stats?.away ?? {}, stats.away),
+              },
+            }
+          : r.detail;
         const { error } = await supabase
           .from('matches')
-          .update({ clock: r.clock || null, detail: orientDetail(r.detail, same) })
+          .update({ clock: r.clock || null, detail: orientDetail(detail, same) })
           .eq('id', m.id);
         if (!error) espnLive++;
       }

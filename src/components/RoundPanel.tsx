@@ -371,7 +371,8 @@ function MatchRow({
 
       {/* odhalené tipy ostatních */}
       {locked && open && (
-        <div className="border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
+        <div className="border-t border-terrain-800/60 bg-terrain-900/40 px-3 py-3 sm:px-4">
+          <SectionHead icon="🎯" title="Tipy hráčů" accent="bg-pitch" />
           {live && m.home_score != null && m.away_score != null && (
             <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-flag">
               <span className="live-dot" /> Live body z aktuálního skóre {m.home_score}:{m.away_score}
@@ -476,6 +477,16 @@ function clockNum(disp: string): number {
   return parseInt(m[1], 10) + (m[2] ? parseInt(m[2], 10) / 100 : 0);
 }
 
+function SectionHead({ icon, title, accent }: { icon: string; title: string; accent: string }) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <span className={`h-3.5 w-1 rounded-full ${accent}`} />
+      <span aria-hidden className="text-[12px] leading-none">{icon}</span>
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-300/60">{title}</span>
+    </div>
+  );
+}
+
 function MatchDetailView({ m }: { m: Match }) {
   const d = m.detail;
   if (!d) return null;
@@ -491,7 +502,9 @@ function MatchDetailView({ m }: { m: Match }) {
   ].sort((a, b) => a.sort - b.sort);
 
   return (
-    <div className="space-y-3 border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
+    <div className="border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
+      <SectionHead icon="📊" title="Statistiky zápasu" accent="bg-flag" />
+      <div className="space-y-3">
       {meta.length > 0 && <div className="text-[11px] text-slate-300/50">🏟️ {meta.join(' · ')}</div>}
 
       {feed.length > 0 && (
@@ -523,6 +536,7 @@ function MatchDetailView({ m }: { m: Match }) {
       )}
 
       {d.stats && <StatBars home={d.stats.home} away={d.stats.away} />}
+      </div>
     </div>
   );
 }
@@ -537,10 +551,13 @@ function StatBars({ home, away }: { home: TeamStats; away: TeamStats }) {
   const rows: { label: string; h?: string; a?: string; hd: string; ad: string }[] = [
     { label: 'Očekávané góly (xG)', h: home.xg, a: away.xg, hd: home.xg ?? '–', ad: away.xg ?? '–' },
     { label: 'Velké šance', h: home.bigChances, a: away.bigChances, hd: home.bigChances ?? '–', ad: away.bigChances ?? '–' },
+    { label: 'Střely', h: home.shots, a: away.shots, hd: home.shots ?? '–', ad: away.shots ?? '–' },
     { label: 'Střely na branku', h: home.sot, a: away.sot, hd: home.sot ?? '–', ad: away.sot ?? '–' },
+    { label: 'Rohy', h: home.corners, a: away.corners, hd: home.corners ?? '–', ad: away.corners ?? '–' },
     { label: 'Držení míče', h: home.possession, a: away.possession, hd: pct(home.possession), ad: pct(away.possession) },
     { label: 'Přesné přihrávky', h: home.passes, a: away.passes, hd: home.passes ?? '–', ad: away.passes ?? '–' },
     { label: 'Fauly', h: home.fouls, a: away.fouls, hd: home.fouls ?? '–', ad: away.fouls ?? '–' },
+    { label: 'Karty', h: home.cards, a: away.cards, hd: home.cards ?? '–', ad: away.cards ?? '–' },
   ];
   const shown = rows.filter((r) => r.h != null || r.a != null);
   if (shown.length === 0) return null;
