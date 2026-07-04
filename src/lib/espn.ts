@@ -98,7 +98,7 @@ interface EspnEvent {
 }
 
 export function pairKey(a: string, b: string): string {
-  return [normKey(a), normKey(b)].sort().join('|');
+  return [normKey(toCz(a)), normKey(toCz(b))].sort().join('|');
 }
 
 function sbStat(c: EspnCompetitor | undefined, name: string): string | undefined {
@@ -165,13 +165,24 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
         continue;
       }
       goals.push({ min: disp, side, player, kind });
-      if (period >= 3) {
+
+      // Klasifikace podle minuty z displayValue (spolehlivější než period, které ESPN
+      // u vyřazovacích zápasů nemusí plnit):
+      //   prodloužení = základní minuta > 90 (91', 105', 120'+3'…)
+      //   nastavení 2. poločasu = "90'+X" (základ 90 a je tam "+")
+      const mm = /(\d+)(?:\s*\+\s*(\d+))?/.exec(disp);
+      const base = mm ? parseInt(mm[1], 10) : null;
+      const plus = mm && mm[2] ? parseInt(mm[2], 10) : 0;
+
+      const isET = period >= 3 || (base != null && base > 90);
+      if (isET) {
         hasET = true;
         if (side === 'home') etH++;
         else etA++;
         continue;
       }
-      if (period === 2 && disp.includes('+')) {
+      const is2ndStoppage = plus > 0 && (base === 90 || (base == null && period === 2));
+      if (is2ndStoppage) {
         if (side === 'home') stopH++;
         else stopA++;
       }

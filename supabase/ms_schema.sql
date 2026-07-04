@@ -43,6 +43,12 @@ comment on column matches.pen_home   is 'Penaltový rozstřel (jen zobrazení).'
 alter table matches add column if not exists clock text;
 alter table matches add column if not exists detail jsonb;
 
+-- Sjednocení anglicky uložených názvů (kvůli zobrazení, H2H i párování s ESPN)
+update matches set home_team = 'Kapverdy' where home_team in ('Cape Verde Islands', 'Cape Verde', 'Cabo Verde');
+update matches set away_team = 'Kapverdy' where away_team in ('Cape Verde Islands', 'Cape Verde', 'Cabo Verde');
+update matches set home_team = 'Bosna a Hercegovina' where home_team in ('Bosnia-Herzegovina', 'Bosnia and Herzegovina', 'Bosnia & Herzegovina');
+update matches set away_team = 'Bosna a Hercegovina' where away_team in ('Bosnia-Herzegovina', 'Bosnia and Herzegovina', 'Bosnia & Herzegovina');
+
 -- Uvolní reg_checked u odehraných zápasů, aby je ESPN průchod v syncu dopočítal
 -- (skóre v 90:00, stav po 90', prodloužení/penalty, detail, sestavy). Klidně i opakovaně.
 update matches set reg_checked = false where status = 'finished';

@@ -36,7 +36,21 @@ export async function GET(req: NextRequest) {
   }
   interface Ev {
     id?: string;
-    competitions?: { competitors?: Competitor[] }[];
+    competitions?: {
+      competitors?: Competitor[];
+      details?: {
+        clock?: { displayValue?: string };
+        period?: number;
+        scoringPlay?: boolean;
+        shootout?: boolean;
+        ownGoal?: boolean;
+        penaltyKick?: boolean;
+        yellowCard?: boolean;
+        redCard?: boolean;
+        team?: { id?: string };
+        athletesInvolved?: { shortName?: string }[];
+      }[];
+    }[];
   }
 
   let sb: { events?: Ev[] };
@@ -73,6 +87,19 @@ export async function GET(req: NextRequest) {
   const home = comp?.competitors?.find((x) => x.homeAway === 'home');
   const away = comp?.competitors?.find((x) => x.homeAway === 'away');
   const rawStats = (c?: Competitor) => (c?.statistics ?? []).map((s) => ({ name: s.name, label: s.label, value: s.displayValue }));
+
+  // syrové góly/karty – ať je vidět, jak ESPN značí prodloužení (minuta, period)
+  const rawDetails = (comp?.details ?? []).map((d) => ({
+    min: d.clock?.displayValue,
+    period: d.period,
+    scoringPlay: d.scoringPlay,
+    shootout: d.shootout,
+    ownGoal: d.ownGoal,
+    penaltyKick: d.penaltyKick,
+    card: d.redCard ? 'red' : d.yellowCard ? 'yellow' : undefined,
+    teamId: d.team?.id,
+    player: d.athletesInvolved?.[0]?.shortName,
+  }));
 
   // ── syrové statistiky ze summary/boxscore ──
   let summary: unknown = null;
@@ -125,6 +152,7 @@ export async function GET(req: NextRequest) {
     },
     hint: 'Podívej se na názvy/labely níže. Pošli mi je a napevno opravím mapování statistik.',
     scoreboard_raw: { home: rawStats(home), away: rawStats(away) },
+    goals_raw: rawDetails,
     summary_raw: summary,
     parser_output: { scoreboard: parserScoreboard, summary: parserSummary },
   });
