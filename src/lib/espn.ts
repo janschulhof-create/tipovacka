@@ -1,12 +1,12 @@
 /**
  * Veřejné ESPN API (bez klíče) – MS 2026.
- *  - z minut gólů dopočítá skóre v 90:00 (Pán nastavení), stav po 90' (body) a
- *    skutečný výsledek po prodloužení + penalty;
- *  - vytáhne detail zápasu: střelci, karty, statistiky, forma, stadion, návštěva;
- *  - sestavy/rozestavení dobere ze summary endpointu (fetchEspnLineups).
+ *  - z minut gólů určí skóre v 90:00 (Pán nastavení) a stav po 90' (body);
+ *  - detail zápasu: střelci, karty, stadion, návštěva;
+ *  - bohaté statistiky (xG, velké šance, střely na branku, držení, přesné přihrávky,
+ *    fauly) ze summary/boxscore (fetchEspnStats).
  *
- * Dopočet skóre se ověří proti finálnímu skóre od ESPN – když nesedí, zápas se
- * v syncu přeskočí (radši nechat na ručním doplnění, nikdy nezapsat nesmysl).
+ * Robustnost: stav po 90' = FINÁLNÍ skóre od ESPN − góly v prodloužení. Součet tak
+ * vždy sedí na oficiální výsledek (i kdyby se nějaký gól nenapároval) → žádné "invalid".
  */
 import { toCz, normKey } from './apiFootball';
 
@@ -26,37 +26,27 @@ export interface CardEvent {
   color: 'yellow' | 'red';
 }
 export interface TeamStats {
+  xg?: string;
+  bigChances?: string;
+  sot?: string; // střely na branku
   possession?: string;
-  shots?: string;
-  sot?: string;
-  corners?: string;
+  passes?: string; // přesné přihrávky
   fouls?: string;
-}
-export interface LineupPlayer {
-  name: string;
-  pos?: string;
-  num?: string;
-  starter: boolean;
-}
-export interface Lineup {
-  formation?: string;
-  players: LineupPlayer[];
 }
 export interface MatchDetail {
   venue?: string;
   city?: string;
   attendance?: number;
-  homeForm?: string;
-  awayForm?: string;
   goals?: GoalEvent[];
   cards?: CardEvent[];
   stats?: { home: TeamStats; away: TeamStats };
-  lineups?: { home: Lineup; away: Lineup };
 }
 
 export interface EspnResult {
   homeCz: string;
   awayCz: string;
+  homeId: string;
+  awayId: string;
   completed: boolean;
   clock: string; // živá minuta ("90'+8'"), u dohraných ''
   eventId: string;
@@ -70,11 +60,10 @@ export interface EspnResult {
   pen_home: number | null;
   pen_away: number | null;
   valid: boolean;
-  detail: MatchDetail; // v ESPN orientaci (home = ESPN domácí)
+  detail: MatchDetail;
 }
 
 interface EspnDetailRaw {
-  type?: { text?: string };
   clock?: { displayValue?: string };
   team?: { id?: string };
   scoringPlay?: boolean;
@@ -86,15 +75,14 @@ interface EspnDetailRaw {
   period?: number;
   athletesInvolved?: { shortName?: string; displayName?: string }[];
 }
-interface EspnStat {
+interface EspnStatRaw {
   name?: string;
   displayValue?: string;
 }
 interface EspnCompetitor {
   homeAway?: string;
   score?: string;
-  form?: string;
-  statistics?: EspnStat[];
+  statistics?: EspnStatRaw[];
   team?: { id?: string; name?: string; displayName?: string };
 }
 interface EspnEvent {
@@ -112,17 +100,8 @@ export function pairKey(a: string, b: string): string {
   return [normKey(a), normKey(b)].sort().join('|');
 }
 
-function statOf(c: EspnCompetitor | undefined, name: string): string | undefined {
+function sbStat(c: EspnCompetitor | undefined, name: string): string | undefined {
   return c?.statistics?.find((s) => s.name === name)?.displayValue;
-}
-function teamStats(c: EspnCompetitor | undefined): TeamStats {
-  return {
-    possession: statOf(c, 'possessionPct'),
-    shots: statOf(c, 'totalShots'),
-    sot: statOf(c, 'shotsOnTarget'),
-    corners: statOf(c, 'wonCorners'),
-    fouls: statOf(c, 'foulsCommitted'),
-  };
 }
 
 export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
@@ -136,7 +115,7 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
     if (!comp) continue;
     const state = comp.status?.type?.state; // 'pre' | 'in' | 'post'
     const completed = comp.status?.type?.completed === true;
-    if (state === 'pre') continue; // nezačaté nezpracováváme
+    if (state === 'pre') continue;
 
     const home = comp.competitors?.find((c) => c.homeAway === 'home');
     const away = comp.competitors?.find((c) => c.homeAway === 'away');
@@ -146,14 +125,13 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
     const homeCz = toCz(home.team.name ?? home.team.displayName ?? '');
     const awayCz = toCz(away.team.name ?? away.team.displayName ?? '');
 
-    let reg90_home = 0,
-      reg90_away = 0,
-      end90_home = 0,
-      end90_away = 0,
-      et_home = 0,
-      et_away = 0,
-      pen_home = 0,
-      pen_away = 0;
+    // góly rozdělíme na: prodloužení / nastavení 2. pol. / penaltový rozstřel
+    let etH = 0,
+      etA = 0,
+      stopH = 0,
+      stopA = 0,
+      penH = 0,
+      penA = 0;
     let hasET = false;
     let hasPen = false;
     const goals: GoalEvent[] = [];
@@ -163,44 +141,48 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
       const disp = d.clock?.displayValue ?? '';
       const period = d.period ?? 0;
       const shootout = d.shootout === true;
-      const player = d.athletesInvolved?.[0]?.shortName ?? d.athletesInvolved?.[0]?.displayName ?? '';
-
-      let side: 'home' | 'away' | null =
+      const player =
+        d.athletesInvolved?.[0]?.shortName ?? d.athletesInvolved?.[0]?.displayName ?? '';
+      const raw: 'home' | 'away' | null =
         d.team?.id === homeId ? 'home' : d.team?.id === awayId ? 'away' : null;
 
-      // karty
       if (d.yellowCard || d.redCard) {
-        if (side && !shootout) cards.push({ min: disp, side, player, color: d.redCard ? 'red' : 'yellow' });
+        if (raw && !shootout) cards.push({ min: disp, side: raw, player, color: d.redCard ? 'red' : 'yellow' });
         continue;
       }
-      if (d.scoringPlay !== true) continue; // dál jen góly
+      if (d.scoringPlay !== true) continue;
 
       const kind: GoalEvent['kind'] = d.ownGoal ? 'own' : d.penaltyKick && !shootout ? 'penalty' : 'goal';
-      if (d.ownGoal && side) side = side === 'home' ? 'away' : 'home'; // vlastňák → soupeři
+      // vlastní gól se připisuje soupeři (hráč je z bránícího týmu)
+      const side: 'home' | 'away' | null = d.ownGoal && raw ? (raw === 'home' ? 'away' : 'home') : raw;
       if (!side) continue;
-      const H = side === 'home';
 
       if (shootout) {
         hasPen = true;
-        if (H) pen_home++;
-        else pen_away++;
-        continue; // penalty se do gólů zápasu nezapisují
+        if (side === 'home') penH++;
+        else penA++;
+        continue;
       }
       goals.push({ min: disp, side, player, kind });
       if (period >= 3) {
         hasET = true;
-        if (H) et_home++;
-        else et_away++;
+        if (side === 'home') etH++;
+        else etA++;
         continue;
       }
-      if (H) end90_home++;
-      else end90_away++;
-      const is2ndHalfStoppage = period === 2 && disp.includes('+');
-      if (!is2ndHalfStoppage) {
-        if (H) reg90_home++;
-        else reg90_away++;
+      if (period === 2 && disp.includes('+')) {
+        if (side === 'home') stopH++;
+        else stopA++;
       }
     }
+
+    // stav po 90' = finální skóre ESPN − góly v prodloužení; skóre v 90:00 = − nastavení 2. pol.
+    const finalH = Number(home.score);
+    const finalA = Number(away.score);
+    const end90_home = finalH - etH;
+    const end90_away = finalA - etA;
+    const reg90_home = end90_home - stopH;
+    const reg90_away = end90_away - stopA;
 
     const duration: EspnResult['duration'] = hasPen
       ? 'PENALTY_SHOOTOUT'
@@ -209,29 +191,33 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
         : 'REGULAR';
     const hasOt = hasET || hasPen;
 
-    const espnHome = Number(home.score);
-    const espnAway = Number(away.score);
     const valid =
       completed &&
-      Number.isFinite(espnHome) &&
-      Number.isFinite(espnAway) &&
-      end90_home + et_home === espnHome &&
-      end90_away + et_away === espnAway;
+      Number.isFinite(finalH) &&
+      Number.isFinite(finalA) &&
+      end90_home >= 0 &&
+      end90_away >= 0 &&
+      reg90_home >= 0 &&
+      reg90_away >= 0;
 
     const detail: MatchDetail = {
       venue: comp.venue?.fullName,
       city: comp.venue?.address?.city,
       attendance: comp.attendance,
-      homeForm: home.form,
-      awayForm: away.form,
       goals: goals.length ? goals : undefined,
       cards: cards.length ? cards : undefined,
-      stats: { home: teamStats(home), away: teamStats(away) },
+      // záložní statistiky ze scoreboardu (summary je pak přepíše bohatšími)
+      stats: {
+        home: { possession: sbStat(home, 'possessionPct'), sot: sbStat(home, 'shotsOnTarget'), fouls: sbStat(home, 'foulsCommitted') },
+        away: { possession: sbStat(away, 'possessionPct'), sot: sbStat(away, 'shotsOnTarget'), fouls: sbStat(away, 'foulsCommitted') },
+      },
     };
 
     out.set(pairKey(homeCz, awayCz), {
       homeCz,
       awayCz,
+      homeId,
+      awayId,
       completed,
       clock: completed ? '' : (comp.status?.displayClock ?? ''),
       eventId: ev.id ?? '',
@@ -240,10 +226,10 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
       end90_home,
       end90_away,
       duration,
-      extra_home: hasOt ? end90_home + et_home : null,
-      extra_away: hasOt ? end90_away + et_away : null,
-      pen_home: hasPen ? pen_home : null,
-      pen_away: hasPen ? pen_away : null,
+      extra_home: hasOt ? finalH : null,
+      extra_away: hasOt ? finalA : null,
+      pen_home: hasPen ? penH : null,
+      pen_away: hasPen ? penA : null,
       valid,
       detail,
     });
@@ -252,40 +238,37 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
   return out;
 }
 
-/** Sestavy/rozestavení ze summary endpointu (best-effort; při chybě vrátí null). */
-export async function fetchEspnLineups(
+/** Bohaté statistiky ze summary/boxscore (best-effort; při chybě vrátí null). */
+export async function fetchEspnStats(
   eventId: string,
-): Promise<{ home: Lineup; away: Lineup } | null> {
+  homeId: string,
+  awayId: string,
+): Promise<{ home: TeamStats; away: TeamStats } | null> {
   try {
     const res = await fetch(`${BASE}/summary?event=${eventId}`, { cache: 'no-store' });
     if (!res.ok) return null;
     const data = (await res.json()) as {
-      rosters?: {
-        homeAway?: string;
-        formation?: string;
-        team?: { id?: string };
-        roster?: {
-          starter?: boolean;
-          athlete?: { shortName?: string; displayName?: string; jersey?: string };
-          position?: { abbreviation?: string };
-          formationPlace?: string;
-        }[];
-      }[];
+      boxscore?: { teams?: { team?: { id?: string }; statistics?: { label?: string; displayValue?: string }[] }[] };
     };
-    const rosters = data.rosters;
-    if (!Array.isArray(rosters) || rosters.length < 2) return null;
-    const parse = (r: (typeof rosters)[number] | undefined): Lineup => ({
-      formation: r?.formation,
-      players: (r?.roster ?? []).map((p) => ({
-        name: p?.athlete?.shortName ?? p?.athlete?.displayName ?? '?',
-        pos: p?.position?.abbreviation,
-        num: p?.athlete?.jersey,
-        starter: p?.starter === true,
-      })),
-    });
-    const home = rosters.find((x) => x.homeAway === 'home') ?? rosters[0];
-    const away = rosters.find((x) => x.homeAway === 'away') ?? rosters[1];
-    return { home: parse(home), away: parse(away) };
+    const teams = data?.boxscore?.teams;
+    if (!Array.isArray(teams) || teams.length < 2) return null;
+    const extract = (t: (typeof teams)[number] | undefined): TeamStats => {
+      const st = t?.statistics ?? [];
+      const pick = (...needles: string[]): string | undefined =>
+        st.find((x) => needles.some((n) => (x.label ?? '').toLowerCase().includes(n)))?.displayValue;
+      return {
+        xg: pick('expected goals'),
+        bigChances: pick('big chances created'),
+        sot: pick('shots on goal', 'shots on target'),
+        possession: pick('possession'),
+        passes: pick('accurate passes'),
+        fouls: pick('fouls committed', 'fouls'),
+      };
+    };
+    const byId = new Map(teams.map((t) => [t?.team?.id, t]));
+    const h = byId.get(homeId) ?? teams[0];
+    const a = byId.get(awayId) ?? teams[1];
+    return { home: extract(h), away: extract(a) };
   } catch {
     return null;
   }
@@ -299,11 +282,8 @@ export function orientDetail(d: MatchDetail, same: boolean): MatchDetail {
     venue: d.venue,
     city: d.city,
     attendance: d.attendance,
-    homeForm: d.awayForm,
-    awayForm: d.homeForm,
     goals: d.goals?.map((g) => ({ ...g, side: flip(g.side) })),
     cards: d.cards?.map((c) => ({ ...c, side: flip(c.side) })),
     stats: d.stats ? { home: d.stats.away, away: d.stats.home } : undefined,
-    lineups: d.lineups ? { home: d.lineups.away, away: d.lineups.home } : undefined,
   };
 }

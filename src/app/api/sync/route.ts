@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { fetchSeasonFixtures, normKey, type NormalizedMatch } from '@/lib/apiFootball';
-import { fetchEspnResults, fetchEspnLineups, orientDetail, pairKey } from '@/lib/espn';
+import { fetchEspnResults, fetchEspnStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -156,7 +156,7 @@ export async function GET(req: NextRequest) {
       .eq('season_id', season.id)
       .eq('status', 'finished')
       .eq('reg_checked', false)
-      .limit(12);
+      .limit(20);
     const { data: liveData } = await supabase
       .from('matches')
       .select('id, home_team, away_team')
@@ -169,22 +169,32 @@ export async function GET(req: NextRequest) {
     if (pending.length > 0 || liveMatches.length > 0) {
       const espn = await fetchEspnResults();
 
-      // dohrané: skóre v 90:00 + stav po 90' + detail + sestavy (jednou, pak reg_checked)
-      for (const m of pending) {
-        const r = espn.get(pairKey(m.home_team, m.away_team));
-        if (!r) {
-          espnSkipped++;
-          continue;
-        }
-        if (!r.valid) {
-          espnInvalid++;
-          continue;
-        }
+      // dohrané: skóre v 90:00 + stav po 90' + detail + bohaté statistiky (jednou → reg_checked)
+      const jobs = pending
+        .map((m) => ({ m, r: espn.get(pairKey(m.home_team, m.away_team)) }))
+        .filter((j): j is { m: Row; r: EspnResult } => {
+          if (!j.r) {
+            espnSkipped++;
+            return false;
+          }
+          if (!j.r.valid) {
+            espnInvalid++;
+            return false;
+          }
+          return true;
+        });
+
+      // statistiky ze summary stáhneme paralelně (rychlé, bounded limitem 20)
+      const statsList = await Promise.all(
+        jobs.map((j) => (j.r.eventId ? fetchEspnStats(j.r.eventId, j.r.homeId, j.r.awayId) : Promise.resolve(null))),
+      );
+
+      for (let i = 0; i < jobs.length; i++) {
+        const { m, r } = jobs[i];
+        const stats = statsList[i];
         const same = normKey(m.home_team) === normKey(r.homeCz);
         const pick = <T,>(h: T, a: T): T => (same ? h : a);
-        let detail = r.detail;
-        const lineups = r.eventId ? await fetchEspnLineups(r.eventId) : null;
-        if (lineups) detail = { ...detail, lineups };
+        const detail = stats ? { ...r.detail, stats } : r.detail;
         const { error } = await supabase
           .from('matches')
           .update({

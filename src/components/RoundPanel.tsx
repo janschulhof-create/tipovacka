@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
-import type { TeamStats, Lineup } from '@/lib/espn';
+import type { TeamStats } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
@@ -479,16 +479,7 @@ function MatchDetailView({ m }: { m: Match }) {
 
   return (
     <div className="space-y-3 border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
-      {(meta.length > 0 || d.homeForm || d.awayForm) && (
-        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-300/50">
-          {meta.length > 0 && <span>🏟️ {meta.join(' · ')}</span>}
-          {(d.homeForm || d.awayForm) && (
-            <span className="tabular-nums">
-              forma {d.homeForm ?? '—'} / {d.awayForm ?? '—'}
-            </span>
-          )}
-        </div>
-      )}
+      {meta.length > 0 && <div className="text-[11px] text-slate-300/50">🏟️ {meta.join(' · ')}</div>}
 
       {d.goals && d.goals.length > 0 && (
         <div>
@@ -519,36 +510,39 @@ function MatchDetailView({ m }: { m: Match }) {
       )}
 
       {d.stats && <StatBars home={d.stats.home} away={d.stats.away} />}
-
-      {d.lineups && (
-        <Lineups home={d.lineups.home} away={d.lineups.away} />
-      )}
     </div>
   );
 }
 
 function StatBars({ home, away }: { home: TeamStats; away: TeamStats }) {
-  const rows: [string, string | undefined, string | undefined, string][] = [
-    ['Držení', home.possession, away.possession, '%'],
-    ['Střely', home.shots, away.shots, ''],
-    ['Na branku', home.sot, away.sot, ''],
-    ['Rohy', home.corners, away.corners, ''],
-    ['Fauly', home.fouls, away.fouls, ''],
+  // logické pořadí: kvalita šancí → kontrola hry → disciplína
+  const num = (v?: string) => {
+    const n = parseFloat((v ?? '').replace(',', '.'));
+    return Number.isFinite(n) ? n : 0;
+  };
+  const pct = (v?: string) => (v == null ? '–' : /%/.test(v) ? v : `${v}%`);
+  const rows: { label: string; h?: string; a?: string; hd: string; ad: string }[] = [
+    { label: 'Očekávané góly (xG)', h: home.xg, a: away.xg, hd: home.xg ?? '–', ad: away.xg ?? '–' },
+    { label: 'Velké šance', h: home.bigChances, a: away.bigChances, hd: home.bigChances ?? '–', ad: away.bigChances ?? '–' },
+    { label: 'Střely na branku', h: home.sot, a: away.sot, hd: home.sot ?? '–', ad: away.sot ?? '–' },
+    { label: 'Držení míče', h: home.possession, a: away.possession, hd: pct(home.possession), ad: pct(away.possession) },
+    { label: 'Přesné přihrávky', h: home.passes, a: away.passes, hd: home.passes ?? '–', ad: away.passes ?? '–' },
+    { label: 'Fauly', h: home.fouls, a: away.fouls, hd: home.fouls ?? '–', ad: away.fouls ?? '–' },
   ];
-  const shown = rows.filter(([, h, a]) => h != null || a != null);
+  const shown = rows.filter((r) => r.h != null || r.a != null);
   if (shown.length === 0) return null;
   return (
     <div className="space-y-1.5">
-      {shown.map(([label, h, a, unit]) => {
-        const hn = parseFloat(h ?? '0') || 0;
-        const an = parseFloat(a ?? '0') || 0;
+      {shown.map((r) => {
+        const hn = num(r.h);
+        const an = num(r.a);
         const tot = hn + an || 1;
         return (
-          <div key={label} className="text-[11px]">
+          <div key={r.label} className="text-[11px]">
             <div className="flex items-center justify-between">
-              <span className="w-10 tabular-nums text-white">{h ?? '–'}{unit}</span>
-              <span className="text-slate-300/45">{label}</span>
-              <span className="w-10 text-right tabular-nums text-white">{a ?? '–'}{unit}</span>
+              <span className="w-14 tabular-nums text-white">{r.hd}</span>
+              <span className="text-slate-300/45">{r.label}</span>
+              <span className="w-14 text-right tabular-nums text-white">{r.ad}</span>
             </div>
             <div className="mt-0.5 flex h-1 overflow-hidden rounded-full bg-terrain-900">
               <div className="bg-flag/60" style={{ width: `${(hn / tot) * 100}%` }} />
@@ -557,36 +551,6 @@ function StatBars({ home, away }: { home: TeamStats; away: TeamStats }) {
           </div>
         );
       })}
-    </div>
-  );
-}
-
-function Lineups({ home, away }: { home: Lineup; away: Lineup }) {
-  const start = (l: Lineup) => l.players.filter((p) => p.starter);
-  const hs = start(home);
-  const as = start(away);
-  if (hs.length === 0 && as.length === 0) return null;
-  const label =
-    home.formation || away.formation ? ` · ${home.formation ?? '?'} vs ${away.formation ?? '?'}` : '';
-  return (
-    <div>
-      <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Sestavy{label}</p>
-      <div className="grid grid-cols-2 gap-3 text-[11px]">
-        <ul className="space-y-0.5">
-          {hs.map((p, i) => (
-            <li key={i} className="truncate text-slate-100/70">
-              <span className="tabular-nums text-slate-300/40">{p.num ?? ''}</span> {p.name}
-            </li>
-          ))}
-        </ul>
-        <ul className="space-y-0.5 text-right">
-          {as.map((p, i) => (
-            <li key={i} className="truncate text-slate-100/70">
-              {p.name} <span className="tabular-nums text-slate-300/40">{p.num ?? ''}</span>
-            </li>
-          ))}
-        </ul>
-      </div>
     </div>
   );
 }

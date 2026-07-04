@@ -44,7 +44,7 @@ export async function GET(req: Request) {
   const pairKey = [teams.home, teams.away].sort().join('|');
   const h2h: H2HMatch[] = ((h2hData as unknown as Record<string, H2HMatch[]>)[pairKey] ?? []).slice(0, 5);
 
-  // ---------- Tvoje forma: poslední 3 tipnuté zápasy KAŽDÉHO z obou týmů ----------
+  // ---------- Tvoje forma: VŠECHNY tvé tipnuté zápasy KAŽDÉHO z obou týmů na tomto MS ----------
   let form: FormRow[] = [];
   const player = await getSessionPlayer();
   if (player) {
@@ -70,8 +70,8 @@ export async function GET(req: Request) {
       const byMatch = new Map((preds ?? []).map((p) => [p.match_id, p]));
       const kickoffById = new Map(all.map((m) => [m.id, m.kickoff as string]));
 
-      // 3 poslední tipnuté od daného týmu (finished je už seřazené desc dle kickoff)
-      const take3 = (ms: typeof aMatches): FormRow[] =>
+      // všechny tipnuté zápasy daného týmu (finished je už seřazené desc dle kickoff)
+      const takeAll = (ms: typeof aMatches): FormRow[] =>
         ms
           .map((m) => {
             const p = byMatch.get(m.id);
@@ -81,11 +81,10 @@ export async function GET(req: Request) {
             const points = p.points ?? calculatePoints(hs, as, p.predicted_home, p.predicted_away);
             return { matchId: m.id, home: m.home_team, away: m.away_team, hs, as, ph: p.predicted_home, pa: p.predicted_away, points } as FormRow;
           })
-          .filter((x): x is FormRow => x !== null)
-          .slice(0, 3);
+          .filter((x): x is FormRow => x !== null);
 
       const seen = new Set<number>();
-      form = [...take3(aMatches), ...take3(bMatches)]
+      form = [...takeAll(aMatches), ...takeAll(bMatches)]
         .filter((r) => (seen.has(r.matchId) ? false : (seen.add(r.matchId), true)))
         .sort((x, y) => (kickoffById.get(y.matchId) ?? '').localeCompare(kickoffById.get(x.matchId) ?? ''));
     }
