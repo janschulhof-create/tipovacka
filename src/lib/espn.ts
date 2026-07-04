@@ -26,8 +26,6 @@ export interface CardEvent {
   color: 'yellow' | 'red';
 }
 export interface TeamStats {
-  xg?: string;
-  bigChances?: string;
   shots?: string; // střely celkem
   sot?: string; // střely na branku
   corners?: string; // rohy
@@ -273,17 +271,16 @@ export async function fetchEspnStats(
     if (!Array.isArray(teams) || teams.length < 2) return null;
     const extract = (t: (typeof teams)[number] | undefined): TeamStats => {
       const st = t?.statistics ?? [];
-      const pick = (...needles: string[]): string | undefined =>
-        st.find((x) => needles.some((n) => (x.label ?? '').toLowerCase().includes(n)))?.displayValue;
+      // přesné labely z boxscore (case-insensitive rovnost)
+      const get = (label: string): string | undefined =>
+        st.find((x) => (x.label ?? '').toLowerCase() === label)?.displayValue;
       return {
-        xg: pick('expected goals'),
-        bigChances: pick('big chances created'),
-        shots: pick('total shots', 'shot attempts'),
-        sot: pick('shots on goal', 'shots on target'),
-        corners: pick('corner'),
-        possession: pick('possession'),
-        passes: pick('accurate passes'),
-        fouls: pick('fouls'),
+        shots: get('shots'),
+        sot: get('on goal'),
+        corners: get('corner kicks'),
+        possession: get('possession'),
+        passes: get('accurate passes'),
+        fouls: get('fouls'),
       };
     };
     const byId = new Map(teams.map((t) => [t?.team?.id, t]));
@@ -298,8 +295,6 @@ export async function fetchEspnStats(
 /** Sloučí staty: hodnoty ze summary mají přednost, scoreboard doplní chybějící (a karty). */
 export function mergeStats(base: TeamStats, extra: TeamStats): TeamStats {
   return {
-    xg: extra.xg ?? base.xg,
-    bigChances: extra.bigChances ?? base.bigChances,
     shots: extra.shots ?? base.shots,
     sot: extra.sot ?? base.sot,
     corners: extra.corners ?? base.corners,

@@ -380,29 +380,33 @@ function MatchRow({
           )}
           <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
             {preds.length === 0 && <span className="text-xs text-slate-300/30">Nikdo netipoval.</span>}
-            {preds.map((t) => {
-              const livePts =
-                live && m.home_score != null && m.away_score != null
-                  ? calculatePoints(m.home_score, m.away_score, t.predicted_home, t.predicted_away)
-                  : null;
-              return (
-                <div key={t.name} className="flex items-center justify-between border-b border-terrain-800/60 py-1 last:border-0">
-                  <span className="text-slate-100/60">{t.name}</span>
-                  <span className="flex items-center gap-1.5 tabular-nums">
-                    <span className="font-medium text-white">{t.predicted_home}:{t.predicted_away}</span>
-                    {t.points != null ? (
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(t.points)}`}>
-                        {t.points} b
-                      </span>
-                    ) : livePts != null ? (
-                      <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(livePts)}`}>
-                        {livePts} b
-                      </span>
-                    ) : null}
-                  </span>
-                </div>
+            {(() => {
+              const effPts = (t: RoundPrediction): number | null =>
+                t.points != null
+                  ? t.points
+                  : live && m.home_score != null && m.away_score != null
+                    ? calculatePoints(m.home_score, m.away_score, t.predicted_home, t.predicted_away)
+                    : null;
+              const sorted = [...preds].sort(
+                (a, b) => (effPts(b) ?? -1) - (effPts(a) ?? -1) || a.name.localeCompare(b.name, 'cs'),
               );
-            })}
+              return sorted.map((t) => {
+                const pts = effPts(t);
+                return (
+                  <div key={t.name} className="flex items-center justify-between border-b border-terrain-800/60 py-1 last:border-0">
+                    <span className="text-slate-100/60">{t.name}</span>
+                    <span className="flex items-center gap-1.5 tabular-nums">
+                      <span className="font-medium text-white">{t.predicted_home}:{t.predicted_away}</span>
+                      {pts != null ? (
+                        <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(pts)}`}>
+                          {pts} b
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                );
+              });
+            })()}
           </div>
         </div>
       )}
@@ -549,8 +553,6 @@ function StatBars({ home, away }: { home: TeamStats; away: TeamStats }) {
   };
   const pct = (v?: string) => (v == null ? '–' : /%/.test(v) ? v : `${v}%`);
   const rows: { label: string; h?: string; a?: string; hd: string; ad: string }[] = [
-    { label: 'Očekávané góly (xG)', h: home.xg, a: away.xg, hd: home.xg ?? '–', ad: away.xg ?? '–' },
-    { label: 'Velké šance', h: home.bigChances, a: away.bigChances, hd: home.bigChances ?? '–', ad: away.bigChances ?? '–' },
     { label: 'Střely', h: home.shots, a: away.shots, hd: home.shots ?? '–', ad: away.shots ?? '–' },
     { label: 'Střely na branku', h: home.sot, a: away.sot, hd: home.sot ?? '–', ad: away.sot ?? '–' },
     { label: 'Rohy', h: home.corners, a: away.corners, hd: home.corners ?? '–', ad: away.corners ?? '–' },
