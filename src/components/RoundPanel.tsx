@@ -469,6 +469,13 @@ function Stepper({
 }
 
 // ─── Bohatý detail zápasu (data z ESPN) ─────────────────────────────
+// Minuta ("45'+2'") → číslo pro řazení (45.02), aby nastavení šlo správně za základní čas.
+function clockNum(disp: string): number {
+  const m = /(\d+)(?:\s*\+\s*(\d+))?/.exec(disp ?? '');
+  if (!m) return 9999;
+  return parseInt(m[1], 10) + (m[2] ? parseInt(m[2], 10) / 100 : 0);
+}
+
 function MatchDetailView({ m }: { m: Match }) {
   const d = m.detail;
   if (!d) return null;
@@ -477,35 +484,41 @@ function MatchDetailView({ m }: { m: Match }) {
     d.attendance ? `${d.attendance.toLocaleString('cs-CZ')} diváků` : null,
   ].filter(Boolean);
 
+  // góly + karty v časové posloupnosti, jak šly po sobě
+  const feed = [
+    ...(d.goals ?? []).map((g) => ({ min: g.min, sort: clockNum(g.min), side: g.side, type: 'goal' as const, player: g.player, gkind: g.kind })),
+    ...(d.cards ?? []).map((c) => ({ min: c.min, sort: clockNum(c.min), side: c.side, type: 'card' as const, player: c.player, color: c.color })),
+  ].sort((a, b) => a.sort - b.sort);
+
   return (
     <div className="space-y-3 border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
       {meta.length > 0 && <div className="text-[11px] text-slate-300/50">🏟️ {meta.join(' · ')}</div>}
 
-      {d.goals && d.goals.length > 0 && (
+      {feed.length > 0 && (
         <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Branky</p>
+          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Průběh</p>
           <ul className="space-y-0.5 text-xs">
-            {d.goals.map((g, i) => (
-              <li key={i} className={g.side === 'home' ? 'text-left' : 'text-right'}>
-                <span className="text-slate-100/75">
-                  {g.side === 'away' && <span className="text-slate-300/40">{g.min} </span>}⚽ {g.player}
-                  {g.kind === 'penalty' ? ' (pen.)' : g.kind === 'own' ? ' (vl.)' : ''}
-                  {g.side === 'home' && <span className="text-slate-300/40"> {g.min}</span>}
-                </span>
-              </li>
-            ))}
+            {feed.map((e, i) => {
+              const icon =
+                e.type === 'goal' ? (
+                  <span>⚽</span>
+                ) : (
+                  <span className={e.color === 'red' ? 'text-red-400' : 'text-yellow-400'}>▮</span>
+                );
+              const suffix =
+                e.type === 'goal' && e.gkind === 'penalty' ? ' (pen.)' : e.type === 'goal' && e.gkind === 'own' ? ' (vl.)' : '';
+              return (
+                <li key={i} className={e.side === 'home' ? 'text-left' : 'text-right'}>
+                  <span className="text-slate-100/75">
+                    {e.side === 'away' && <span className="text-slate-300/40">{e.min} </span>}
+                    {icon} {e.player}
+                    {suffix}
+                    {e.side === 'home' && <span className="text-slate-300/40"> {e.min}</span>}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
-        </div>
-      )}
-
-      {d.cards && d.cards.length > 0 && (
-        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-300/55">
-          {d.cards.map((c, i) => (
-            <span key={i}>
-              <span className={c.color === 'red' ? 'text-red-400' : 'text-yellow-400'}>▮</span> {c.player}{' '}
-              <span className="text-slate-300/35">{c.min}</span>
-            </span>
-          ))}
         </div>
       )}
 
