@@ -39,10 +39,10 @@ const TEAM_CZ: Record<string, string> = {
   ghana: 'Ghana', panama: 'Panama',
 };
 
-function normKey(name: string): string {
+export function normKey(name: string): string {
   return name.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim();
 }
-function toCz(name: string): string {
+export function toCz(name: string): string {
   return TEAM_CZ[normKey(name)] ?? name;
 }
 

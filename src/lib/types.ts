@@ -28,6 +28,8 @@ export interface Match {
   extra_away?: number | null;
   pen_home?: number | null;
   pen_away?: number | null;
+  clock?: string | null; // živá minuta z ESPN ("90'+8'")
+  detail?: import('./espn').MatchDetail | null;
 }
 
 export interface Prediction {

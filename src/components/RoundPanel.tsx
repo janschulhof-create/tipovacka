@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
+import type { TeamStats, Lineup } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
@@ -266,7 +267,7 @@ function MatchRow({
     <div className="mb-2 flex items-start justify-between text-[11px] uppercase tracking-wide text-slate-100/45">
       <span className="flex items-center gap-1.5">
         {live ? (
-          <><span className="live-dot" /> <span className="text-flag">živě{m.minute != null ? ` ${m.minute}\u2032` : ''}</span></>
+          <><span className="live-dot" /> <span className="text-flag">živě{m.clock ? ` ${m.clock}` : m.minute != null ? ` ${m.minute}\u2032` : ''}</span></>
         ) : done ? 'konec' : locked ? '🔒 uzavřeno' : '🟢 otevřeno'}
       </span>
       <span className="flex flex-col items-end gap-1.5">
@@ -365,6 +366,9 @@ function MatchRow({
         </span>
       </div>
 
+      {/* bohatý detail zápasu (ESPN): stadion, střelci, karty, statistiky, sestavy */}
+      {open && m.detail && <MatchDetailView m={m} />}
+
       {/* odhalené tipy ostatních */}
       {locked && open && (
         <div className="border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
@@ -460,6 +464,129 @@ function Stepper({
       >
         －
       </button>
+    </div>
+  );
+}
+
+// ─── Bohatý detail zápasu (data z ESPN) ─────────────────────────────
+function MatchDetailView({ m }: { m: Match }) {
+  const d = m.detail;
+  if (!d) return null;
+  const meta = [
+    d.venue ? `${d.venue}${d.city ? `, ${d.city}` : ''}` : null,
+    d.attendance ? `${d.attendance.toLocaleString('cs-CZ')} diváků` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="space-y-3 border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
+      {(meta.length > 0 || d.homeForm || d.awayForm) && (
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px] text-slate-300/50">
+          {meta.length > 0 && <span>🏟️ {meta.join(' · ')}</span>}
+          {(d.homeForm || d.awayForm) && (
+            <span className="tabular-nums">
+              forma {d.homeForm ?? '—'} / {d.awayForm ?? '—'}
+            </span>
+          )}
+        </div>
+      )}
+
+      {d.goals && d.goals.length > 0 && (
+        <div>
+          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Branky</p>
+          <ul className="space-y-0.5 text-xs">
+            {d.goals.map((g, i) => (
+              <li key={i} className={g.side === 'home' ? 'text-left' : 'text-right'}>
+                <span className="text-slate-100/75">
+                  {g.side === 'away' && <span className="text-slate-300/40">{g.min} </span>}⚽ {g.player}
+                  {g.kind === 'penalty' ? ' (pen.)' : g.kind === 'own' ? ' (vl.)' : ''}
+                  {g.side === 'home' && <span className="text-slate-300/40"> {g.min}</span>}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {d.cards && d.cards.length > 0 && (
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-300/55">
+          {d.cards.map((c, i) => (
+            <span key={i}>
+              <span className={c.color === 'red' ? 'text-red-400' : 'text-yellow-400'}>▮</span> {c.player}{' '}
+              <span className="text-slate-300/35">{c.min}</span>
+            </span>
+          ))}
+        </div>
+      )}
+
+      {d.stats && <StatBars home={d.stats.home} away={d.stats.away} />}
+
+      {d.lineups && (
+        <Lineups home={d.lineups.home} away={d.lineups.away} />
+      )}
+    </div>
+  );
+}
+
+function StatBars({ home, away }: { home: TeamStats; away: TeamStats }) {
+  const rows: [string, string | undefined, string | undefined, string][] = [
+    ['Držení', home.possession, away.possession, '%'],
+    ['Střely', home.shots, away.shots, ''],
+    ['Na branku', home.sot, away.sot, ''],
+    ['Rohy', home.corners, away.corners, ''],
+    ['Fauly', home.fouls, away.fouls, ''],
+  ];
+  const shown = rows.filter(([, h, a]) => h != null || a != null);
+  if (shown.length === 0) return null;
+  return (
+    <div className="space-y-1.5">
+      {shown.map(([label, h, a, unit]) => {
+        const hn = parseFloat(h ?? '0') || 0;
+        const an = parseFloat(a ?? '0') || 0;
+        const tot = hn + an || 1;
+        return (
+          <div key={label} className="text-[11px]">
+            <div className="flex items-center justify-between">
+              <span className="w-10 tabular-nums text-white">{h ?? '–'}{unit}</span>
+              <span className="text-slate-300/45">{label}</span>
+              <span className="w-10 text-right tabular-nums text-white">{a ?? '–'}{unit}</span>
+            </div>
+            <div className="mt-0.5 flex h-1 overflow-hidden rounded-full bg-terrain-900">
+              <div className="bg-flag/60" style={{ width: `${(hn / tot) * 100}%` }} />
+              <div className="ml-auto bg-slate-400/40" style={{ width: `${(an / tot) * 100}%` }} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function Lineups({ home, away }: { home: Lineup; away: Lineup }) {
+  const start = (l: Lineup) => l.players.filter((p) => p.starter);
+  const hs = start(home);
+  const as = start(away);
+  if (hs.length === 0 && as.length === 0) return null;
+  const label =
+    home.formation || away.formation ? ` · ${home.formation ?? '?'} vs ${away.formation ?? '?'}` : '';
+  return (
+    <div>
+      <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Sestavy{label}</p>
+      <div className="grid grid-cols-2 gap-3 text-[11px]">
+        <ul className="space-y-0.5">
+          {hs.map((p, i) => (
+            <li key={i} className="truncate text-slate-100/70">
+              <span className="tabular-nums text-slate-300/40">{p.num ?? ''}</span> {p.name}
+            </li>
+          ))}
+        </ul>
+        <ul className="space-y-0.5 text-right">
+          {as.map((p, i) => (
+            <li key={i} className="truncate text-slate-100/70">
+              {p.name} <span className="tabular-nums text-slate-300/40">{p.num ?? ''}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

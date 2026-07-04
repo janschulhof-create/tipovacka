@@ -36,3 +36,13 @@ comment on column matches.duration is
   'REGULAR | EXTRA_TIME | PENALTY_SHOOTOUT. home_score/away_score = stav po 90 min (na něj se počítají body).';
 comment on column matches.extra_home is 'Skutečný stav po prodloužení (jen zobrazení).';
 comment on column matches.pen_home   is 'Penaltový rozstřel (jen zobrazení).';
+
+-- ─── Přepočet přes ESPN ───────────────────────────────────────────
+-- Živá minuta zápasu a bohatý detail (střelci, karty, statistiky, forma, stadion,
+-- návštěva, sestavy) z veřejného ESPN API.
+alter table matches add column if not exists clock text;
+alter table matches add column if not exists detail jsonb;
+
+-- Uvolní reg_checked u odehraných zápasů, aby je ESPN průchod v syncu dopočítal
+-- (skóre v 90:00, stav po 90', prodloužení/penalty, detail, sestavy). Klidně i opakovaně.
+update matches set reg_checked = false where status = 'finished';

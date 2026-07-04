@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
-import { fetchSeasonFixtures, fetchMatchDetailReg, type NormalizedMatch } from '@/lib/apiFootball';
+import { fetchSeasonFixtures, normKey, type NormalizedMatch } from '@/lib/apiFootball';
+import { fetchEspnResults, fetchEspnLineups, orientDetail, pairKey } from '@/lib/espn';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
+
+type Row = { id: number; home_team: string; away_team: string };
 
 /**
  * Synchronizace rozpisu a výsledků z API-Football do aktivní sezóny.
@@ -138,52 +141,91 @@ export async function GET(req: NextRequest) {
     inserted = count ?? inserts.length;
   }
 
-  // ── „Pán nastavení": dopočítej skóre v 90:00 u odehraných, ještě neověřených zápasů.
-  // Z detailu zápasu (góly + nastavení). Omezeno na pár zápasů na běh kvůli rate limitu
-  // (free tier 10 req/min); zbytek se dobere v dalších bězích.
-  let regSet = 0;
-  let regNoStoppage = 0;
-  let regNoData = 0;
+  // ── ESPN (zdarma, bez klíče): z minut gólů dopočti skóre v 90:00 (Pán nastavení),
+  // stav po 90' (na body) a detail prodloužení/penalt. Zpracují se odehrané, ještě
+  // neověřené zápasy (reg_checked=false). Dopočet se ověří proti finálnímu skóre od ESPN
+  // – když nesedí nebo se zápas nenajde, přeskočíme (nechá se na příště/ruční doplnění).
+  let espnSet = 0;
+  let espnSkipped = 0;
+  let espnInvalid = 0;
+  let espnLive = 0;
   try {
-    const { data: toCheck } = await supabase
+    const { data: pendData } = await supabase
       .from('matches')
-      .select('id, external_api_id')
+      .select('id, home_team, away_team')
       .eq('season_id', season.id)
       .eq('status', 'finished')
       .eq('reg_checked', false)
-      .not('external_api_id', 'is', null)
-      .limit(6);
-    for (const m of (toCheck as { id: number; external_api_id: number }[]) ?? []) {
-      try {
-        const r = await fetchMatchDetailReg(m.external_api_id);
-        if (!r.available) {
-          regNoData++;
-          await supabase.from('matches').update({ reg_checked: true }).eq('id', m.id);
+      .limit(12);
+    const { data: liveData } = await supabase
+      .from('matches')
+      .select('id, home_team, away_team')
+      .eq('season_id', season.id)
+      .eq('status', 'live')
+      .limit(12);
+    const pending = (pendData as Row[]) ?? [];
+    const liveMatches = (liveData as Row[]) ?? [];
+
+    if (pending.length > 0 || liveMatches.length > 0) {
+      const espn = await fetchEspnResults();
+
+      // dohrané: skóre v 90:00 + stav po 90' + detail + sestavy (jednou, pak reg_checked)
+      for (const m of pending) {
+        const r = espn.get(pairKey(m.home_team, m.away_team));
+        if (!r) {
+          espnSkipped++;
           continue;
         }
-        if (r.hadStoppage) {
-          await supabase
-            .from('matches')
-            .update({ reg_home: r.regHome, reg_away: r.regAway, reg_checked: true })
-            .eq('id', m.id);
-          regSet++;
-        } else {
-          await supabase.from('matches').update({ reg_checked: true }).eq('id', m.id);
-          regNoStoppage++;
+        if (!r.valid) {
+          espnInvalid++;
+          continue;
         }
-      } catch {
-        /* přechodná chyba detailu – necháme reg_checked=false, zkusí se příště */
+        const same = normKey(m.home_team) === normKey(r.homeCz);
+        const pick = <T,>(h: T, a: T): T => (same ? h : a);
+        let detail = r.detail;
+        const lineups = r.eventId ? await fetchEspnLineups(r.eventId) : null;
+        if (lineups) detail = { ...detail, lineups };
+        const { error } = await supabase
+          .from('matches')
+          .update({
+            reg_home: pick(r.reg90_home, r.reg90_away),
+            reg_away: pick(r.reg90_away, r.reg90_home),
+            home_score: pick(r.end90_home, r.end90_away),
+            away_score: pick(r.end90_away, r.end90_home),
+            duration: r.duration,
+            extra_home: pick(r.extra_home, r.extra_away),
+            extra_away: pick(r.extra_away, r.extra_home),
+            pen_home: pick(r.pen_home, r.pen_away),
+            pen_away: pick(r.pen_away, r.pen_home),
+            clock: null,
+            detail: orientDetail(detail, same),
+            reg_checked: true,
+          })
+          .eq('id', m.id);
+        if (!error) espnSet++;
+      }
+
+      // živé: jen živá minuta + detail (skóre nechává football-data, žádné reg_checked)
+      for (const m of liveMatches) {
+        const r = espn.get(pairKey(m.home_team, m.away_team));
+        if (!r) continue;
+        const same = normKey(m.home_team) === normKey(r.homeCz);
+        const { error } = await supabase
+          .from('matches')
+          .update({ clock: r.clock || null, detail: orientDetail(r.detail, same) })
+          .eq('id', m.id);
+        if (!error) espnLive++;
       }
     }
   } catch {
-    /* sloupec reg_checked nemusí existovat (chybí migrace) – feature jen přeskočíme */
+    /* ESPN nedostupné nebo chybí sloupce – tiše přeskočíme, zkusí se příště */
   }
 
   return NextResponse.json({
     updated,
     inserted,
     fetched: fixtures.length,
-    reg: { set: regSet, noStoppage: regNoStoppage, noData: regNoData },
+    espn: { set: espnSet, live: espnLive, skipped: espnSkipped, invalid: espnInvalid },
     competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC',
     at: new Date().toISOString(),
   });
