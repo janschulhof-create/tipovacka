@@ -55,6 +55,8 @@ export interface EspnResult {
   reg90_away: number;
   end90_home: number;
   end90_away: number;
+  scoreHome: number; // aktuální/finální skóre přímo z ESPN (pro živé skóre)
+  scoreAway: number;
   duration: 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT';
   extra_home: number | null;
   extra_away: number | null;
@@ -166,23 +168,23 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
       }
       goals.push({ min: disp, side, player, kind });
 
-      // Klasifikace podle minuty z displayValue (spolehlivější než period, které ESPN
-      // u vyřazovacích zápasů nemusí plnit):
-      //   prodloužení = základní minuta > 90 (91', 105', 120'+3'…)
+      // Klasifikace goalů. POZOR: ESPN ve scoreboardu často neposílá `period`,
+      // a prodloužení nezobrazuje jednoznačně, proto:
+      //   prodloužení = jen když ESPN period >= 3 (jinak nedetekujeme – bezpečné)
       //   nastavení 2. poločasu = "90'+X" (základ 90 a je tam "+")
+      // ET zápasy bez period se dopočítají jinde (keyEvents / ruční data), aby
+      // se nekazily správně uložené výsledky.
       const mm = /(\d+)(?:\s*\+\s*(\d+))?/.exec(disp);
       const base = mm ? parseInt(mm[1], 10) : null;
       const plus = mm && mm[2] ? parseInt(mm[2], 10) : 0;
 
-      const isET = period >= 3 || (base != null && base > 90);
-      if (isET) {
+      if (period >= 3) {
         hasET = true;
         if (side === 'home') etH++;
         else etA++;
         continue;
       }
-      const is2ndStoppage = plus > 0 && (base === 90 || (base == null && period === 2));
-      if (is2ndStoppage) {
+      if (plus > 0 && base === 90) {
         if (side === 'home') stopH++;
         else stopA++;
       }
@@ -253,6 +255,8 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
       reg90_away,
       end90_home,
       end90_away,
+      scoreHome: finalH,
+      scoreAway: finalA,
       duration,
       extra_home: hasOt ? finalH : null,
       extra_away: hasOt ? finalA : null,

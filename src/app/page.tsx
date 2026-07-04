@@ -21,6 +21,7 @@ import { StandingsChart } from '@/components/StandingsChart';
 import { StatsCards } from '@/components/StatsCards';
 import { SeasonStats } from '@/components/SeasonStats';
 import { LiveBanner } from '@/components/LiveBanner';
+import { LiveRefresh } from '@/components/LiveRefresh';
 import Link from 'next/link';
 import { getSessionPlayer } from '@/lib/auth';
 
@@ -68,6 +69,7 @@ export default async function Home({
 
   return (
     <main className="space-y-6">
+      <LiveRefresh hasLive={liveMatches.length > 0} />
       <LiveBanner matches={liveMatches} />
 
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}

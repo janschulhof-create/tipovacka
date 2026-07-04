@@ -108,11 +108,33 @@ export async function GET(req: NextRequest) {
     if (r.ok) {
       const s = (await r.json()) as {
         boxscore?: { teams?: { team?: { id?: string }; statistics?: { name?: string; label?: string; displayValue?: string }[] }[] };
+        keyEvents?: {
+          type?: { text?: string };
+          text?: string;
+          clock?: { displayValue?: string };
+          period?: { number?: number; type?: string };
+          scoringPlay?: boolean;
+          shootout?: boolean;
+          team?: { id?: string };
+          participants?: { athlete?: { shortName?: string } }[];
+        }[];
+        format?: unknown;
       };
       const teams = s?.boxscore?.teams ?? [];
       summary = {
         topLevelKeys: Object.keys(s ?? {}),
         boxscoreTeamCount: teams.length,
+        format: s?.format,
+        keyEvents: (s?.keyEvents ?? []).map((k) => ({
+          text: k.type?.text ?? k.text,
+          min: k.clock?.displayValue,
+          period: k.period?.number,
+          periodType: k.period?.type,
+          scoringPlay: k.scoringPlay,
+          shootout: k.shootout,
+          teamId: k.team?.id,
+          player: k.participants?.[0]?.athlete?.shortName,
+        })),
         teams: teams.map((t) => ({
           teamId: t?.team?.id,
           stats: (t?.statistics ?? []).map((x) => ({ name: x.name, label: x.label, value: x.displayValue })),

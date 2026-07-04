@@ -6,7 +6,7 @@ import { fetchEspnResults, fetchEspnStats, mergeStats, orientDetail, pairKey, ty
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
 
-type Row = { id: number; home_team: string; away_team: string };
+type Row = { id: number; home_team: string; away_team: string; duration?: string | null };
 
 /**
  * Synchronizace rozpisu a výsledků z API-Football do aktivní sezóny.
@@ -152,7 +152,7 @@ export async function GET(req: NextRequest) {
   try {
     const { data: pendData } = await supabase
       .from('matches')
-      .select('id, home_team, away_team')
+      .select('id, home_team, away_team, duration')
       .eq('season_id', season.id)
       .eq('status', 'finished')
       .eq('reg_checked', false)
@@ -203,22 +203,34 @@ export async function GET(req: NextRequest) {
               },
             }
           : r.detail;
+        const detailUpd = orientDetail(detail, same);
+        // ESPN neumí ze scoreboardu spolehlivě rozdělit góly prodloužení (chybí period).
+        // Pokud už víme, že zápas šel do prodloužení / na penalty, NEPŘEPISUJEME skóre
+        // ani reg (chráníme správné hodnoty); doplníme jen detail + staty a označíme hotovo.
+        const knownOvertime = m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT';
+        const espnOvertime = r.duration !== 'REGULAR';
+        const preserve = knownOvertime || espnOvertime;
+
         const { error } = await supabase
           .from('matches')
-          .update({
-            reg_home: pick(r.reg90_home, r.reg90_away),
-            reg_away: pick(r.reg90_away, r.reg90_home),
-            home_score: pick(r.end90_home, r.end90_away),
-            away_score: pick(r.end90_away, r.end90_home),
-            duration: r.duration,
-            extra_home: pick(r.extra_home, r.extra_away),
-            extra_away: pick(r.extra_away, r.extra_home),
-            pen_home: pick(r.pen_home, r.pen_away),
-            pen_away: pick(r.pen_away, r.pen_home),
-            clock: null,
-            detail: orientDetail(detail, same),
-            reg_checked: true,
-          })
+          .update(
+            preserve
+              ? { detail: detailUpd, reg_checked: true }
+              : {
+                  reg_home: pick(r.reg90_home, r.reg90_away),
+                  reg_away: pick(r.reg90_away, r.reg90_home),
+                  home_score: pick(r.end90_home, r.end90_away),
+                  away_score: pick(r.end90_away, r.end90_home),
+                  duration: r.duration,
+                  extra_home: pick(r.extra_home, r.extra_away),
+                  extra_away: pick(r.extra_away, r.extra_home),
+                  pen_home: pick(r.pen_home, r.pen_away),
+                  pen_away: pick(r.pen_away, r.pen_home),
+                  clock: null,
+                  detail: detailUpd,
+                  reg_checked: true,
+                },
+          )
           .eq('id', m.id);
         if (!error) espnSet++;
       }
@@ -243,9 +255,18 @@ export async function GET(req: NextRequest) {
               },
             }
           : r.detail;
+        // Živé skóre bereme z ESPN (stejný rychlý zdroj jako feed golů) → skóre pro body
+        // se už neopožďuje za feedem. Orientace dle uložených názvů.
+        const liveH = same ? r.scoreHome : r.scoreAway;
+        const liveA = same ? r.scoreAway : r.scoreHome;
         const { error } = await supabase
           .from('matches')
-          .update({ clock: r.clock || null, detail: orientDetail(detail, same) })
+          .update({
+            home_score: liveH,
+            away_score: liveA,
+            clock: r.clock || null,
+            detail: orientDetail(detail, same),
+          })
           .eq('id', m.id);
         if (!error) espnLive++;
       }
