@@ -51,4 +51,6 @@ update matches set away_team = 'Bosna a Hercegovina' where away_team in ('Bosnia
 
 -- Uvolní reg_checked u odehraných zápasů, aby je ESPN průchod v syncu dopočítal
 -- (skóre v 90:00, stav po 90', prodloužení/penalty, detail, sestavy). Klidně i opakovaně.
-update matches set reg_checked = false where status = 'finished';
+update matches set reg_checked = false
+where status = 'finished'
+  and coalesce(duration, 'REGULAR') not in ('EXTRA_TIME', 'PENALTY_SHOOTOUT');

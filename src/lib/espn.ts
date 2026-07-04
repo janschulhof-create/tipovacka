@@ -271,22 +271,53 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
 }
 
 /** Bohaté statistiky ze summary/boxscore (best-effort; při chybě vrátí null). */
-export async function fetchEspnStats(
+/** Spolehlivý rozklad zápasu z keyEvents (má period i "90'+X" – na rozdíl od scoreboardu). */
+export interface EspnTimeline {
+  reg90_home: number;
+  reg90_away: number;
+  end90_home: number;
+  end90_away: number;
+  duration: 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT';
+  extra_home: number | null;
+  extra_away: number | null;
+  pen_home: number | null;
+  pen_away: number | null;
+  /** true jen když součet gólů z keyEvents sedí na finální skóre z ESPN */
+  valid: boolean;
+}
+
+/**
+ * Stáhne summary jednou a vrátí:
+ *  - bohaté statistiky (boxscore),
+ *  - timeline z keyEvents (period + minuta) → spolehlivé reg/skóre/prodloužení/penalty.
+ * Pokud keyEvents nesedí na finální skóre (finalHome/finalAway z ESPN scoreboardu),
+ * timeline.valid = false a volající se má vrátit k záloze.
+ */
+export async function fetchEspnSummary(
   eventId: string,
   homeId: string,
   awayId: string,
-): Promise<{ home: TeamStats; away: TeamStats } | null> {
+  finalHome?: number,
+  finalAway?: number,
+): Promise<{ home: TeamStats; away: TeamStats; timeline: EspnTimeline | null } | null> {
   try {
     const res = await fetch(`${BASE}/summary?event=${eventId}`, { cache: 'no-store' });
     if (!res.ok) return null;
     const data = (await res.json()) as {
       boxscore?: { teams?: { team?: { id?: string }; statistics?: { label?: string; displayValue?: string }[] }[] };
+      keyEvents?: {
+        scoringPlay?: boolean;
+        shootout?: boolean;
+        ownGoal?: boolean;
+        period?: number | { number?: number };
+        clock?: { displayValue?: string };
+        team?: { id?: string };
+      }[];
     };
     const teams = data?.boxscore?.teams;
     if (!Array.isArray(teams) || teams.length < 2) return null;
     const extract = (t: (typeof teams)[number] | undefined): TeamStats => {
       const st = t?.statistics ?? [];
-      // přesné labely z boxscore (case-insensitive rovnost)
       const get = (label: string): string | undefined =>
         st.find((x) => (x.label ?? '').toLowerCase() === label)?.displayValue;
       return {
@@ -301,10 +332,74 @@ export async function fetchEspnStats(
     const byId = new Map(teams.map((t) => [t?.team?.id, t]));
     const h = byId.get(homeId) ?? teams[0];
     const a = byId.get(awayId) ?? teams[1];
-    return { home: extract(h), away: extract(a) };
+
+    // ── timeline z keyEvents ──
+    let timeline: EspnTimeline | null = null;
+    const kev = data?.keyEvents ?? [];
+    if (kev.length > 0) {
+      let endH = 0, endA = 0, etH = 0, etA = 0, penH = 0, penA = 0, stopH = 0, stopA = 0;
+      let hasET = false, hasPen = false;
+      for (const k of kev) {
+        if (k.scoringPlay !== true) continue;
+        const periodNum = typeof k.period === 'number' ? k.period : (k.period?.number ?? 0);
+        const teamId = k.team?.id;
+        let side: 'home' | 'away' | null = teamId === homeId ? 'home' : teamId === awayId ? 'away' : null;
+        if (k.ownGoal && side) side = side === 'home' ? 'away' : 'home';
+        if (!side) continue;
+
+        if (k.shootout === true || periodNum >= 5) {
+          hasPen = true;
+          if (side === 'home') penH++; else penA++;
+          continue;
+        }
+        if (periodNum >= 3) {
+          hasET = true;
+          if (side === 'home') etH++; else etA++;
+          continue;
+        }
+        // základní hrací doba (period 1/2)
+        if (side === 'home') endH++; else endA++;
+        const mm = /(\d+)(?:\s*\+\s*(\d+))?/.exec(k.clock?.displayValue ?? '');
+        const base = mm ? parseInt(mm[1], 10) : null;
+        const plus = mm && mm[2] ? parseInt(mm[2], 10) : 0;
+        if (periodNum === 2 && base === 90 && plus > 0) {
+          if (side === 'home') stopH++; else stopA++;
+        }
+      }
+      const finalHc = endH + etH;
+      const finalAc = endA + etA;
+      const valid =
+        finalHome === undefined || finalAway === undefined
+          ? true
+          : finalHc === finalHome && finalAc === finalAway;
+      timeline = {
+        reg90_home: endH - stopH,
+        reg90_away: endA - stopA,
+        end90_home: endH,
+        end90_away: endA,
+        duration: hasPen ? 'PENALTY_SHOOTOUT' : hasET ? 'EXTRA_TIME' : 'REGULAR',
+        extra_home: hasET || hasPen ? finalHc : null,
+        extra_away: hasET || hasPen ? finalAc : null,
+        pen_home: hasPen ? penH : null,
+        pen_away: hasPen ? penA : null,
+        valid,
+      };
+    }
+
+    return { home: extract(h), away: extract(a), timeline };
   } catch {
     return null;
   }
+}
+
+/** Zpětně kompatibilní obal – jen statistiky (bez timeline). */
+export async function fetchEspnStats(
+  eventId: string,
+  homeId: string,
+  awayId: string,
+): Promise<{ home: TeamStats; away: TeamStats } | null> {
+  const s = await fetchEspnSummary(eventId, homeId, awayId);
+  return s ? { home: s.home, away: s.away } : null;
 }
 
 /** Sloučí staty: hodnoty ze summary mají přednost, scoreboard doplní chybějící (a karty). */

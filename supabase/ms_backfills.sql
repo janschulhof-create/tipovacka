@@ -99,27 +99,44 @@ update matches set
 
 -- Německo–Paraguay: po 90' 1:1, prodl. 1:1, na penalty Německo 3 : Paraguay 4 (postup Paraguay)
 update matches set
+  reg_home = 1, reg_away = 1,
   home_score = 1, away_score = 1,
   duration = 'PENALTY_SHOOTOUT',
   extra_home = 1, extra_away = 1,
   pen_home = case when home_team = 'Německo' then 3 else 4 end,
-  pen_away = case when home_team = 'Německo' then 4 else 3 end
+  pen_away = case when home_team = 'Německo' then 4 else 3 end,
+  reg_checked = true
   where (home_team, away_team) in (('Německo','Paraguay'), ('Paraguay','Německo'));
 
 -- Nizozemsko–Maroko: po 90' 1:1, prodl. 1:1, na penalty Nizozemsko 2 : Maroko 3 (postup Maroko)
 update matches set
+  reg_home = 1, reg_away = 1,
   home_score = 1, away_score = 1,
   duration = 'PENALTY_SHOOTOUT',
   extra_home = 1, extra_away = 1,
   pen_home = case when home_team = 'Nizozemsko' then 2 else 3 end,
-  pen_away = case when home_team = 'Nizozemsko' then 3 else 2 end
+  pen_away = case when home_team = 'Nizozemsko' then 3 else 2 end,
+  reg_checked = true
   where (home_team, away_team) in (('Nizozemsko','Maroko'), ('Maroko','Nizozemsko'));
 
 -- Belgie–Senegal: po 90' 2:2 (Belgie dotáhla z 0:2 v 89'), v prodloužení vítězný gól → 3:2
 update matches set
+  reg_home = 2, reg_away = 2,
   home_score = 2, away_score = 2,
   duration = 'EXTRA_TIME',
   extra_home = case when home_team = 'Belgie' then 3 else 2 end,
   extra_away = case when home_team = 'Belgie' then 2 else 3 end,
-  pen_home = null, pen_away = null
+  pen_home = null, pen_away = null,
+  reg_checked = true
   where (home_team, away_team) in (('Belgie','Senegal'), ('Senegal','Belgie'));
+
+-- Argentina–Kapverdy: po 90' 1:1 (góly 29', 59'), v prodloužení 92'/103'/111' → 3:2
+update matches set
+  reg_home = 1, reg_away = 1,
+  home_score = 1, away_score = 1,
+  duration = 'EXTRA_TIME',
+  extra_home = case when home_team = 'Argentina' then 3 else 2 end,
+  extra_away = case when home_team = 'Argentina' then 2 else 3 end,
+  pen_home = null, pen_away = null,
+  reg_checked = true
+  where (home_team, away_team) in (('Argentina','Kapverdy'), ('Kapverdy','Argentina'));

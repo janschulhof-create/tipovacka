@@ -55,8 +55,23 @@ export async function GET(req: NextRequest) {
   let mismatch = 0;
   let notFound = 0;
   let ok = 0;
+  let overtimeManual = 0;
 
   for (const m of (rows as Row[]) ?? []) {
+    // Zápasy v prodloužení / na penalty: ESPN scoreboard neumí spolehlivě rozdělit góly
+    // (chybí period), skóre po 90' držíme z ručních backfillů → nebereme jako neshodu.
+    if (m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT') {
+      overtimeManual++;
+      detail.push({
+        zapas: `${m.home_team}–${m.away_team}`,
+        duration: m.duration,
+        pan_nastaveni_90_00: `${m.reg_home}:${m.reg_away}`,
+        stav_po_90: `${m.home_score}:${m.away_score}`,
+        poznamka: 'prodloužení/penalty – ruční data (ESPN nerozděluje), nekontroluje se proti ESPN',
+      });
+      continue;
+    }
+
     const r = espn.get(pairKey(m.home_team, m.away_team));
     if (!r || !r.valid) {
       notFound++;
@@ -99,6 +114,7 @@ export async function GET(req: NextRequest) {
     souhrn: {
       odehrano: (rows ?? []).length,
       s_golem_v_nastaveni: stoppage,
+      prodlouzeni_penalty_rucni: overtimeManual,
       neshody_db_vs_espn: mismatch,
       espn_nenalezeno_ci_nevalidni: notFound,
       v_poradku: ok,
