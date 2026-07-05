@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
-import type { TeamStats, MatchDetail, MatchLineups, TeamLineup, LineupPlayer } from '@/lib/espn';
+import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
@@ -604,78 +604,118 @@ function StatsContent({ d }: { d: MatchDetail }) {
   );
 }
 
-const ROWS: { key: LineupPlayer['row']; label: string }[] = [
-  { key: 'fwd', label: 'Útok' },
-  { key: 'mid', label: 'Záloha' },
-  { key: 'def', label: 'Obrana' },
-  { key: 'gk', label: 'Brankář' },
-];
+const AWAY_ROWS: LineupPlayer['row'][] = ['gk', 'def', 'mid', 'fwd']; // shora dolů (útok ke středu)
+const HOME_ROWS: LineupPlayer['row'][] = ['fwd', 'mid', 'def', 'gk']; // od středu dolů k brankáři
 
-/** Jeden tým jako formace na půlce hřiště (útok nahoře, brankář dole). */
-function TeamFormation({ team, lineup, accent }: { team: string; lineup: TeamLineup; accent: string }) {
+/** Silueta hřiště na pozadí (čáry, kruhy, vápna). */
+function PitchLines() {
+  const s = { fill: 'none', stroke: 'rgba(255,255,255,0.14)', strokeWidth: 0.5 };
   return (
-    <div>
-      <div className="mb-2 flex items-center justify-between">
-        <span className="flex items-center gap-2 text-sm font-semibold text-white">
-          <Flag team={team} /> {team}
-        </span>
-        {lineup.formation && (
-          <span className="rounded bg-terrain-900/70 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-300/70">
-            {lineup.formation}
-          </span>
-        )}
-      </div>
-      <div
-        className="space-y-2 rounded-xl border border-emerald-400/10 px-2 py-3"
-        style={{ background: 'linear-gradient(180deg, rgba(16,90,54,.42), rgba(11,60,38,.30))' }}
-      >
-        {ROWS.map(({ key }) => {
-          const players = lineup.starters.filter((p) => p.row === key);
-          if (players.length === 0) return null;
-          return (
-            <div key={key} className="flex flex-wrap items-start justify-center gap-x-3 gap-y-1.5">
-              {players.map((p, i) => (
-                <PlayerChip key={`${p.name}-${i}`} p={p} accent={accent} />
-              ))}
-            </div>
-          );
-        })}
-      </div>
-      {lineup.subs.length > 0 && (
-        <div className="mt-2">
-          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Náhradníci</p>
-          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-300/60">
-            {lineup.subs.map((p, i) => (
-              <span key={`${p.name}-${i}`} className="tabular-nums">
-                {p.jersey && <span className="text-slate-300/40">{p.jersey} </span>}
-                {p.name}
-              </span>
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
+    <svg viewBox="0 0 100 140" preserveAspectRatio="none" className="absolute inset-0 h-full w-full" aria-hidden>
+      <rect x="2" y="2" width="96" height="136" {...s} />
+      <line x1="2" y1="70" x2="98" y2="70" {...s} />
+      <circle cx="50" cy="70" r="11" {...s} />
+      <circle cx="50" cy="70" r="0.8" fill="rgba(255,255,255,0.2)" stroke="none" />
+      {/* horní vápno (hosté) */}
+      <rect x="28" y="2" width="44" height="16" {...s} />
+      <rect x="40" y="2" width="20" height="6" {...s} />
+      {/* dolní vápno (domácí) */}
+      <rect x="28" y="122" width="44" height="16" {...s} />
+      <rect x="40" y="132" width="20" height="6" {...s} />
+    </svg>
   );
 }
 
 function PlayerChip({ p, accent }: { p: LineupPlayer; accent: string }) {
   return (
-    <span className="flex w-16 flex-col items-center gap-1 text-center">
-      <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold tabular-nums text-white ${accent}`}>
+    <span className="flex w-14 flex-col items-center gap-0.5 text-center sm:w-16">
+      <span className={`flex h-7 w-7 items-center justify-center rounded-full text-[11px] font-bold tabular-nums text-white shadow sm:h-8 sm:w-8 ${accent}`}>
         {p.jersey ?? '·'}
       </span>
-      <span className="max-w-[64px] truncate text-[10px] leading-tight text-slate-100/80" title={p.name}>
+      <span className="max-w-[56px] truncate text-[9px] leading-tight text-white/90 sm:max-w-[64px] sm:text-[10px]" title={p.name}>
         {p.name}
       </span>
     </span>
   );
 }
 
-function FormationView({ lineups, homeTeam, awayTeam }: { lineups: MatchLineups; homeTeam: string; awayTeam: string }) {
+function PitchRow({ players, accent }: { players: LineupPlayer[]; accent: string }) {
+  if (players.length === 0) return null;
   return (
-    <div className="space-y-5">
-      <TeamFormation team={homeTeam} lineup={lineups.home} accent="bg-flag/80 ring-1 ring-flag/40" />
-      <TeamFormation team={awayTeam} lineup={lineups.away} accent="bg-pitch/80 ring-1 ring-pitch/40" />
+    <div className="flex items-center justify-evenly px-1">
+      {players.map((p, i) => (
+        <PlayerChip key={`${p.name}-${i}`} p={p} accent={accent} />
+      ))}
+    </div>
+  );
+}
+
+function FormationView({ lineups, homeTeam, awayTeam }: { lineups: MatchLineups; homeTeam: string; awayTeam: string }) {
+  const homeAccent = 'bg-flag ring-1 ring-white/30';
+  const awayAccent = 'bg-pitch ring-1 ring-white/30';
+
+  const TeamLabel = ({ team, formation, accent }: { team: string; formation?: string; accent: string }) => (
+    <div className="flex items-center gap-2 text-xs font-semibold text-white">
+      <span className={`h-2.5 w-2.5 rounded-full ${accent}`} />
+      <Flag team={team} /> {team}
+      {formation && <span className="tabular-nums text-slate-300/50">{formation}</span>}
+    </div>
+  );
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <TeamLabel team={awayTeam} formation={lineups.away.formation} accent="bg-pitch" />
+      </div>
+
+      {/* jedno hřiště: hosté shora (brankář nahoře), domácí zdola (brankář dole), útoky se potkávají u středu */}
+      <div
+        className="relative w-full overflow-hidden rounded-2xl border border-emerald-300/10"
+        style={{ aspectRatio: '3 / 4', background: 'linear-gradient(180deg, rgba(18,96,58,.55), rgba(12,66,42,.5) 50%, rgba(18,96,58,.55))' }}
+      >
+        <PitchLines />
+        <div className="absolute inset-0 flex flex-col py-2">
+          <div className="flex flex-1 flex-col justify-around">
+            {AWAY_ROWS.map((r) => (
+              <PitchRow key={`a-${r}`} players={lineups.away.starters.filter((p) => p.row === r)} accent={awayAccent} />
+            ))}
+          </div>
+          <div className="flex flex-1 flex-col justify-around">
+            {HOME_ROWS.map((r) => (
+              <PitchRow key={`h-${r}`} players={lineups.home.starters.filter((p) => p.row === r)} accent={homeAccent} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between">
+        <TeamLabel team={homeTeam} formation={lineups.home.formation} accent="bg-flag" />
+      </div>
+
+      {/* náhradníci */}
+      {(lineups.home.subs.length > 0 || lineups.away.subs.length > 0) && (
+        <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-2">
+          {[
+            { team: awayTeam, subs: lineups.away.subs },
+            { team: homeTeam, subs: lineups.home.subs },
+          ].map(
+            (t) =>
+              t.subs.length > 0 && (
+                <div key={t.team}>
+                  <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Náhradníci — {t.team}</p>
+                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-300/60">
+                    {t.subs.map((p, i) => (
+                      <span key={`${p.name}-${i}`} className="tabular-nums">
+                        {p.jersey && <span className="text-slate-300/40">{p.jersey} </span>}
+                        {p.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ),
+          )}
+        </div>
+      )}
     </div>
   );
 }

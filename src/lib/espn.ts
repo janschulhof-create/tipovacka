@@ -135,20 +135,29 @@ export function parseMinute(disp: string | undefined | null): { base: number | n
   };
 }
 
-/** Zařadí hráče do řady formace podle zkratky pozice (G/D/M/F i konkrétní CB/LW/ST…). */
+/** Zařadí hráče do řady formace podle zkratky pozice ESPN (G, CD-L, WB, DM, CF, LW…). */
 function posRow(abbr: string | undefined): 'gk' | 'def' | 'mid' | 'fwd' {
-  const p = (abbr ?? '').toUpperCase();
+  const p = (abbr ?? '').toUpperCase().replace(/[^A-Z]/g, ''); // "CD-L" → "CDL"
   if (!p) return 'mid';
-  if (p === 'G' || p === 'GK' || p.includes('KEEP')) return 'gk';
-  if (p === 'F' || p === 'FW' || p === 'ST' || p === 'CF' || p === 'S' || p.includes('WING') || p === 'LW' || p === 'RW')
+  // brankář
+  if (p === 'G' || p.startsWith('GK') || p.startsWith('GOAL')) return 'gk';
+  // útok: útočník / hrotový / křídlo (žádná zkratka útoku neobsahuje „M")
+  if (
+    p.startsWith('ST') || p.startsWith('CF') || p.startsWith('SS') || p.startsWith('FW') ||
+    p === 'S' || p === 'F' || p === 'W' ||
+    p.startsWith('LW') || p.startsWith('RW') || p.startsWith('LF') || p.startsWith('RF') ||
+    p.startsWith('FORW') || p.startsWith('STRIK')
+  )
     return 'fwd';
-  if (p === 'D' || p.startsWith('C') && p.includes('B') || p === 'LB' || p === 'RB' || p === 'CB' || p === 'WB' || p === 'LWB' || p === 'RWB' || p === 'SW')
+  // záloha: cokoli s „M" (CM, DM, AM, CDM, CAM, LM, RM…) – testuje se PŘED obranou kvůli CDM
+  if (p.includes('M')) return 'mid';
+  // obrana: bek (…B), střední obránce (CD/D), sweeper
+  if (
+    p.endsWith('B') || p.startsWith('CD') || p === 'D' ||
+    p.startsWith('LD') || p.startsWith('RD') || p.startsWith('SW') ||
+    p.startsWith('DL') || p.startsWith('DR') || p.startsWith('D')
+  )
     return 'def';
-  if (p === 'M' || p.includes('M')) return 'mid';
-  // fallback dle prvního písmene
-  if (p[0] === 'G') return 'gk';
-  if (p[0] === 'D') return 'def';
-  if (p[0] === 'F' || p[0] === 'W' || p[0] === 'S') return 'fwd';
   return 'mid';
 }
 
