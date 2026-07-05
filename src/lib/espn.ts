@@ -103,6 +103,21 @@ export function pairKey(a: string, b: string): string {
   return [normKey(toCz(a)), normKey(toCz(b))].sort().join('|');
 }
 
+/**
+ * Rozebere zobrazenou minutu z ESPN na základ a nastavení.
+ * ESPN posílá např. "16'", "45'+5'", "90'+8'" (apostrof PŘED plus), proto nelze
+ * spoléhat na `\d+\+\d+`. Vezmeme tedy všechna čísla a "+" jako příznak nastavení.
+ *   "90'+8'" → { base: 90, plus: 8 }
+ *   "16'"    → { base: 16, plus: 0 }
+ */
+export function parseMinute(disp: string | undefined | null): { base: number | null; plus: number } {
+  const nums = ((disp ?? '').match(/\d+/g) ?? []).map(Number);
+  return {
+    base: nums.length ? nums[0] : null,
+    plus: (disp ?? '').includes('+') && nums.length > 1 ? nums[1] : 0,
+  };
+}
+
 function sbStat(c: EspnCompetitor | undefined, name: string): string | undefined {
   return c?.statistics?.find((s) => s.name === name)?.displayValue;
 }
@@ -174,9 +189,7 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
       //   nastavení 2. poločasu = "90'+X" (základ 90 a je tam "+")
       // ET zápasy bez period se dopočítají jinde (keyEvents / ruční data), aby
       // se nekazily správně uložené výsledky.
-      const mm = /(\d+)(?:\s*\+\s*(\d+))?/.exec(disp);
-      const base = mm ? parseInt(mm[1], 10) : null;
-      const plus = mm && mm[2] ? parseInt(mm[2], 10) : 0;
+      const { base, plus } = parseMinute(disp);
 
       if (period >= 3) {
         hasET = true;
@@ -359,9 +372,7 @@ export async function fetchEspnSummary(
         }
         // základní hrací doba (period 1/2)
         if (side === 'home') endH++; else endA++;
-        const mm = /(\d+)(?:\s*\+\s*(\d+))?/.exec(k.clock?.displayValue ?? '');
-        const base = mm ? parseInt(mm[1], 10) : null;
-        const plus = mm && mm[2] ? parseInt(mm[2], 10) : 0;
+        const { base, plus } = parseMinute(k.clock?.displayValue);
         if (periodNum === 2 && base === 90 && plus > 0) {
           if (side === 'home') stopH++; else stopA++;
         }

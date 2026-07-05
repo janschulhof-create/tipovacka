@@ -476,9 +476,11 @@ function Stepper({
 // ─── Bohatý detail zápasu (data z ESPN) ─────────────────────────────
 // Minuta ("45'+2'") → číslo pro řazení (45.02), aby nastavení šlo správně za základní čas.
 function clockNum(disp: string): number {
-  const m = /(\d+)(?:\s*\+\s*(\d+))?/.exec(disp ?? '');
-  if (!m) return 9999;
-  return parseInt(m[1], 10) + (m[2] ? parseInt(m[2], 10) / 100 : 0);
+  // ESPN posílá "90'+8'" (apostrof před +), proto bereme čísla zvlášť.
+  const nums = ((disp ?? '').match(/\d+/g) ?? []).map(Number);
+  if (!nums.length) return 9999;
+  const plus = (disp ?? '').includes('+') && nums.length > 1 ? nums[1] : 0;
+  return nums[0] + plus / 100;
 }
 
 function SectionHead({ icon, title, accent }: { icon: string; title: string; accent: string }) {
