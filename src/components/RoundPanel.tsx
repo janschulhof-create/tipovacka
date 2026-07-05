@@ -388,7 +388,7 @@ function MatchExpanded({
   const hasStats = !!d && (!!d.stats || !!d.venue || !!d.attendance);
   const lu = d?.lineups ?? null;
   const hasLineups = !!lu && lu.home.starters.length + lu.away.starters.length > 0;
-  const hasRoast = m.status === 'finished' && locked && preds.some((p) => p.points != null);
+  const hasRoast = m.status === 'finished' && (!!m.roast || (locked && preds.some((p) => p.points != null)));
 
   type TabId = 'tipy' | 'hodnoceni' | 'prubeh' | 'staty' | 'sestavy';
   const tabs = (
@@ -708,14 +708,15 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
 }
 
 function RoastContent({ m, preds }: { m: Match; preds: RoundPrediction[] }) {
-  const lines = matchRoast(m, preds);
-  if (lines.length === 0) return <p className="text-xs text-slate-300/40">Hodnocení se objeví po skončení zápasu.</p>;
+  const llm = (m.roast ?? '').trim();
+  const paras = llm ? llm.split(/\n+/).filter(Boolean) : matchRoast(m, preds);
+  if (paras.length === 0) return <p className="text-xs text-slate-300/40">Hodnocení se objeví po skončení zápasu.</p>;
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-flag">
         🎙️ Zhodnocení zápasu
       </div>
-      {lines.map((l, i) => (
+      {paras.map((l, i) => (
         <p key={i} className="text-sm leading-snug text-slate-100/80">
           {l}
         </p>

@@ -41,6 +41,7 @@ comment on column matches.pen_home   is 'Penaltový rozstřel (jen zobrazení).'
 -- Živá minuta zápasu a bohatý detail (střelci, karty, statistiky, forma, stadion,
 -- návštěva, sestavy) z veřejného ESPN API.
 alter table matches add column if not exists clock text;
+alter table matches add column if not exists roast text;
 alter table matches add column if not exists detail jsonb;
 
 -- Sjednocení anglicky uložených názvů (kvůli zobrazení, H2H i párování s ESPN)

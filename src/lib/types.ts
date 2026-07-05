@@ -31,6 +31,7 @@ export interface Match {
   pen_home?: number | null;
   pen_away?: number | null;
   clock?: string | null; // živá minuta z ESPN ("90'+8'")
+  roast?: string | null; // vtipné zhodnocení zápasu (LLM)
   detail?: import('./espn').MatchDetail | null;
 }
 
