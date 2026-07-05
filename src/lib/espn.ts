@@ -34,6 +34,22 @@ export interface TeamStats {
   fouls?: string;
   cards?: string; // karty (žluté + červené)
 }
+export interface LineupPlayer {
+  name: string;
+  jersey?: string;
+  pos?: string; // syrová zkratka pozice (G/D/M/F/CB/ST…)
+  row: 'gk' | 'def' | 'mid' | 'fwd';
+  starter: boolean;
+}
+export interface TeamLineup {
+  formation?: string;
+  starters: LineupPlayer[];
+  subs: LineupPlayer[];
+}
+export interface MatchLineups {
+  home: TeamLineup;
+  away: TeamLineup;
+}
 export interface MatchDetail {
   venue?: string;
   city?: string;
@@ -41,6 +57,7 @@ export interface MatchDetail {
   goals?: GoalEvent[];
   cards?: CardEvent[];
   stats?: { home: TeamStats; away: TeamStats };
+  lineups?: MatchLineups | null;
 }
 
 export interface EspnResult {
@@ -116,6 +133,70 @@ export function parseMinute(disp: string | undefined | null): { base: number | n
     base: nums.length ? nums[0] : null,
     plus: (disp ?? '').includes('+') && nums.length > 1 ? nums[1] : 0,
   };
+}
+
+/** Zařadí hráče do řady formace podle zkratky pozice (G/D/M/F i konkrétní CB/LW/ST…). */
+function posRow(abbr: string | undefined): 'gk' | 'def' | 'mid' | 'fwd' {
+  const p = (abbr ?? '').toUpperCase();
+  if (!p) return 'mid';
+  if (p === 'G' || p === 'GK' || p.includes('KEEP')) return 'gk';
+  if (p === 'F' || p === 'FW' || p === 'ST' || p === 'CF' || p === 'S' || p.includes('WING') || p === 'LW' || p === 'RW')
+    return 'fwd';
+  if (p === 'D' || p.startsWith('C') && p.includes('B') || p === 'LB' || p === 'RB' || p === 'CB' || p === 'WB' || p === 'LWB' || p === 'RWB' || p === 'SW')
+    return 'def';
+  if (p === 'M' || p.includes('M')) return 'mid';
+  // fallback dle prvního písmene
+  if (p[0] === 'G') return 'gk';
+  if (p[0] === 'D') return 'def';
+  if (p[0] === 'F' || p[0] === 'W' || p[0] === 'S') return 'fwd';
+  return 'mid';
+}
+
+interface RawRosterEntry {
+  starter?: boolean;
+  jersey?: string;
+  formationPlace?: string;
+  athlete?: { displayName?: string; shortName?: string; lastName?: string; position?: { abbreviation?: string } };
+  position?: { abbreviation?: string };
+}
+interface RawRoster {
+  homeAway?: string;
+  formation?: string | { name?: string };
+  team?: { id?: string };
+  roster?: RawRosterEntry[];
+}
+
+/** Z ESPN `rosters` poskládá sestavy (základ + náhradníci) orientované dle homeId/awayId. */
+function parseRosters(rosters: RawRoster[] | undefined, homeId: string, awayId: string): MatchLineups | null {
+  if (!Array.isArray(rosters) || rosters.length === 0) return null;
+  const build = (r: RawRoster | undefined): TeamLineup => {
+    const entries = r?.roster ?? [];
+    const formation =
+      typeof r?.formation === 'string' ? r.formation : (r?.formation as { name?: string } | undefined)?.name;
+    const starters: LineupPlayer[] = [];
+    const subs: LineupPlayer[] = [];
+    for (const e of entries) {
+      const a = e.athlete;
+      const name = a?.shortName || a?.displayName || a?.lastName || '';
+      if (!name) continue;
+      const abbr = e.position?.abbreviation ?? a?.position?.abbreviation;
+      const starter = e.starter === true;
+      const p: LineupPlayer = { name, jersey: e.jersey, pos: abbr, row: posRow(abbr), starter };
+      (starter ? starters : subs).push(p);
+    }
+    return { formation, starters, subs };
+  };
+  const pick = (side: 'home' | 'away'): RawRoster | undefined => {
+    const id = side === 'home' ? homeId : awayId;
+    return (
+      rosters.find((r) => r.team?.id === id) ??
+      rosters.find((r) => (r.homeAway ?? '').toLowerCase() === side)
+    );
+  };
+  const home = build(pick('home'));
+  const away = build(pick('away'));
+  if (home.starters.length === 0 && away.starters.length === 0) return null;
+  return { home, away };
 }
 
 function sbStat(c: EspnCompetitor | undefined, name: string): string | undefined {
@@ -312,12 +393,13 @@ export async function fetchEspnSummary(
   awayId: string,
   finalHome?: number,
   finalAway?: number,
-): Promise<{ home: TeamStats; away: TeamStats; timeline: EspnTimeline | null } | null> {
+): Promise<{ home: TeamStats; away: TeamStats; timeline: EspnTimeline | null; lineups: MatchLineups | null } | null> {
   try {
     const res = await fetch(`${BASE}/summary?event=${eventId}`, { cache: 'no-store' });
     if (!res.ok) return null;
     const data = (await res.json()) as {
       boxscore?: { teams?: { team?: { id?: string }; statistics?: { label?: string; displayValue?: string }[] }[] };
+      rosters?: RawRoster[];
       keyEvents?: {
         scoringPlay?: boolean;
         shootout?: boolean;
@@ -397,7 +479,8 @@ export async function fetchEspnSummary(
       };
     }
 
-    return { home: extract(h), away: extract(a), timeline };
+    const lineups = parseRosters(data?.rosters, homeId, awayId);
+    return { home: extract(h), away: extract(a), timeline, lineups };
   } catch {
     return null;
   }
@@ -437,5 +520,6 @@ export function orientDetail(d: MatchDetail, same: boolean): MatchDetail {
     goals: d.goals?.map((g) => ({ ...g, side: flip(g.side) })),
     cards: d.cards?.map((c) => ({ ...c, side: flip(c.side) })),
     stats: d.stats ? { home: d.stats.away, away: d.stats.home } : undefined,
+    lineups: d.lineups ? { home: d.lineups.away, away: d.lineups.home } : d.lineups,
   };
 }

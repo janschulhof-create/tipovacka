@@ -119,12 +119,38 @@ export async function GET(req: NextRequest) {
           participants?: { athlete?: { shortName?: string } }[];
         }[];
         format?: unknown;
+        rosters?: {
+          homeAway?: string;
+          formation?: unknown;
+          team?: { id?: string; displayName?: string };
+          roster?: {
+            starter?: boolean;
+            jersey?: string;
+            formationPlace?: string;
+            position?: { abbreviation?: string };
+            athlete?: { shortName?: string; displayName?: string; position?: { abbreviation?: string } };
+          }[];
+        }[];
       };
       const teams = s?.boxscore?.teams ?? [];
       summary = {
         topLevelKeys: Object.keys(s ?? {}),
         boxscoreTeamCount: teams.length,
         format: s?.format,
+        rosters: (s?.rosters ?? []).map((rr) => ({
+          homeAway: rr.homeAway,
+          teamId: rr.team?.id,
+          team: rr.team?.displayName,
+          formation: rr.formation,
+          rosterCount: rr.roster?.length,
+          sample: (rr.roster ?? []).slice(0, 3).map((p) => ({
+            starter: p.starter,
+            jersey: p.jersey,
+            formationPlace: p.formationPlace,
+            pos: p.position?.abbreviation ?? p.athlete?.position?.abbreviation,
+            name: p.athlete?.shortName ?? p.athlete?.displayName,
+          })),
+        })),
         keyEvents: (s?.keyEvents ?? []).map((k) => ({
           text: k.type?.text ?? k.text,
           min: k.clock?.displayValue,

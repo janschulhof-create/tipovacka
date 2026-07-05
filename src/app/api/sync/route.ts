@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { fetchSeasonFixtures, normKey, type NormalizedMatch } from '@/lib/apiFootball';
-import { fetchEspnResults, fetchEspnStats, fetchEspnSummary, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
+import { fetchEspnResults, fetchEspnSummary, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -206,6 +206,7 @@ export async function GET(req: NextRequest) {
                 home: mergeStats(r.detail.stats?.home ?? {}, stats.home),
                 away: mergeStats(r.detail.stats?.away ?? {}, stats.away),
               },
+              lineups: sum?.lineups ?? r.detail.lineups ?? null,
             }
           : r.detail;
         const detailUpd = orientDetail(detail, same);
@@ -271,11 +272,12 @@ export async function GET(req: NextRequest) {
         .map((m) => ({ m, r: espn.get(pairKey(m.home_team, m.away_team)) }))
         .filter((j): j is { m: Row; r: EspnResult } => !!j.r);
       const liveStats = await Promise.all(
-        liveJobs.map((j) => (j.r.eventId ? fetchEspnStats(j.r.eventId, j.r.homeId, j.r.awayId) : Promise.resolve(null))),
+        liveJobs.map((j) => (j.r.eventId ? fetchEspnSummary(j.r.eventId, j.r.homeId, j.r.awayId) : Promise.resolve(null))),
       );
       for (let i = 0; i < liveJobs.length; i++) {
         const { m, r } = liveJobs[i];
-        const stats = liveStats[i];
+        const sum = liveStats[i];
+        const stats = sum ? { home: sum.home, away: sum.away } : null;
         const same = normKey(m.home_team) === normKey(r.homeCz);
         const detail = stats
           ? {
@@ -284,6 +286,7 @@ export async function GET(req: NextRequest) {
                 home: mergeStats(r.detail.stats?.home ?? {}, stats.home),
                 away: mergeStats(r.detail.stats?.away ?? {}, stats.away),
               },
+              lineups: sum?.lineups ?? r.detail.lineups ?? null,
             }
           : r.detail;
         // Živé skóre bereme z ESPN (stejný rychlý zdroj jako feed golů) → skóre pro body

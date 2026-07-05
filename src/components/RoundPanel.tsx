@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
-import type { TeamStats } from '@/lib/espn';
+import type { TeamStats, MatchDetail, MatchLineups, TeamLineup, LineupPlayer } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
@@ -366,65 +366,133 @@ function MatchRow({
         </span>
       </div>
 
-      {/* bohatý detail zápasu (ESPN): stadion, střelci, karty, statistiky, sestavy */}
-      {open && m.detail && <MatchDetailView m={m} />}
-
-      {/* odhalené tipy ostatních */}
-      {locked && open && (
-        <div className="border-t border-terrain-800/60 bg-terrain-900/40 px-3 py-3 sm:px-4">
-          <SectionHead icon="🎯" title="Tipy hráčů" accent="bg-pitch" />
-          {live && m.home_score != null && m.away_score != null && (
-            <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-flag">
-              <span className="live-dot" /> Live body z aktuálního skóre {m.home_score}:{m.away_score}
-            </p>
-          )}
-          <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
-            {preds.length === 0 && <span className="text-xs text-slate-300/30">Nikdo netipoval.</span>}
-            {(() => {
-              const effPts = (t: RoundPrediction): number | null =>
-                t.points != null
-                  ? t.points
-                  : live && m.home_score != null && m.away_score != null
-                    ? calculatePoints(m.home_score, m.away_score, t.predicted_home, t.predicted_away)
-                    : null;
-              const sorted = [...preds].sort(
-                (a, b) => (effPts(b) ?? -1) - (effPts(a) ?? -1) || a.name.localeCompare(b.name, 'cs'),
-              );
-              return sorted.map((t) => {
-                const pts = effPts(t);
-                return (
-                  <div key={t.name} className="flex items-center justify-between border-b border-terrain-800/60 py-1 last:border-0">
-                    <span className="text-slate-100/60">{t.name}</span>
-                    <span className="flex items-center gap-1.5 tabular-nums">
-                      <span className="font-medium text-white">{t.predicted_home}:{t.predicted_away}</span>
-                      {pts != null ? (
-                        <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(pts)}`}>
-                          {pts} b
-                        </span>
-                      ) : null}
-                    </span>
-                  </div>
-                );
-              });
-            })()}
-          </div>
-        </div>
-      )}
-
-      {/* před výkopem → tipy skryté, jen kdo už tipoval (bez hodnot) */}
-      {!locked && open && (
-        <div className="border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 text-xs sm:px-4">
-          <p className="text-slate-100/60">🔒 Tipy se zobrazí po výkopu zápasu.</p>
-          {preds.length > 0 ? (
-            <p className="mt-1 text-[11px] text-slate-300/50">
-              Už tipli ({preds.length}): {preds.map((t) => t.name).join(', ')}
-            </p>
-          ) : (
-            <p className="mt-1 text-[11px] text-slate-300/40">Zatím nikdo netipoval.</p>
-          )}
-        </div>
-      )}
+      {/* rozbalený detail: záložky Tipy | Statistiky | Sestavy */}
+      {open && <MatchExpanded m={m} locked={locked} live={live} preds={preds} />}
     </li>
+  );
+}
+
+function MatchExpanded({
+  m,
+  locked,
+  live,
+  preds,
+}: {
+  m: Match;
+  locked: boolean;
+  live: boolean;
+  preds: RoundPrediction[];
+}) {
+  const d = m.detail;
+  const hasProgress = !!d && ((d.goals?.length ?? 0) > 0 || (d.cards?.length ?? 0) > 0);
+  const hasStats = !!d && (!!d.stats || !!d.venue || !!d.attendance);
+  const lu = d?.lineups ?? null;
+  const hasLineups = !!lu && lu.home.starters.length + lu.away.starters.length > 0;
+
+  type TabId = 'tipy' | 'prubeh' | 'staty' | 'sestavy';
+  const tabs = (
+    [
+      { id: 'tipy' as const, label: 'Tipy' },
+      hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
+      hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
+      hasLineups ? { id: 'sestavy' as const, label: 'Sestavy' } : null,
+    ] as ({ id: TabId; label: string } | null)[]
+  ).filter((t): t is { id: TabId; label: string } => t !== null);
+
+  const [tab, setTab] = useState<TabId>(hasProgress ? 'prubeh' : hasStats ? 'staty' : 'tipy');
+  const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
+
+  return (
+    <div className="border-t border-terrain-800/60 bg-terrain-950/40">
+      {tabs.length > 1 && (
+        <div className="flex gap-1 px-2 pt-2 sm:px-3">
+          {tabs.map((t) => (
+            <button
+              key={t.id}
+              onClick={(e) => {
+                e.stopPropagation();
+                setTab(t.id);
+              }}
+              className={`rounded-t-md px-3 py-1.5 text-xs font-semibold transition ${
+                active === t.id
+                  ? 'bg-terrain-800 text-white'
+                  : 'text-slate-300/50 hover:text-slate-100/80'
+              }`}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className={tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}>
+        {active === 'tipy' && <TipsContent m={m} locked={locked} live={live} preds={preds} />}
+        {active === 'prubeh' && d && <ProgressContent d={d} />}
+        {active === 'staty' && d && <StatsContent d={d} />}
+        {active === 'sestavy' && lu && <FormationView lineups={lu} homeTeam={m.home_team} awayTeam={m.away_team} />}
+      </div>
+    </div>
+  );
+}
+
+function TipsContent({
+  m,
+  locked,
+  live,
+  preds,
+}: {
+  m: Match;
+  locked: boolean;
+  live: boolean;
+  preds: RoundPrediction[];
+}) {
+  if (!locked) {
+    return (
+      <div className="text-xs">
+        <p className="text-slate-100/60">🔒 Tipy se zobrazí po výkopu zápasu.</p>
+        {preds.length > 0 ? (
+          <p className="mt-1 text-[11px] text-slate-300/50">
+            Už tipli ({preds.length}): {preds.map((t) => t.name).join(', ')}
+          </p>
+        ) : (
+          <p className="mt-1 text-[11px] text-slate-300/40">Zatím nikdo netipoval.</p>
+        )}
+      </div>
+    );
+  }
+  const effPts = (t: RoundPrediction): number | null =>
+    t.points != null
+      ? t.points
+      : live && m.home_score != null && m.away_score != null
+        ? calculatePoints(m.home_score, m.away_score, t.predicted_home, t.predicted_away)
+        : null;
+  const sorted = [...preds].sort(
+    (a, b) => (effPts(b) ?? -1) - (effPts(a) ?? -1) || a.name.localeCompare(b.name, 'cs'),
+  );
+  return (
+    <>
+      {live && m.home_score != null && m.away_score != null && (
+        <p className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-flag">
+          <span className="live-dot" /> Live body z aktuálního skóre {m.home_score}:{m.away_score}
+        </p>
+      )}
+      <div className="grid grid-cols-1 gap-x-6 gap-y-1 text-sm sm:grid-cols-2">
+        {preds.length === 0 && <span className="text-xs text-slate-300/30">Nikdo netipoval.</span>}
+        {sorted.map((t) => {
+          const pts = effPts(t);
+          return (
+            <div key={t.name} className="flex items-center justify-between border-b border-terrain-800/60 py-1 last:border-0">
+              <span className="text-slate-100/60">{t.name}</span>
+              <span className="flex items-center gap-1.5 tabular-nums">
+                <span className="font-medium text-white">{t.predicted_home}:{t.predicted_away}</span>
+                {pts != null ? (
+                  <span className={`rounded px-1.5 py-0.5 text-xs font-bold ${pointsBadgeClass(pts)}`}>{pts} b</span>
+                ) : null}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -483,66 +551,131 @@ function clockNum(disp: string): number {
   return nums[0] + plus / 100;
 }
 
-function SectionHead({ icon, title, accent }: { icon: string; title: string; accent: string }) {
-  return (
-    <div className="mb-3 flex items-center gap-2">
-      <span className={`h-3.5 w-1 rounded-full ${accent}`} />
-      <span aria-hidden className="text-[12px] leading-none">{icon}</span>
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-300/60">{title}</span>
-    </div>
-  );
-}
-
-function MatchDetailView({ m }: { m: Match }) {
-  const d = m.detail;
-  if (!d) return null;
-  const meta = [
-    d.venue ? `${d.venue}${d.city ? `, ${d.city}` : ''}` : null,
-    d.attendance ? `${d.attendance.toLocaleString('cs-CZ')} diváků` : null,
-  ].filter(Boolean);
-
+function ProgressContent({ d }: { d: MatchDetail }) {
   // góly + karty v časové posloupnosti, jak šly po sobě
   const feed = [
     ...(d.goals ?? []).map((g) => ({ min: g.min, sort: clockNum(g.min), side: g.side, type: 'goal' as const, player: g.player, gkind: g.kind })),
     ...(d.cards ?? []).map((c) => ({ min: c.min, sort: clockNum(c.min), side: c.side, type: 'card' as const, player: c.player, color: c.color })),
   ].sort((a, b) => a.sort - b.sort);
 
-  return (
-    <div className="border-t border-terrain-800/60 bg-terrain-950/40 px-3 py-3 sm:px-4">
-      <SectionHead icon="📊" title="Statistiky zápasu" accent="bg-flag" />
-      <div className="space-y-3">
-      {meta.length > 0 && <div className="text-[11px] text-slate-300/50">🏟️ {meta.join(' · ')}</div>}
+  if (feed.length === 0) return <p className="text-xs text-slate-300/40">Zatím žádné události.</p>;
 
-      {feed.length > 0 && (
-        <div>
-          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Průběh</p>
-          <ul className="space-y-0.5 text-xs">
-            {feed.map((e, i) => {
-              const icon =
-                e.type === 'goal' ? (
-                  <span>⚽</span>
-                ) : (
-                  <span className={e.color === 'red' ? 'text-red-400' : 'text-yellow-400'}>▮</span>
-                );
-              const suffix =
-                e.type === 'goal' && e.gkind === 'penalty' ? ' (pen.)' : e.type === 'goal' && e.gkind === 'own' ? ' (vl.)' : '';
-              return (
-                <li key={i} className={e.side === 'home' ? 'text-left' : 'text-right'}>
-                  <span className="text-slate-100/75">
-                    {e.side === 'away' && <span className="text-slate-300/40">{e.min} </span>}
-                    {icon} {e.player}
-                    {suffix}
-                    {e.side === 'home' && <span className="text-slate-300/40"> {e.min}</span>}
-                  </span>
-                </li>
-              );
-            })}
-          </ul>
+  return (
+    <ul className="space-y-0.5 text-xs">
+      {feed.map((e, i) => {
+        const icon =
+          e.type === 'goal' ? (
+            <span>⚽</span>
+          ) : (
+            <span className={e.color === 'red' ? 'text-red-400' : 'text-yellow-400'}>▮</span>
+          );
+        const suffix =
+          e.type === 'goal' && e.gkind === 'penalty' ? ' (pen.)' : e.type === 'goal' && e.gkind === 'own' ? ' (vl.)' : '';
+        return (
+          <li key={i} className={e.side === 'home' ? 'text-left' : 'text-right'}>
+            <span className="text-slate-100/75">
+              {e.side === 'away' && <span className="text-slate-300/40">{e.min} </span>}
+              {icon} {e.player}
+              {suffix}
+              {e.side === 'home' && <span className="text-slate-300/40"> {e.min}</span>}
+            </span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+function StatsContent({ d }: { d: MatchDetail }) {
+  const meta = [
+    d.venue ? `${d.venue}${d.city ? `, ${d.city}` : ''}` : null,
+    d.attendance ? `${d.attendance.toLocaleString('cs-CZ')} diváků` : null,
+  ].filter(Boolean);
+
+  return (
+    <div className="space-y-3">
+      {meta.length > 0 && <div className="text-[11px] text-slate-300/50">🏟️ {meta.join(' · ')}</div>}
+      {d.stats ? (
+        <StatBars home={d.stats.home} away={d.stats.away} />
+      ) : (
+        meta.length === 0 && <p className="text-xs text-slate-300/40">Statistiky nejsou k dispozici.</p>
+      )}
+    </div>
+  );
+}
+
+const ROWS: { key: LineupPlayer['row']; label: string }[] = [
+  { key: 'fwd', label: 'Útok' },
+  { key: 'mid', label: 'Záloha' },
+  { key: 'def', label: 'Obrana' },
+  { key: 'gk', label: 'Brankář' },
+];
+
+/** Jeden tým jako formace na půlce hřiště (útok nahoře, brankář dole). */
+function TeamFormation({ team, lineup, accent }: { team: string; lineup: TeamLineup; accent: string }) {
+  return (
+    <div>
+      <div className="mb-2 flex items-center justify-between">
+        <span className="flex items-center gap-2 text-sm font-semibold text-white">
+          <Flag team={team} /> {team}
+        </span>
+        {lineup.formation && (
+          <span className="rounded bg-terrain-900/70 px-1.5 py-0.5 text-[11px] font-medium tabular-nums text-slate-300/70">
+            {lineup.formation}
+          </span>
+        )}
+      </div>
+      <div
+        className="space-y-2 rounded-xl border border-emerald-400/10 px-2 py-3"
+        style={{ background: 'linear-gradient(180deg, rgba(16,90,54,.42), rgba(11,60,38,.30))' }}
+      >
+        {ROWS.map(({ key }) => {
+          const players = lineup.starters.filter((p) => p.row === key);
+          if (players.length === 0) return null;
+          return (
+            <div key={key} className="flex flex-wrap items-start justify-center gap-x-3 gap-y-1.5">
+              {players.map((p, i) => (
+                <PlayerChip key={`${p.name}-${i}`} p={p} accent={accent} />
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      {lineup.subs.length > 0 && (
+        <div className="mt-2">
+          <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Náhradníci</p>
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-300/60">
+            {lineup.subs.map((p, i) => (
+              <span key={`${p.name}-${i}`} className="tabular-nums">
+                {p.jersey && <span className="text-slate-300/40">{p.jersey} </span>}
+                {p.name}
+              </span>
+            ))}
+          </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {d.stats && <StatBars home={d.stats.home} away={d.stats.away} />}
-      </div>
+function PlayerChip({ p, accent }: { p: LineupPlayer; accent: string }) {
+  return (
+    <span className="flex w-16 flex-col items-center gap-1 text-center">
+      <span className={`flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold tabular-nums text-white ${accent}`}>
+        {p.jersey ?? '·'}
+      </span>
+      <span className="max-w-[64px] truncate text-[10px] leading-tight text-slate-100/80" title={p.name}>
+        {p.name}
+      </span>
+    </span>
+  );
+}
+
+function FormationView({ lineups, homeTeam, awayTeam }: { lineups: MatchLineups; homeTeam: string; awayTeam: string }) {
+  return (
+    <div className="space-y-5">
+      <TeamFormation team={homeTeam} lineup={lineups.home} accent="bg-flag/80 ring-1 ring-flag/40" />
+      <TeamFormation team={awayTeam} lineup={lineups.away} accent="bg-pitch/80 ring-1 ring-pitch/40" />
     </div>
   );
 }
