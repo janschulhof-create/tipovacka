@@ -561,86 +561,150 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
   const score = `${H}:${A}`;
   const tipped = preds.filter((p) => p.points != null);
 
-  // deterministický výběr podle id zápasu (text se nemění při každém renderu)
-  let seed = (m.id * 48271) % 2147483647;
+  // deterministický RNG dle id zápasu (text stálý, ale u každého zápasu jiný)
+  let seed = (m.id * 48271 + 12345) % 2147483647;
   if (seed <= 0) seed += 2147483646;
   const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
   const pick = <T,>(arr: T[]): T => arr[Math.floor(rnd() * arr.length)];
-  const names = (arr: RoundPrediction[]) => arr.map((p) => p.name).join(', ');
 
-  const lines: string[] = [];
-  const diff = Math.abs(H - A);
+  if (tipped.length === 0)
+    return [pick([
+      'Tenhle zápas nikdo netipnul — kolektivní alibismus, nula odvahy. 🙈',
+      'Prázdný tipovací lístek. Buď byla ponorka, nebo strach z ostudy.',
+    ])];
+
   const winner = H > A ? m.home_team : m.away_team;
-  const loser = H > A ? m.away_team : m.home_team;
+  const loserTeam = H > A ? m.away_team : m.home_team;
+  const realWin = Math.sign(H - A);
   const reg = m.reg_home != null && m.reg_away != null ? `${m.reg_home}:${m.reg_away}` : score;
 
-  // 1) charakter výsledku
-  if (H + A === 0) {
+  type F = RoundPrediction & { tip: string; dist: number; predWin: number; total: number };
+  const facts: F[] = tipped.map((p) => ({
+    ...p,
+    tip: `${p.predicted_home}:${p.predicted_away}`,
+    dist: Math.abs(p.predicted_home - H) + Math.abs(p.predicted_away - A),
+    predWin: Math.sign(p.predicted_home - p.predicted_away),
+    total: p.predicted_home + p.predicted_away,
+  }));
+
+  const byBest = [...facts].sort((a, b) => b.points! - a.points! || a.dist - b.dist || a.name.localeCompare(b.name, 'cs'));
+  const byWorst = [...facts].sort((a, b) => a.points! - b.points! || b.dist - a.dist || a.name.localeCompare(b.name, 'cs'));
+  const hero = byBest[0];
+  let loser = byWorst[0];
+  if (loser.name === hero.name && byWorst.length > 1) loser = byWorst[1];
+
+  const lines: string[] = [];
+
+  // ── 1) charakter výsledku ──
+  const diff = Math.abs(H - A);
+  if (H + A === 0)
     lines.push(pick([
-      'Nula od nuly — obě defenzivy zabetonovány, gólmani si četli noviny. 🥱',
-      'Bezgólová šachová partie: čistá konta a diváci v limbu.',
+      'Nula od nuly — obě defenzivy zabetonovány, gólmani si stihli dát kafe. 🥱',
+      'Bezgólová šachovnice: čistá konta a diváci v limbu.',
+      'Vrchol antifotbalu, 0:0. Někdo měl vypnout přenos v poločase.',
     ]));
-  } else if (H + A >= 6) {
+  else if (H + A >= 6)
     lines.push(pick([
-      `Kanonáda ${score}! Obrany na dovolené a síť se červenala. 🔥`,
-      `Přestřelka jak na Divokém západě — ${score}, balóny lítaly do sítě na běžícím pásu.`,
+      `Kanonáda ${score}! Obrany na dovolené, síť rudá jak Messiho tváře po penaltě. 🔥`,
+      `Přestřelka jak na Divokém západě — ${score}, balóny v síti na běžícím pásu.`,
+      `${score} — brankáři si dnes sáhli na dno pohárku hanby.`,
     ]));
-  } else if (diff >= 3) {
+  else if (diff >= 3)
     lines.push(pick([
-      `${winner} přejelo ${loser} parním válcem, ${score}. Debakl jak vyšitý.`,
-      `Jednosměrka: ${winner} ${score}, ${loser} si sáhlo na dno. Výprask.`,
+      `${winner} přejelo ${loserTeam} parním válcem, ${score}. Debakl jak vyšitý.`,
+      `Jednosměrka: ${winner} ${score}, ${loserTeam} si sáhlo na dno. Výprask jak řemen.`,
+      `${loserTeam} dostalo lekci ze základů fotbalu, ${score}. Bolestivé.`,
     ]));
-  } else if (diff === 0) {
+  else if (diff === 0)
     lines.push(pick([
       `Dělba bodů ${score} — každý domů s bodem a čistým svědomím.`,
       `Remíza jako řemen ${score}: nikdo nevyhrál, všichni naštvaní.`,
+      `${score}, spravedlivě rozdělené nervy. Klasická plichta.`,
     ]));
-  } else {
+  else
     lines.push(pick([
       `Těsňák ${score} — rozhodl jediný balón, zbytek nervy nadranc.`,
       `O gól, o nervy, o všechno — ${score} až do posledního hvizdu.`,
+      `${score} na jeden mizerný odraz. Fotbal je krutý.`,
     ]));
-  }
 
-  // 2) jak se tipovalo
-  const exact = tipped.filter((p) => p.points === 10);
-  const zeros = tipped.filter((p) => p.points === 0);
-  if (exact.length) {
+  // ── 2) hrdina kola (nejvíc bodů) ──
+  const hn = hero.name;
+  const hp = hero.points!;
+  if (hp === 10)
     lines.push(pick([
-      `${names(exact)} ${exact.length > 1 ? 'napálili' : 'napálil'} ${score} přímo do šibenice — 10 bodů, muška jak sniper. 🎯`,
-      `Přesná trefa do vinklu: ${names(exact)} tipl ${score} na chlup. Věštec kola.`,
+      `🎯 ${hn} napálil ${score} přímo do šibenice — 10 bodů a klid mistra. Ostatní ať se jdou zahrabat.`,
+      `Prorok kola ${hn} (10 b). Nabízí kurzy věštění, první hodina zdarma, ostatní beznadějně vyprodáno.`,
+      `${hn} tipl ${score} na chlup — 10 bodů. Sázkovky mu už ruší účet, tohle je podezřelé.`,
+      `${hn} to přečetl líp než VAR — přesných 10 bodů. Klobouk dolů, kouzelníku.`,
     ]));
-  } else if (tipped.length) {
+  else if (hp >= 4)
     lines.push(pick([
-      `Přesný tip ${score}? Dnes nikdo — všichni mířili do hlediště.`,
-      `Na ${score} neměl mušku ani jeden. Kolektivní kopačka vedle.`,
+      `Nejblíž mušce byl ${hn} (${hp} b) — kanonýr kola, i když do vinklu netrefil.`,
+      `${hn} bere ${hp} bodů a bude se s tím chlubit do dalšího kola. Zaslouženě, chvíli.`,
+      `Ze šlamastyky vyválel nejvíc ${hn} (${hp} b). Král jednookých mezi slepými.`,
+      `${hn} (${hp} b) měl aspoň nakročeno správně. Zbytek partičky spíš klopýtal.`,
     ]));
-  }
+  else
+    lines.push(pick([
+      `„Vítěz" kola ${hn} s bídnými ${hp} body — a to je ten nejlepší z vás. Panečku. 😅`,
+      `Nejvíc posbíral ${hn} (${hp} b). Když tohle je špička, tak dobrou noc.`,
+      `Bramborová pro ${hn} (${hp} b), zlatá zůstala v trezoru — nikdo si ji nezasloužil.`,
+    ]));
 
-  // 3) drama: prodloužení / nastavení / propadáci / nejlepší
-  if (m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT') {
-    lines.push(pick([
-      `Body jen za stav po 90′ (${reg}). Kdo slavil v prodloužení, slavil do prázdna — Pán nastavení góly po devadesátce nebere. 😈`,
-      `${m.duration === 'PENALTY_SHOOTOUT' ? 'Rozhodly až penalty' : 'Rozhodlo prodloužení'}, do tabulky se ale počítá jen 90′ (${reg}). Drama pro žaludek, ne pro body.`,
-    ]));
-  } else if (m.reg_home != null && m.reg_away != null && (m.reg_home !== H || m.reg_away !== A)) {
-    lines.push(pick([
-      `Gól v nastavení (${reg} → ${score}) zamíchal kartami — někomu spadl bod z kopaček rovnou do autu. ⏱️`,
-      `Ještě se v nastavení skórovalo a body se sesypaly. Kdo věřil stavu z 90. minuty, kousal se do rtu.`,
-    ]));
-  } else if (zeros.length >= Math.max(2, Math.ceil(tipped.length / 2))) {
-    lines.push(`${names(zeros)} — hromadná střela vedle jak ta jedle, 0 bodů. Někdy je lepší netipovat. 🙈`);
-  } else {
-    const best = tipped.reduce<RoundPrediction | null>((b, p) => (p.points! > (b?.points ?? -1) ? p : b), null);
-    if (best && best.points! > 0 && exact.length === 0) {
+  // ── 3) chudák kola (nejmíň bodů) ──
+  if (loser.name !== hero.name) {
+    const ln = loser.name;
+    const lp = loser.points!;
+    if (lp === 0)
       lines.push(pick([
-        `Nejblíž mušce byl ${best.name} (${best.points} b) — kanonýr kola.`,
-        `Bramborová za tip bere ${best.name} (${best.points} b), přesnou trefu ale netrefil.`,
+        `${ln} tipl ${loser.tip}, přišlo ${score} — vedle jak ta jedle, 0 bodů. Radši ať zůstane u fantasy. 🙈`,
+        `${ln} (${loser.tip}) mířil do úplně jiného zápasu. Nula bodů a koktejl ostudy.`,
+        `Cena útěchy pro ${ln}: tip ${loser.tip}, realita ${score}. Aut, roh, nic. 🥴`,
+        `${ln} tipoval ${loser.tip} — analytik roku to teda nebude. Kulaťoučká nula.`,
+        `${ln} poslal balón do autu i s tipem ${loser.tip}. 0 bodů, hlava v dlaních.`,
       ]));
-    }
+    else
+      lines.push(pick([
+        `Na chvostu ${ln} (${loser.tip} → ${score}, ${lp} b). Věštecká koule mu praskla. 🔮`,
+        `${ln} zase tahal za kratší konec — ${lp} b za tip ${loser.tip}. Chce to trénink.`,
+        `${ln} (${lp} b) s tipem ${loser.tip} zůstal v šatně, když se rozdávaly body.`,
+      ]));
   }
 
-  return lines.slice(0, 3);
+  // ── 4) perlička (vybraná z toho, co se reálně stalo) ──
+  const perlicky: string[] = [];
+  const wrongWin = facts.filter((p) => realWin !== 0 && p.predWin !== 0 && p.predWin !== realWin);
+  const drawTippers = facts.filter((p) => p.predWin === 0);
+  const overshoot = [...facts].sort((a, b) => b.total - a.total)[0];
+  const undershoot = [...facts].sort((a, b) => a.total - b.total)[0];
+
+  if (m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT')
+    perlicky.push(pick([
+      `Perlička: body jen za 90′ (${reg}). Kdo slavil gól v prodloužení, slavil do prázdna — Pán nastavení góly po devadesátce nebere. 😈`,
+      `${m.duration === 'PENALTY_SHOOTOUT' ? 'Rozhodly až penalty' : 'Rozhodlo prodloužení'}, do tabulky jen 90′ (${reg}). Drama pro žaludek, ne pro body.`,
+    ]));
+  if (m.reg_home != null && m.reg_away != null && (m.reg_home !== H || m.reg_away !== A))
+    perlicky.push(pick([
+      `Perlička: gól v nastavení (${reg} → ${score}) přepsal body. Někomu spadl bod z kopaček rovnou do autu. ⏱️`,
+      `V nastavení se ještě skórovalo a body se sesypaly. Kdo věřil stavu z 90. minuty, kousal se do rtu.`,
+    ]));
+  if (realWin !== 0 && wrongWin.length >= Math.max(2, Math.ceil(facts.length * 0.6)))
+    perlicky.push(`Perlička: na ${winner} vsadila jen hrstka — ${wrongWin.map((p) => p.name).join(', ')} tipli špatný tým. Stádo se mýlilo svorně. 🐑`);
+  else if (wrongWin.length === 1)
+    perlicky.push(`Perlička: ${wrongWin[0].name} jako jediný vsadil na špatný tým (${wrongWin[0].tip}). Odvaha, nebo zoufalství?`);
+  if (H + A === 0 && drawTippers.length === 0)
+    perlicky.push(`Perlička: všichni čekali góly, přišla nula. Kolektivní facka od reality. 😂`);
+  if (H + A >= 5 && undershoot.total <= 1)
+    perlicky.push(`Perlička: ${undershoot.name} sázel na nudu (${undershoot.tip}), přišla přestřelka ${score}. Vedle jak to jde.`);
+  if (diff >= 3 && overshoot && facts.some((p) => p.predWin === 0))
+    perlicky.push(`Perlička: někdo čekal plichtu, ${winner} přitom válcovalo ${score}. Fotbalový jasnovidec v akci to nebyl.`);
+  if (byBest[0].points! > 0 && byWorst[0].points === 0)
+    perlicky.push(`Perlička: rozpětí od ${hero.name} po ${byWorst[0].name} — jak od Ligy mistrů k okresnímu přeboru. 📉`);
+
+  if (perlicky.length) lines.push(pick(perlicky));
+
+  return lines;
 }
 
 function RoastContent({ m, preds }: { m: Match; preds: RoundPrediction[] }) {
