@@ -213,42 +213,54 @@ export async function GET(req: NextRequest) {
         // Hlavní zdroj skóre = timeline z keyEvents (má period i "90'+X"). Použijeme ho,
         // jen když sedí na finální skóre z ESPN (valid). Jinak spadneme na zálohu:
         //   scoreboard (spolehlivý jen pro REGULAR) → u prodloužení radši nepřepisujeme.
+        // Rozdělení práce podle silných stránek každého zdroje:
+        //  - REGULÉRNÍ zápas → scoreboard (r). Po opravě parseru minut spolehlivě
+        //    odečítá góly v nastavení a správně je přiřazuje týmu (keyEvents u pár
+        //    zápasů přiřazoval stranu obráceně).
+        //  - PRODLOUŽENÍ / PENALTY → keyEvents timeline (má period, scoreboard ne).
+        //    Když timeline není validní, radši nepřepisujeme (chráníme ruční data).
         const tl = sum?.timeline && sum.timeline.valid ? sum.timeline : null;
-        const knownOvertime = m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT';
-        const scoreboardUnsafe = !tl && (knownOvertime || r.duration !== 'REGULAR');
+        const overtime = tl
+          ? tl.duration !== 'REGULAR'
+          : r.duration !== 'REGULAR' || m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT';
 
-        const scorePayload = tl
-          ? {
-              reg_home: pick(tl.reg90_home, tl.reg90_away),
-              reg_away: pick(tl.reg90_away, tl.reg90_home),
-              home_score: pick(tl.end90_home, tl.end90_away),
-              away_score: pick(tl.end90_away, tl.end90_home),
-              duration: tl.duration,
-              extra_home: pick(tl.extra_home, tl.extra_away),
-              extra_away: pick(tl.extra_away, tl.extra_home),
-              pen_home: pick(tl.pen_home, tl.pen_away),
-              pen_away: pick(tl.pen_away, tl.pen_home),
-              clock: null,
-            }
-          : {
-              reg_home: pick(r.reg90_home, r.reg90_away),
-              reg_away: pick(r.reg90_away, r.reg90_home),
-              home_score: pick(r.end90_home, r.end90_away),
-              away_score: pick(r.end90_away, r.end90_home),
-              duration: r.duration,
-              extra_home: pick(r.extra_home, r.extra_away),
-              extra_away: pick(r.extra_away, r.extra_home),
-              pen_home: pick(r.pen_home, r.pen_away),
-              pen_away: pick(r.pen_away, r.pen_home),
-              clock: null,
-            };
+        let scorePayload: Record<string, unknown> | null;
+        if (overtime) {
+          scorePayload = tl
+            ? {
+                reg_home: pick(tl.reg90_home, tl.reg90_away),
+                reg_away: pick(tl.reg90_away, tl.reg90_home),
+                home_score: pick(tl.end90_home, tl.end90_away),
+                away_score: pick(tl.end90_away, tl.end90_home),
+                duration: tl.duration,
+                extra_home: pick(tl.extra_home, tl.extra_away),
+                extra_away: pick(tl.extra_away, tl.extra_home),
+                pen_home: pick(tl.pen_home, tl.pen_away),
+                pen_away: pick(tl.pen_away, tl.pen_home),
+                clock: null,
+              }
+            : null; // prodloužení bez validní timeline → jen detail, skóre necháme
+        } else {
+          scorePayload = {
+            reg_home: pick(r.reg90_home, r.reg90_away),
+            reg_away: pick(r.reg90_away, r.reg90_home),
+            home_score: pick(r.end90_home, r.end90_away),
+            away_score: pick(r.end90_away, r.end90_home),
+            duration: 'REGULAR',
+            extra_home: null,
+            extra_away: null,
+            pen_home: null,
+            pen_away: null,
+            clock: null,
+          };
+        }
 
         const { error } = await supabase
           .from('matches')
           .update(
-            scoreboardUnsafe
-              ? { detail: detailUpd, reg_checked: true } // prodloužení bez validní timeline → jen detail
-              : { ...scorePayload, detail: detailUpd, reg_checked: true },
+            scorePayload
+              ? { ...scorePayload, detail: detailUpd, reg_checked: true }
+              : { detail: detailUpd, reg_checked: true },
           )
           .eq('id', m.id);
         if (!error) espnSet++;
