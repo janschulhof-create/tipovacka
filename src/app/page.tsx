@@ -125,16 +125,17 @@ export default async function Home({
               <StandingsChart matches={chart.matches} players={chart.players} />
             </section>
           )}
-
-          <section className="space-y-4">
-            <h2 className="eyebrow">
-              <span className="flag-chip" /> Statistiky sezóny
-            </h2>
-            <StatsCards standings={standings} goals={goals} misses={misses} />
-            {hasResults && <SeasonStats rounds={tipRounds} players={activeNames} stoppage={stoppage} />}
-          </section>
         </aside>
       </div>
+
+      {/* ---------- STATISTIKY SEZÓNY: pod zápasy, na celou šířku (desktop); na mobilu stejné pořadí ---------- */}
+      <section className="mt-6 space-y-4 lg:mt-8">
+        <h2 className="eyebrow">
+          <span className="flag-chip" /> Statistiky sezóny
+        </h2>
+        <StatsCards standings={standings} goals={goals} misses={misses} />
+        {hasResults && <SeasonStats rounds={tipRounds} players={activeNames} stoppage={stoppage} />}
+      </section>
     </main>
   );
 }

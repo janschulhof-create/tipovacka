@@ -327,10 +327,10 @@ function MatchRow({
           <span className="text-slate-300/30"> · body za stav po 90′</span>
         </div>
       )}
-      {locked && myTip && (
+      {!showSteppers && (myTip || (score.h !== '' && score.a !== '')) && (
         <div className="mt-2 text-center text-xs text-slate-100/60">
-          tvůj tip {myTip.predicted_home}:{myTip.predicted_away}
-          {myTip.points != null && (
+          tvůj tip {myTip ? `${myTip.predicted_home}:${myTip.predicted_away}` : `${score.h}:${score.a}`}
+          {myTip?.points != null && (
             <span className={`ml-1.5 rounded px-1.5 py-0.5 font-bold ${pointsBadgeClass(myTip.points)}`}>
               {myTip.points} b
             </span>
