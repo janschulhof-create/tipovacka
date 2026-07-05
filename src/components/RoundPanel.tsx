@@ -388,18 +388,20 @@ function MatchExpanded({
   const hasStats = !!d && (!!d.stats || !!d.venue || !!d.attendance);
   const lu = d?.lineups ?? null;
   const hasLineups = !!lu && lu.home.starters.length + lu.away.starters.length > 0;
+  const hasRoast = m.status === 'finished' && locked && preds.some((p) => p.points != null);
 
-  type TabId = 'tipy' | 'prubeh' | 'staty' | 'sestavy';
+  type TabId = 'tipy' | 'hodnoceni' | 'prubeh' | 'staty' | 'sestavy';
   const tabs = (
     [
       { id: 'tipy' as const, label: 'Tipy' },
+      hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
       hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
       hasLineups ? { id: 'sestavy' as const, label: 'Sestavy' } : null,
     ] as ({ id: TabId; label: string } | null)[]
   ).filter((t): t is { id: TabId; label: string } => t !== null);
 
-  const [tab, setTab] = useState<TabId>(hasProgress ? 'prubeh' : hasStats ? 'staty' : 'tipy');
+  const [tab, setTab] = useState<TabId>('tipy');
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
   return (
@@ -426,6 +428,7 @@ function MatchExpanded({
       )}
       <div className={tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}>
         {active === 'tipy' && <TipsContent m={m} locked={locked} live={live} preds={preds} />}
+        {active === 'hodnoceni' && <RoastContent m={m} preds={preds} />}
         {active === 'prubeh' && d && <ProgressContent d={d} />}
         {active === 'staty' && d && <StatsContent d={d} />}
         {active === 'sestavy' && lu && <FormationView lineups={lu} homeTeam={m.home_team} awayTeam={m.away_team} />}
@@ -551,6 +554,112 @@ function clockNum(disp: string): number {
   return nums[0] + plus / 100;
 }
 
+function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
+  if (m.status !== 'finished' || m.home_score == null || m.away_score == null) return [];
+  const H = m.home_score;
+  const A = m.away_score;
+  const score = `${H}:${A}`;
+  const tipped = preds.filter((p) => p.points != null);
+
+  // deterministický výběr podle id zápasu (text se nemění při každém renderu)
+  let seed = (m.id * 48271) % 2147483647;
+  if (seed <= 0) seed += 2147483646;
+  const rnd = () => (seed = (seed * 48271) % 2147483647) / 2147483647;
+  const pick = <T,>(arr: T[]): T => arr[Math.floor(rnd() * arr.length)];
+  const names = (arr: RoundPrediction[]) => arr.map((p) => p.name).join(', ');
+
+  const lines: string[] = [];
+  const diff = Math.abs(H - A);
+  const winner = H > A ? m.home_team : m.away_team;
+  const loser = H > A ? m.away_team : m.home_team;
+  const reg = m.reg_home != null && m.reg_away != null ? `${m.reg_home}:${m.reg_away}` : score;
+
+  // 1) charakter výsledku
+  if (H + A === 0) {
+    lines.push(pick([
+      'Nula od nuly — obě defenzivy zabetonovány, gólmani si četli noviny. 🥱',
+      'Bezgólová šachová partie: čistá konta a diváci v limbu.',
+    ]));
+  } else if (H + A >= 6) {
+    lines.push(pick([
+      `Kanonáda ${score}! Obrany na dovolené a síť se červenala. 🔥`,
+      `Přestřelka jak na Divokém západě — ${score}, balóny lítaly do sítě na běžícím pásu.`,
+    ]));
+  } else if (diff >= 3) {
+    lines.push(pick([
+      `${winner} přejelo ${loser} parním válcem, ${score}. Debakl jak vyšitý.`,
+      `Jednosměrka: ${winner} ${score}, ${loser} si sáhlo na dno. Výprask.`,
+    ]));
+  } else if (diff === 0) {
+    lines.push(pick([
+      `Dělba bodů ${score} — každý domů s bodem a čistým svědomím.`,
+      `Remíza jako řemen ${score}: nikdo nevyhrál, všichni naštvaní.`,
+    ]));
+  } else {
+    lines.push(pick([
+      `Těsňák ${score} — rozhodl jediný balón, zbytek nervy nadranc.`,
+      `O gól, o nervy, o všechno — ${score} až do posledního hvizdu.`,
+    ]));
+  }
+
+  // 2) jak se tipovalo
+  const exact = tipped.filter((p) => p.points === 10);
+  const zeros = tipped.filter((p) => p.points === 0);
+  if (exact.length) {
+    lines.push(pick([
+      `${names(exact)} ${exact.length > 1 ? 'napálili' : 'napálil'} ${score} přímo do šibenice — 10 bodů, muška jak sniper. 🎯`,
+      `Přesná trefa do vinklu: ${names(exact)} tipl ${score} na chlup. Věštec kola.`,
+    ]));
+  } else if (tipped.length) {
+    lines.push(pick([
+      `Přesný tip ${score}? Dnes nikdo — všichni mířili do hlediště.`,
+      `Na ${score} neměl mušku ani jeden. Kolektivní kopačka vedle.`,
+    ]));
+  }
+
+  // 3) drama: prodloužení / nastavení / propadáci / nejlepší
+  if (m.duration === 'EXTRA_TIME' || m.duration === 'PENALTY_SHOOTOUT') {
+    lines.push(pick([
+      `Body jen za stav po 90′ (${reg}). Kdo slavil v prodloužení, slavil do prázdna — Pán nastavení góly po devadesátce nebere. 😈`,
+      `${m.duration === 'PENALTY_SHOOTOUT' ? 'Rozhodly až penalty' : 'Rozhodlo prodloužení'}, do tabulky se ale počítá jen 90′ (${reg}). Drama pro žaludek, ne pro body.`,
+    ]));
+  } else if (m.reg_home != null && m.reg_away != null && (m.reg_home !== H || m.reg_away !== A)) {
+    lines.push(pick([
+      `Gól v nastavení (${reg} → ${score}) zamíchal kartami — někomu spadl bod z kopaček rovnou do autu. ⏱️`,
+      `Ještě se v nastavení skórovalo a body se sesypaly. Kdo věřil stavu z 90. minuty, kousal se do rtu.`,
+    ]));
+  } else if (zeros.length >= Math.max(2, Math.ceil(tipped.length / 2))) {
+    lines.push(`${names(zeros)} — hromadná střela vedle jak ta jedle, 0 bodů. Někdy je lepší netipovat. 🙈`);
+  } else {
+    const best = tipped.reduce<RoundPrediction | null>((b, p) => (p.points! > (b?.points ?? -1) ? p : b), null);
+    if (best && best.points! > 0 && exact.length === 0) {
+      lines.push(pick([
+        `Nejblíž mušce byl ${best.name} (${best.points} b) — kanonýr kola.`,
+        `Bramborová za tip bere ${best.name} (${best.points} b), přesnou trefu ale netrefil.`,
+      ]));
+    }
+  }
+
+  return lines.slice(0, 3);
+}
+
+function RoastContent({ m, preds }: { m: Match; preds: RoundPrediction[] }) {
+  const lines = matchRoast(m, preds);
+  if (lines.length === 0) return <p className="text-xs text-slate-300/40">Hodnocení se objeví po skončení zápasu.</p>;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-flag">
+        🎙️ Zhodnocení zápasu
+      </div>
+      {lines.map((l, i) => (
+        <p key={i} className="text-sm leading-snug text-slate-100/80">
+          {l}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function ProgressContent({ d }: { d: MatchDetail }) {
   // góly + karty v časové posloupnosti, jak šly po sobě
   const feed = [
@@ -604,8 +713,8 @@ function StatsContent({ d }: { d: MatchDetail }) {
   );
 }
 
-const AWAY_ROWS: LineupPlayer['row'][] = ['gk', 'def', 'mid', 'fwd']; // shora dolů (útok ke středu)
-const HOME_ROWS: LineupPlayer['row'][] = ['fwd', 'mid', 'def', 'gk']; // od středu dolů k brankáři
+const AWAY_ROWS: LineupPlayer['row'][] = ['gk', 'def', 'mid', 'am', 'fwd']; // shora dolů (útok ke středu)
+const HOME_ROWS: LineupPlayer['row'][] = ['fwd', 'am', 'mid', 'def', 'gk']; // od středu dolů k brankáři
 
 /** Silueta hřiště na pozadí (čáry, kruhy, vápna). */
 function PitchLines() {

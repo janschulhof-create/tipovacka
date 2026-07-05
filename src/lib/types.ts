@@ -24,6 +24,8 @@ export interface Match {
   status: MatchStatus;
   minute?: number | null;
   duration?: 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT';
+  reg_home?: number | null; // skóre v 90:00 (Pán nastavení)
+  reg_away?: number | null;
   extra_home?: number | null;
   extra_away?: number | null;
   pen_home?: number | null;

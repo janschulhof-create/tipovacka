@@ -37,8 +37,8 @@ export interface TeamStats {
 export interface LineupPlayer {
   name: string;
   jersey?: string;
-  pos?: string; // syrová zkratka pozice (G/D/M/F/CB/ST…)
-  row: 'gk' | 'def' | 'mid' | 'fwd';
+  pos?: string; // syrová zkratka pozice (G/D/M/AM/F/CB/ST…)
+  row: 'gk' | 'def' | 'mid' | 'am' | 'fwd';
   starter: boolean;
 }
 export interface TeamLineup {
@@ -136,7 +136,7 @@ export function parseMinute(disp: string | undefined | null): { base: number | n
 }
 
 /** Zařadí hráče do řady formace podle zkratky pozice ESPN (G, CD-L, WB, DM, CF, LW…). */
-function posRow(abbr: string | undefined): 'gk' | 'def' | 'mid' | 'fwd' {
+function posRow(abbr: string | undefined): 'gk' | 'def' | 'mid' | 'am' | 'fwd' {
   const p = (abbr ?? '').toUpperCase().replace(/[^A-Z]/g, ''); // "CD-L" → "CDL"
   if (!p) return 'mid';
   // brankář
@@ -149,7 +149,9 @@ function posRow(abbr: string | undefined): 'gk' | 'def' | 'mid' | 'fwd' {
     p.startsWith('FORW') || p.startsWith('STRIK')
   )
     return 'fwd';
-  // záloha: cokoli s „M" (CM, DM, AM, CDM, CAM, LM, RM…) – testuje se PŘED obranou kvůli CDM
+  // ofenzivní záloha (AM, CAM, AM-L, AM-R) → vlastní vysunutá řada
+  if (p.includes('AM')) return 'am';
+  // záloha: cokoli s „M" (CM, DM, CDM, LM, RM…) – před obranou kvůli CDM
   if (p.includes('M')) return 'mid';
   // obrana: bek (…B), střední obránce (CD/D), sweeper
   if (
