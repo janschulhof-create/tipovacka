@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { fetchSeasonFixtures, normKey, type NormalizedMatch } from '@/lib/apiFootball';
 import { fetchEspnResults, fetchEspnSummary, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
-import { generateRoastLLM } from '@/lib/roast';
+import { runRoastBatch } from '@/lib/roastBatch';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -338,56 +338,13 @@ export async function GET(req: NextRequest) {
     /* ESPN nedostupné nebo chybí sloupce – tiše přeskočíme, zkusí se příště */
   }
 
-  // ── vtipné zhodnocení zápasů (Claude Haiku), bounded na pár za běh ──
+  // ── vtipné zhodnocení zápasů (LLM, viz roast.ts), pár za běh ──
   let roastsAdded = 0;
-  if (process.env.ANTHROPIC_API_KEY) {
-    try {
-      const { data: needRoast } = await supabase
-        .from('matches')
-        .select('id, home_team, away_team, home_score, away_score, reg_home, reg_away, duration')
-        .eq('season_id', season.id)
-        .eq('status', 'finished')
-        .is('roast', null)
-        .not('home_score', 'is', null)
-        .order('kickoff', { ascending: false })
-        .limit(3);
-
-      const jobs = await Promise.all(
-        (needRoast ?? []).map(async (rm) => {
-          const { data: tips } = await supabase
-            .from('predictions')
-            .select('predicted_home, predicted_away, points, players(name)')
-            .eq('match_id', rm.id);
-          type TR = { predicted_home: number; predicted_away: number; points: number | null; players: { name: string } | { name: string }[] | null };
-          const list = ((tips as TR[]) ?? [])
-            .filter((t) => t.points != null)
-            .map((t) => ({
-              name: Array.isArray(t.players) ? t.players[0]?.name ?? '?' : t.players?.name ?? '?',
-              tip: `${t.predicted_home}:${t.predicted_away}`,
-              points: t.points,
-            }));
-          if (list.length === 0) return { id: rm.id, roast: null };
-          const roast = await generateRoastLLM({
-            home: rm.home_team,
-            away: rm.away_team,
-            score: `${rm.home_score}:${rm.away_score}`,
-            reg: rm.reg_home != null && rm.reg_away != null ? `${rm.reg_home}:${rm.reg_away}` : null,
-            duration: rm.duration,
-            tips: list,
-          });
-          return { id: rm.id, roast };
-        }),
-      );
-
-      for (const j of jobs) {
-        if (j.roast) {
-          const { error } = await supabase.from('matches').update({ roast: j.roast }).eq('id', j.id);
-          if (!error) roastsAdded++;
-        }
-      }
-    } catch {
-      /* generování hodnocení selhalo – tiše přeskočíme, zkusí se příště */
-    }
+  try {
+    const { done } = await runRoastBatch(supabase, season.id, 3);
+    roastsAdded = done;
+  } catch {
+    /* generování hodnocení selhalo – tiše přeskočíme, zkusí se příště */
   }
 
   return NextResponse.json({
