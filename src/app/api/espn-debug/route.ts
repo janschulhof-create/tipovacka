@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { toCz } from '@/lib/apiFootball';
-import { fetchEspnResults, fetchEspnStats, pairKey } from '@/lib/espn';
+import { fetchEspnResults, fetchEspnStats, fetchEspnSchedule, pairKey } from '@/lib/espn';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 30;
@@ -24,6 +24,20 @@ export async function GET(req: NextRequest) {
   }
   const q = (p.get('q') ?? '').toLowerCase().trim();
   const eventParam = p.get('event');
+
+  // Náhled rozpisu play-off z ESPN: GET /api/espn-debug?key=…&schedule=1
+  if (p.get('schedule')) {
+    const sched = await fetchEspnSchedule();
+    const label = (r: number) =>
+      ({ 4: 'R32', 5: 'R16', 6: 'ČF', 7: 'SF', 8: 'o 3. místo', 9: 'finále' })[r] ?? `skupina(${r})`;
+    const ko = sched.filter((f) => f.round >= 4);
+    return NextResponse.json({
+      pocet_vsech: sched.length,
+      pocet_playoff: ko.length,
+      playoff: ko.map((f) => ({ kolo: `${f.round} – ${label(f.round)}`, kdy: f.kickoff, zapas: `${f.homeCz} – ${f.awayCz}`, eventId: f.eventId })),
+    });
+  }
+
   if (!q && !eventParam) {
     return NextResponse.json({ error: 'zadej ?q=<část názvu týmu> nebo ?event=<id>' }, { status: 400 });
   }

@@ -32,19 +32,19 @@ export async function generateRoastLLM(input: {
     .map((t) => `- ${t.name}: tipoval ${t.tip}, získal ${t.points ?? 0} b`)
     .join('\n');
 
-  const prompt = `Jsi ostrý a vtipný fotbalový komentátor. Napiš KRÁTKÉ (2–4 věty), naprosto originální a peprné zhodnocení jednoho zápasu z tipovací ligy party kamarádů.
+  const prompt = `Jsi ostrý fotbalový vtipálek. Napiš ULTRA KRÁTKÉ, úderné a vtipné zhodnocení zápasu z tipovačky party kamarádů. MAX 2 krátké věty, ideálně jedna. Žádná omáčka.
 
-Pravidla:
-- Používej klasickou českou fotbalovou terminologii a hantýrku (šibenice, vápno, standardka, parní válec, dělba bodů, kanonýr, čisté konto, gól do šatny, balón do autu apod.).
-- Utahuj si z hráčů. VŽDY vyzdvihni toho s nejvíc body a naopak si pořádně rýpni do toho s nejmíň body — klidně konkrétně přes jeho tip.
-- Když je uvedené drama v prodloužení/nastavení, obři si ho a zmiň, kdo kvůli tomu přišel o body.
-- Buď stručný, ale co nejvtipnější a originální. Žádné klišé dokola.
-- Piš výhradně česky. Nepiš žádný úvod, nadpis ani uvozovky — vrať POUZE samotné hodnocení.
+Styl:
+- Jak hláška od kamaráda v hospodě — drzé, trefné, k věci. Ne sloh.
+- Rýpni si konkrétně: vyzdvihni frajera s nejvíc body A ztrapni toho s nejmíň body (klidně přes jeho tip). Použij jejich jména.
+- Fotbalová hantýrka (šibenice, vápno, parní válec, dělba bodů, balón do autu, čisté konto).
+- Když je drama v prodloužení/nastavení, ulož si ho jednou vtipnou pointou (kdo přišel o body).
+- Žádná klišé, žádné opakování frází, žádný úvod ani uvozovky. Vrať jen tu hlášku.
 
 Zápas: ${input.home} ${input.score} ${input.away}
 ${drama}
 
-Tipy hráčů:
+Tipy:
 ${tipsText}`;
 
   try {
@@ -57,7 +57,7 @@ ${tipsText}`;
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 400,
+        max_tokens: 160,
         messages: [{ role: 'user', content: prompt }],
       }),
     });

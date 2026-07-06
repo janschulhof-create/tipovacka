@@ -66,6 +66,7 @@ export interface EspnResult {
   homeId: string;
   awayId: string;
   completed: boolean;
+  inProgress: boolean; // ESPN status.state === 'in' (probíhá)
   clock: string; // živá minuta ("90'+8'"), u dohraných ''
   eventId: string;
   reg90_home: number;
@@ -107,8 +108,12 @@ interface EspnCompetitor {
 }
 interface EspnEvent {
   id?: string;
+  date?: string; // ISO výkop
+  name?: string; // "Team A at Team B" / label
+  shortName?: string;
   competitions?: {
     attendance?: number;
+    notes?: { headline?: string; type?: string }[];
     status?: { displayClock?: string; type?: { completed?: boolean; state?: string } };
     venue?: { fullName?: string; address?: { city?: string } };
     competitors?: EspnCompetitor[];
@@ -118,6 +123,71 @@ interface EspnEvent {
 
 export function pairKey(a: string, b: string): string {
   return [normKey(toCz(a)), normKey(toCz(b))].sort().join('|');
+}
+
+/**
+ * Rozpis zápasu z ESPN pro doplnění play-off po losu (kola 4–9).
+ * round: 4=R32, 5=R16, 6=ČF, 7=SF, 8=o 3. místo, 9=finále; 0=skupina/neznámé.
+ */
+export interface EspnFixture {
+  eventId: string;
+  homeCz: string;
+  awayCz: string;
+  kickoff: string; // ISO
+  round: number;
+}
+
+// Oficiální okna vyřazovacích kol MS 2026 (FIFA/FOX): datum → číslo kola.
+const KO_BRACKETS: [string, string, number][] = [
+  ['2026-06-28', '2026-07-03', 4], // Round of 32
+  ['2026-07-04', '2026-07-07', 5], // Round of 16
+  ['2026-07-08', '2026-07-12', 6], // Quarterfinals (9–11, s rezervou)
+  ['2026-07-13', '2026-07-16', 7], // Semifinals (14–15)
+  ['2026-07-17', '2026-07-18', 8], // o 3. místo (18)
+  ['2026-07-19', '2026-07-21', 9], // Finále (19)
+];
+function roundFromKickoff(iso: string): number {
+  const d = iso.slice(0, 10);
+  for (const [a, b, r] of KO_BRACKETS) if (d >= a && d <= b) return r;
+  return 0; // skupina (do 27. 6.)
+}
+function roundFromLabel(s: string): number {
+  const t = s.toLowerCase();
+  if (/round of 32|1\/16/.test(t)) return 4;
+  if (/round of 16|last 16|1\/8/.test(t)) return 5;
+  if (/quarter/.test(t)) return 6;
+  if (/semi/.test(t)) return 7;
+  if (/third place|3rd place|bronze/.test(t)) return 8;
+  if (/final/.test(t)) return 9;
+  return 0;
+}
+// Placeholder soupeře (před losem): "Winner match 97", "1A", "Group B", "TBD"…
+const isPlaceholder = (s: string) => !s || /winner|runner|loser|\btbd\b|to be|\bgroup\b|\d/i.test(s);
+
+/** Načte z ESPN scoreboardu rozpis (i budoucí zápasy) pro doplnění play-off. */
+export async function fetchEspnSchedule(): Promise<EspnFixture[]> {
+  const res = await fetch(SCOREBOARD, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`ESPN HTTP ${res.status}`);
+  const data = (await res.json()) as { events?: EspnEvent[] };
+  const out: EspnFixture[] = [];
+  for (const ev of data.events ?? []) {
+    const comp = ev.competitions?.[0];
+    if (!comp || !ev.id || !ev.date) continue;
+    const home = comp.competitors?.find((c) => c.homeAway === 'home');
+    const away = comp.competitors?.find((c) => c.homeAway === 'away');
+    const hRaw = home?.team?.name ?? home?.team?.displayName ?? '';
+    const aRaw = away?.team?.name ?? away?.team?.displayName ?? '';
+    if (isPlaceholder(hRaw) || isPlaceholder(aRaw)) continue; // soupeři ještě nejsou známí
+    const label = `${ev.name ?? ''} ${ev.shortName ?? ''} ${(comp.notes ?? []).map((n) => n.headline ?? '').join(' ')}`;
+    out.push({
+      eventId: ev.id,
+      homeCz: toCz(hRaw),
+      awayCz: toCz(aRaw),
+      kickoff: ev.date,
+      round: roundFromLabel(label) || roundFromKickoff(ev.date),
+    });
+  }
+  return out;
 }
 
 /**
@@ -354,6 +424,7 @@ export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
       homeId,
       awayId,
       completed,
+      inProgress: state === 'in',
       clock: completed ? '' : (comp.status?.displayClock ?? ''),
       eventId: ev.id ?? '',
       reg90_home,

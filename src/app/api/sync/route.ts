@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { fetchSeasonFixtures, normKey, type NormalizedMatch } from '@/lib/apiFootball';
-import { fetchEspnResults, fetchEspnSummary, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
+import { fetchEspnResults, fetchEspnSchedule, fetchEspnSummary, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
 import { generateRoastLLM } from '@/lib/roast';
 
 export const dynamic = 'force-dynamic';
@@ -39,15 +39,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'no active season' }, { status: 500 });
   }
 
-  let fixtures: NormalizedMatch[];
-  try {
-    fixtures = await fetchSeasonFixtures();
-  } catch (e) {
-    return NextResponse.json({
-      error: String(e),
-      tokenSet: !!process.env.FOOTBALL_DATA_TOKEN,
-      competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC',
-    }, { status: 502 });
+  // Football-data je VYPNUTÝ – celý sync jede na ESPN (rychlé a spolehlivé).
+  // Kdyby ho někdo chtěl zpět jako doplněk rozpisu, stačí ve Vercelu nastavit
+  // USE_FOOTBALL_DATA=1. Ani zapnutý nesmí shodit sync (ESPN běží nezávisle).
+  const useFootballData = process.env.USE_FOOTBALL_DATA === '1';
+  let fixtures: NormalizedMatch[] = [];
+  let footballDataError: string | null = null;
+  if (useFootballData) {
+    try {
+      fixtures = await fetchSeasonFixtures();
+    } catch (e) {
+      footballDataError = String(e);
+    }
   }
 
   // existující zápasy aktivní sezóny:
@@ -61,10 +64,12 @@ export async function GET(req: NextRequest) {
   const idByApi = new Map<number, number>();
   const idByKey = new Map<string, number>();
   const idToTeams = new Map<number, { home: string; away: string }>();
+  const pairInRound = new Map<string, number>(); // "round|normHome|normAway(sorted)" -> id (na dedup play-off)
   for (const m of (existing as { id: number; external_api_id: number | null; round: number; home_team: string; away_team: string }[]) ?? []) {
     if (m.external_api_id != null) idByApi.set(m.external_api_id, m.id);
     idByKey.set(keyOf(m.round, m.home_team, m.away_team), m.id);
     idToTeams.set(m.id, { home: m.home_team, away: m.away_team });
+    pairInRound.set(`${m.round}|${[normKey(m.home_team), normKey(m.away_team)].sort().join('|')}`, m.id);
   }
 
   // Diagnostika (?debug=1): nic nezapisuje, jen ukáže, co se děje.
@@ -142,6 +147,50 @@ export async function GET(req: NextRequest) {
     inserted = count ?? inserts.length;
   }
 
+  // ── ESPN rozpis play-off: po losu doplní vyřazovací zápasy (kola 4–9) z ESPN.
+  // Idempotentní: páruje na už existující řádky (i ručně přidané) přes eventId nebo
+  // dvojici týmů v daném kole → NEDUPLIKUJE a NEPŘEPÍŠE tipy. Nové sloty vloží.
+  let koInserted = 0;
+  let koLinked = 0;
+  try {
+    const schedule = await fetchEspnSchedule();
+    const ko = schedule.filter((f) => f.round >= 4);
+    const koInserts: Record<string, unknown>[] = [];
+    for (const f of ko) {
+      const eid = Number(f.eventId);
+      if (Number.isFinite(eid) && idByApi.has(eid)) continue; // už spárováno přes eventId
+      const pkey = `${f.round}|${[normKey(f.homeCz), normKey(f.awayCz)].sort().join('|')}`;
+      const existId = pairInRound.get(pkey);
+      if (existId) {
+        // řádek už existuje (dřívější běh / ručně) → jen doplň eventId + kickoff, tipy zůstanou
+        await supabase
+          .from('matches')
+          .update({ external_api_id: Number.isFinite(eid) ? eid : null, kickoff: f.kickoff })
+          .eq('id', existId);
+        koLinked++;
+      } else {
+        koInserts.push({
+          season_id: season.id,
+          round: f.round,
+          kickoff: f.kickoff,
+          home_team: f.homeCz,
+          away_team: f.awayCz,
+          status: 'scheduled',
+          external_api_id: Number.isFinite(eid) ? eid : null,
+        });
+        pairInRound.set(pkey, -1); // ať tentýž zápas nevložíme dvakrát v jednom běhu
+      }
+    }
+    if (koInserts.length) {
+      const { count } = await supabase
+        .from('matches')
+        .upsert(koInserts, { onConflict: 'external_api_id', count: 'exact' });
+      koInserted = count ?? koInserts.length;
+    }
+  } catch {
+    /* rozpis play-off se nezdařil – nevadí, zkusí se příští běh */
+  }
+
   // ── ESPN (zdarma, bez klíče): z minut gólů dopočti skóre v 90:00 (Pán nastavení),
   // stav po 90' (na body) a detail prodloužení/penalt. Zpracují se odehrané, ještě
   // neověřené zápasy (reg_checked=false). Dopočet se ověří proti finálnímu skóre od ESPN
@@ -158,12 +207,18 @@ export async function GET(req: NextRequest) {
       .eq('status', 'finished')
       .eq('reg_checked', false)
       .limit(20);
+    // Kandidáti na „živě": zápasy, kterým už začal výkop a nejsou dohrané.
+    // NEspoléháme na status z football-data (může zaostávat) – o stavu rozhodne ESPN.
+    const liveWindowStart = new Date(Date.now() - 5 * 3600 * 1000).toISOString();
+    const nowIso = new Date().toISOString();
     const { data: liveData } = await supabase
       .from('matches')
       .select('id, home_team, away_team')
       .eq('season_id', season.id)
-      .eq('status', 'live')
-      .limit(12);
+      .neq('status', 'finished')
+      .gte('kickoff', liveWindowStart)
+      .lte('kickoff', nowIso)
+      .limit(16);
     const pending = (pendData as Row[]) ?? [];
     const liveMatches = (liveData as Row[]) ?? [];
 
@@ -268,10 +323,10 @@ export async function GET(req: NextRequest) {
         if (!error) espnSet++;
       }
 
-      // živé: živá minuta + detail vč. bohatých statistik (přepočítává se každý běh)
+      // živě / právě dohrané: o stavu rozhoduje ESPN (rychlé), ne football-data
       const liveJobs = liveMatches
         .map((m) => ({ m, r: espn.get(pairKey(m.home_team, m.away_team)) }))
-        .filter((j): j is { m: Row; r: EspnResult } => !!j.r);
+        .filter((j): j is { m: Row; r: EspnResult } => !!j.r && (j.r.inProgress || j.r.completed));
       const liveStats = await Promise.all(
         liveJobs.map((j) => (j.r.eventId ? fetchEspnSummary(j.r.eventId, j.r.homeId, j.r.awayId) : Promise.resolve(null))),
       );
@@ -290,20 +345,40 @@ export async function GET(req: NextRequest) {
               lineups: sum?.lineups ?? r.detail.lineups ?? null,
             }
           : r.detail;
-        // Živé skóre bereme z ESPN (stejný rychlý zdroj jako feed golů) → skóre pro body
-        // se už neopožďuje za feedem. Orientace dle uložených názvů.
+        // Skóre z ESPN (stejný rychlý zdroj jako feed golů). Orientace dle uložených názvů.
         const liveH = same ? r.scoreHome : r.scoreAway;
         const liveA = same ? r.scoreAway : r.scoreHome;
-        const { error } = await supabase
-          .from('matches')
-          .update({
-            home_score: liveH,
-            away_score: liveA,
-            clock: r.clock || null,
-            detail: orientDetail(detail, same),
-          })
-          .eq('id', m.id);
-        if (!error) espnLive++;
+
+        if (r.completed) {
+          // ESPN hlásí konec → přepni na finished; přesný přepočet (stav po 90'/prodloužení)
+          // dodá pending průchod v příštím běhu (reg_checked=false).
+          const { error } = await supabase
+            .from('matches')
+            .update({
+              status: 'finished',
+              home_score: liveH,
+              away_score: liveA,
+              clock: null,
+              reg_checked: false,
+              detail: orientDetail(detail, same),
+            })
+            .eq('id', m.id);
+          if (!error) espnLive++;
+        } else {
+          // probíhá → živé skóre + minuta + detail; a označ jako live
+          // (football-data mohlo zaostat a nenastavit status='live')
+          const { error } = await supabase
+            .from('matches')
+            .update({
+              status: 'live',
+              home_score: liveH,
+              away_score: liveA,
+              clock: r.clock || null,
+              detail: orientDetail(detail, same),
+            })
+            .eq('id', m.id);
+          if (!error) espnLive++;
+        }
       }
     }
   } catch {
@@ -367,7 +442,13 @@ export async function GET(req: NextRequest) {
     inserted,
     fetched: fixtures.length,
     espn: { set: espnSet, live: espnLive, skipped: espnSkipped, invalid: espnInvalid },
+    playoff: { inserted: koInserted, linked: koLinked },
     roasts: roastsAdded,
+    footballData: !useFootballData
+      ? { enabled: false }
+      : footballDataError
+        ? { enabled: true, ok: false, error: footballDataError }
+        : { enabled: true, ok: true },
     competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC',
     at: new Date().toISOString(),
   });
