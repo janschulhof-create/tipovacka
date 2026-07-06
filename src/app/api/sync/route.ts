@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { fetchSeasonFixtures, normKey, type NormalizedMatch } from '@/lib/apiFootball';
-import { fetchEspnResults, fetchEspnSchedule, fetchEspnSummary, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
+import { fetchEspnResults, fetchEspnSummary, mergeStats, orientDetail, pairKey, type EspnResult } from '@/lib/espn';
 import { generateRoastLLM } from '@/lib/roast';
 
 export const dynamic = 'force-dynamic';
@@ -39,10 +39,10 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'no active season' }, { status: 500 });
   }
 
-  // Football-data je VYPNUTÝ – celý sync jede na ESPN (rychlé a spolehlivé).
-  // Kdyby ho někdo chtěl zpět jako doplněk rozpisu, stačí ve Vercelu nastavit
-  // USE_FOOTBALL_DATA=1. Ani zapnutý nesmí shodit sync (ESPN běží nezávisle).
-  const useFootballData = process.env.USE_FOOTBALL_DATA === '1';
+  // Football-data = POUZE ROZPIS (týmy, čas výkopu, kolo). Nic víc.
+  // Skóre, stav zápasu, live, statistiky i sestavy řídí výhradně ESPN (níže).
+  // Rozpis lze vypnout přes USE_FOOTBALL_DATA=0. Výpadek nikdy neshodí sync.
+  const useFootballData = process.env.USE_FOOTBALL_DATA !== '0';
   let fixtures: NormalizedMatch[] = [];
   let footballDataError: string | null = null;
   if (useFootballData) {
@@ -102,30 +102,18 @@ export async function GET(req: NextRequest) {
   const inserts: Record<string, unknown>[] = [];
 
   for (const f of fixtures) {
-    const id = idByApi.get(f.external_api_id) ?? idByKey.get(keyOf(f.round, f.home_team, f.away_team));
-    if (id) {
-      // jen doplníme dynamická pole — id (a tím i tipy) zůstává
-      const patch: Record<string, unknown> = {
-        external_api_id: f.external_api_id,
-        kickoff: f.kickoff,
-        status: f.status,
-        minute: f.minute,
-      };
-      // Skóre po 90' přepíšeme jen když ho známe. U prodloužení rozhodnutého gólem
-      // (bez rozpadu z feedu) je null → ponecháme ručně doplněný stav po 90'.
-      if (f.home_score !== null) patch.home_score = f.home_score;
-      if (f.away_score !== null) patch.away_score = f.away_score;
-      // Detail prodloužení/penalt přepíšeme jen když feed potvrdí prodloužení – jinak
-      // neklobrujeme ručně doplněné údaje (a REGULAR zápasům necháme výchozí hodnoty).
-      if (f.duration !== 'REGULAR') {
-        patch.duration = f.duration;
-        patch.extra_home = f.extra_home;
-        patch.extra_away = f.extra_away;
-        patch.pen_home = f.pen_home;
-        patch.pen_away = f.pen_away;
-      }
-      // Play-off placeholdery: když má zápas v DB prázdné týmy a los je už znám,
-      // doplníme týmy + kolo. Správně naseedované skupiny zůstávají netknuté.
+    // Ještě neznámí soupeři (play-off před losem) → football-data vrací prázdné týmy. Přeskoč.
+    if (!f.home_team || !f.away_team) continue;
+    const pkey = `${f.round}|${[normKey(f.home_team), normKey(f.away_team)].sort().join('|')}`;
+    // Napáruj na existující řádek: přes eventId → přesný klíč → normalizovanou dvojici v kole.
+    const id =
+      idByApi.get(f.external_api_id) ??
+      idByKey.get(keyOf(f.round, f.home_team, f.away_team)) ??
+      pairInRound.get(pkey);
+    if (id && id > 0) {
+      // ROZPIS ONLY: čas výkopu + eventId; u play-off placeholderů doplň týmy/kolo.
+      // Skóre, stav, minutu, prodloužení ani statistiky ZDE NEsaháme (řídí ESPN).
+      const patch: Record<string, unknown> = { external_api_id: f.external_api_id, kickoff: f.kickoff };
       const cur = idToTeams.get(id);
       if ((!cur?.home || !cur?.away) && f.home_team && f.away_team) {
         patch.home_team = f.home_team;
@@ -135,7 +123,18 @@ export async function GET(req: NextRequest) {
       const { error } = await supabase.from('matches').update(patch).eq('id', id);
       if (!error) updated++;
     } else {
-      inserts.push({ ...f, season_id: season.id });
+      // Nový zápas (typicky play-off po losu) → vlož jen rozpis, stav 'scheduled'.
+      // Skóre/stav doplní ESPN (i zpětně u už odehraných).
+      inserts.push({
+        season_id: season.id,
+        round: f.round,
+        kickoff: f.kickoff,
+        home_team: f.home_team,
+        away_team: f.away_team,
+        external_api_id: f.external_api_id,
+        status: 'scheduled',
+      });
+      pairInRound.set(pkey, -1); // ať týž zápas nevložíme dvakrát v jednom běhu
     }
   }
 
@@ -145,50 +144,6 @@ export async function GET(req: NextRequest) {
       .upsert(inserts, { onConflict: 'external_api_id', count: 'exact' });
     if (error) return NextResponse.json({ error: error.message, updated }, { status: 500 });
     inserted = count ?? inserts.length;
-  }
-
-  // ── ESPN rozpis play-off: po losu doplní vyřazovací zápasy (kola 4–9) z ESPN.
-  // Idempotentní: páruje na už existující řádky (i ručně přidané) přes eventId nebo
-  // dvojici týmů v daném kole → NEDUPLIKUJE a NEPŘEPÍŠE tipy. Nové sloty vloží.
-  let koInserted = 0;
-  let koLinked = 0;
-  try {
-    const schedule = await fetchEspnSchedule();
-    const ko = schedule.filter((f) => f.round >= 4);
-    const koInserts: Record<string, unknown>[] = [];
-    for (const f of ko) {
-      const eid = Number(f.eventId);
-      if (Number.isFinite(eid) && idByApi.has(eid)) continue; // už spárováno přes eventId
-      const pkey = `${f.round}|${[normKey(f.homeCz), normKey(f.awayCz)].sort().join('|')}`;
-      const existId = pairInRound.get(pkey);
-      if (existId) {
-        // řádek už existuje (dřívější běh / ručně) → jen doplň eventId + kickoff, tipy zůstanou
-        await supabase
-          .from('matches')
-          .update({ external_api_id: Number.isFinite(eid) ? eid : null, kickoff: f.kickoff })
-          .eq('id', existId);
-        koLinked++;
-      } else {
-        koInserts.push({
-          season_id: season.id,
-          round: f.round,
-          kickoff: f.kickoff,
-          home_team: f.homeCz,
-          away_team: f.awayCz,
-          status: 'scheduled',
-          external_api_id: Number.isFinite(eid) ? eid : null,
-        });
-        pairInRound.set(pkey, -1); // ať tentýž zápas nevložíme dvakrát v jednom běhu
-      }
-    }
-    if (koInserts.length) {
-      const { count } = await supabase
-        .from('matches')
-        .upsert(koInserts, { onConflict: 'external_api_id', count: 'exact' });
-      koInserted = count ?? koInserts.length;
-    }
-  } catch {
-    /* rozpis play-off se nezdařil – nevadí, zkusí se příští běh */
   }
 
   // ── ESPN (zdarma, bez klíče): z minut gólů dopočti skóre v 90:00 (Pán nastavení),
@@ -207,18 +162,16 @@ export async function GET(req: NextRequest) {
       .eq('status', 'finished')
       .eq('reg_checked', false)
       .limit(20);
-    // Kandidáti na „živě": zápasy, kterým už začal výkop a nejsou dohrané.
-    // NEspoléháme na status z football-data (může zaostávat) – o stavu rozhodne ESPN.
-    const liveWindowStart = new Date(Date.now() - 5 * 3600 * 1000).toISOString();
-    const nowIso = new Date().toISOString();
+    // Kandidáti, jejichž stav řídí ESPN: cokoli po výkopu a ještě nedohrané
+    // (živé i zpětně nedokončené). O stavu (živě/dohráno) rozhodne ESPN.
     const { data: liveData } = await supabase
       .from('matches')
       .select('id, home_team, away_team')
       .eq('season_id', season.id)
       .neq('status', 'finished')
-      .gte('kickoff', liveWindowStart)
-      .lte('kickoff', nowIso)
-      .limit(16);
+      .lte('kickoff', new Date().toISOString())
+      .order('kickoff', { ascending: false })
+      .limit(20);
     const pending = (pendData as Row[]) ?? [];
     const liveMatches = (liveData as Row[]) ?? [];
 
@@ -442,13 +395,12 @@ export async function GET(req: NextRequest) {
     inserted,
     fetched: fixtures.length,
     espn: { set: espnSet, live: espnLive, skipped: espnSkipped, invalid: espnInvalid },
-    playoff: { inserted: koInserted, linked: koLinked },
-    roasts: roastsAdded,
-    footballData: !useFootballData
-      ? { enabled: false }
+    schedule: !useFootballData
+      ? { source: 'football-data', enabled: false }
       : footballDataError
-        ? { enabled: true, ok: false, error: footballDataError }
-        : { enabled: true, ok: true },
+        ? { source: 'football-data', ok: false, error: footballDataError, updated, inserted }
+        : { source: 'football-data', ok: true, updated, inserted },
+    roasts: roastsAdded,
     competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC',
     at: new Date().toISOString(),
   });
