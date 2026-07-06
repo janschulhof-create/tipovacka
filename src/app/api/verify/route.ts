@@ -52,15 +52,21 @@ export async function GET(req: NextRequest) {
   const all = (rows as Row[]) ?? [];
   const now = Date.now();
 
-  // duplicity: stejná (kolo|dvojice) víc než jednou
-  const pairCount = new Map<string, number[]>();
+  // duplicity: stejná dvojice týmů víc než jednou (i NAPŘÍČ koly – dva týmy spolu
+  // hrají na MS max jednou, takže jakýkoli opakovaný pár = problém). Prázdné vynech.
+  const pairMap = new Map<string, { id: number; kolo: number }[]>();
+  let emptyTeams = 0;
   for (const m of all) {
-    const k = `${m.round}|${[normKey(m.home_team), normKey(m.away_team)].sort().join('|')}`;
-    (pairCount.get(k) ?? pairCount.set(k, []).get(k)!).push(m.id);
+    if (!m.home_team || !m.away_team) {
+      emptyTeams++;
+      continue;
+    }
+    const k = [normKey(m.home_team), normKey(m.away_team)].sort().join(' | ');
+    (pairMap.get(k) ?? pairMap.set(k, []).get(k)!).push({ id: m.id, kolo: m.round });
   }
-  const duplicities = [...pairCount.entries()]
-    .filter(([, ids]) => ids.length > 1)
-    .map(([k, ids]) => ({ klic: k, ids }));
+  const duplicities = [...pairMap.entries()]
+    .filter(([, v]) => v.length > 1)
+    .map(([dvojice, vyskyty]) => ({ dvojice, vyskyty }));
 
   const problems: Record<string, unknown>[] = [];
   const okList: Record<string, unknown>[] = [];
@@ -121,6 +127,7 @@ export async function GET(req: NextRequest) {
       zapasu_celkem: all.length,
       napparovano_espn: paired,
       nenaparovano: unpaired,
+      prazdne_tymy: emptyTeams,
       duplicit: duplicities.length,
       problemu: problems.length,
       vse_ok: problems.length === 0 && duplicities.length === 0,

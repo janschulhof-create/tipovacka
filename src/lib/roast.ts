@@ -32,19 +32,24 @@ export async function generateRoastLLM(input: {
     .map((t) => `- ${t.name}: tipoval ${t.tip}, získal ${t.points ?? 0} b`)
     .join('\n');
 
-  const prompt = `Jsi ostrý fotbalový vtipálek. Napiš ULTRA KRÁTKÉ, úderné a vtipné zhodnocení zápasu z tipovačky party kamarádů. MAX 2 krátké věty, ideálně jedna. Žádná omáčka.
+  const prompt = `Jsi drzý fotbalový vtipálek a rýpal. Napiš zhodnocení jednoho zápasu z tipovačky party kamarádů. PŘESNĚ 3 KRÁTKÉ VĚTY. Každá věta jedna úderná pointa. Žádný sloh, žádný úvod, žádné omáčky.
 
-Styl:
-- Jak hláška od kamaráda v hospodě — drzé, trefné, k věci. Ne sloh.
-- Rýpni si konkrétně: vyzdvihni frajera s nejvíc body A ztrapni toho s nejmíň body (klidně přes jeho tip). Použij jejich jména.
-- Fotbalová hantýrka (šibenice, vápno, parní válec, dělba bodů, balón do autu, čisté konto).
-- Když je drama v prodloužení/nastavení, ulož si ho jednou vtipnou pointou (kdo přišel o body).
-- Žádná klišé, žádné opakování frází, žádný úvod ani uvozovky. Vrať jen tu hlášku.
+Co v těch 3 větách musí být:
+1) Krátce a vtipně shrň výsledek fotbalovou hantýrkou (šibenice, vápno, parní válec, dělba bodů, balón do autu, čisté konto, gól do šatny).
+2) Vychval frajera s nejvíc body — jménem, klidně přehnaně ("věštec", "prorok").
+3) Pořádně si rýpni do toho s nejmíň body — jménem a přes jeho konkrétní tip, ať to bolí (kamarádsky, ale drsně).
+
+Pravidla:
+- Uráž kamarádsky a s vtipem — nebonzuj se, přitvrď. Jsou to kámoši, snesou to.
+- Používej jejich JMÉNA a konkrétní tipy/body z dat níže.
+- Když je drama v prodloužení/nastavení, propašuj ho do některé věty (kdo přišel o body).
+- Buď VŽDY originální — žádné opakování frází mezi zápasy, žádná klišé.
+- Vrať POUZE ty 3 věty. Bez nadpisu, bez odrážek, bez uvozovek.
 
 Zápas: ${input.home} ${input.score} ${input.away}
 ${drama}
 
-Tipy:
+Tipy hráčů:
 ${tipsText}`;
 
   try {
@@ -57,7 +62,7 @@ ${tipsText}`;
       },
       body: JSON.stringify({
         model: 'claude-haiku-4-5-20251001',
-        max_tokens: 160,
+        max_tokens: 240,
         messages: [{ role: 'user', content: prompt }],
       }),
     });
