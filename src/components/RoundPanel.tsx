@@ -865,31 +865,6 @@ function FormationView({ lineups, homeTeam, awayTeam }: { lineups: MatchLineups;
       <div className="flex items-center justify-between">
         <TeamLabel team={homeTeam} formation={lineups.home.formation} accent="bg-flag" />
       </div>
-
-      {/* náhradníci */}
-      {(lineups.home.subs.length > 0 || lineups.away.subs.length > 0) && (
-        <div className="grid grid-cols-1 gap-3 pt-1 sm:grid-cols-2">
-          {[
-            { team: awayTeam, subs: lineups.away.subs },
-            { team: homeTeam, subs: lineups.home.subs },
-          ].map(
-            (t) =>
-              t.subs.length > 0 && (
-                <div key={t.team}>
-                  <p className="mb-1 text-[10px] uppercase tracking-wide text-slate-300/40">Náhradníci — {t.team}</p>
-                  <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-300/60">
-                    {t.subs.map((p, i) => (
-                      <span key={`${p.name}-${i}`} className="tabular-nums">
-                        {p.jersey && <span className="text-slate-300/40">{p.jersey} </span>}
-                        {p.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ),
-          )}
-        </div>
-      )}
     </div>
   );
 }
