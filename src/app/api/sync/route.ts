@@ -39,10 +39,50 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'no active season' }, { status: 500 });
   }
 
+  // ── Šetření CPU: nejdřív levně zjisti, jestli je vůbec co dělat ──
+  // Když se nic nehraje / nezačíná, nic není k dopočtu ani k ohodnocení,
+  // skonči hned – běhy „naprázdno" jsou tak skoro zadarmo.
+  const now = new Date();
+  const winLo = new Date(now.getTime() - 4 * 3600 * 1000).toISOString(); // začal výkop (i doběh)
+  const winHi = new Date(now.getTime() + 10 * 60 * 1000).toISOString(); // brzy začne
+  const hasKey = !!process.env.ANTHROPIC_API_KEY;
+  const [liveRes, regRes, roastRes] = await Promise.all([
+    supabase
+      .from('matches')
+      .select('id', { count: 'exact', head: true })
+      .eq('season_id', season.id)
+      .neq('status', 'finished')
+      .gte('kickoff', winLo)
+      .lte('kickoff', winHi),
+    supabase
+      .from('matches')
+      .select('id', { count: 'exact', head: true })
+      .eq('season_id', season.id)
+      .eq('status', 'finished')
+      .eq('reg_checked', false),
+    hasKey
+      ? supabase
+          .from('matches')
+          .select('id', { count: 'exact', head: true })
+          .eq('season_id', season.id)
+          .eq('status', 'finished')
+          .is('roast', null)
+          .not('home_score', 'is', null)
+      : Promise.resolve({ count: 0 }),
+  ]);
+  const doLive = (liveRes.count ?? 0) > 0; // něco se hraje/začíná → ESPN live + rozpis
+  const doReg = (regRes.count ?? 0) > 0; // dohrané, ještě nepřepočtené → ESPN pending
+  const doRoast = (roastRes.count ?? 0) > 0; // dohrané bez hodnocení → LLM
+
+  if (!doLive && !doReg && !doRoast) {
+    return NextResponse.json({ idle: true, at: now.toISOString() });
+  }
+
   // Football-data = POUZE ROZPIS (týmy, čas výkopu, kolo). Nic víc.
   // Skóre, stav zápasu, live, statistiky i sestavy řídí výhradně ESPN (níže).
   // Rozpis lze vypnout přes USE_FOOTBALL_DATA=0. Výpadek nikdy neshodí sync.
-  const useFootballData = process.env.USE_FOOTBALL_DATA !== '0';
+  // Rozpis z football-data řešíme jen když je kolem nějaký zápas (šetří CPU/zápisy).
+  const useFootballData = process.env.USE_FOOTBALL_DATA !== '0' && doLive;
   let fixtures: NormalizedMatch[] = [];
   let footballDataError: string | null = null;
   if (useFootballData) {
@@ -58,17 +98,19 @@ export async function GET(req: NextRequest) {
   //  - sekundárně podle (round|home|away) — kvůli prvotnímu napárování seedu.
   const { data: existing } = await supabase
     .from('matches')
-    .select('id, external_api_id, round, home_team, away_team')
+    .select('id, external_api_id, round, home_team, away_team, kickoff')
     .eq('season_id', season.id);
   const keyOf = (r: number, h: string, a: string) => `${r}|${h}|${a}`;
   const idByApi = new Map<number, number>();
   const idByKey = new Map<string, number>();
   const idToTeams = new Map<number, { home: string; away: string }>();
+  const idToMeta = new Map<number, { kickoff: string | null; apiId: number | null }>();
   const pairInRound = new Map<string, number>(); // "round|normHome|normAway(sorted)" -> id (na dedup play-off)
-  for (const m of (existing as { id: number; external_api_id: number | null; round: number; home_team: string; away_team: string }[]) ?? []) {
+  for (const m of (existing as { id: number; external_api_id: number | null; round: number; home_team: string; away_team: string; kickoff: string | null }[]) ?? []) {
     if (m.external_api_id != null) idByApi.set(m.external_api_id, m.id);
     idByKey.set(keyOf(m.round, m.home_team, m.away_team), m.id);
     idToTeams.set(m.id, { home: m.home_team, away: m.away_team });
+    idToMeta.set(m.id, { kickoff: m.kickoff, apiId: m.external_api_id });
     pairInRound.set(`${m.round}|${[normKey(m.home_team), normKey(m.away_team)].sort().join('|')}`, m.id);
   }
 
@@ -113,9 +155,15 @@ export async function GET(req: NextRequest) {
     if (id && id > 0) {
       // ROZPIS ONLY: čas výkopu + eventId; u play-off placeholderů doplň týmy/kolo.
       // Skóre, stav, minutu, prodloužení ani statistiky ZDE NEsaháme (řídí ESPN).
-      const patch: Record<string, unknown> = { external_api_id: f.external_api_id, kickoff: f.kickoff };
       const cur = idToTeams.get(id);
-      if ((!cur?.home || !cur?.away) && f.home_team && f.away_team) {
+      const meta = idToMeta.get(id);
+      const needTeams = (!cur?.home || !cur?.away) && !!f.home_team && !!f.away_team;
+      const kickoffChanged =
+        !meta || !meta.kickoff || new Date(meta.kickoff).getTime() !== new Date(f.kickoff).getTime();
+      const apiChanged = !meta || meta.apiId !== f.external_api_id;
+      if (!needTeams && !kickoffChanged && !apiChanged) continue; // nic se nezměnilo → žádný zápis
+      const patch: Record<string, unknown> = { external_api_id: f.external_api_id, kickoff: f.kickoff };
+      if (needTeams) {
         patch.home_team = f.home_team;
         patch.away_team = f.away_team;
         patch.round = f.round;
@@ -154,7 +202,7 @@ export async function GET(req: NextRequest) {
   let espnSkipped = 0;
   let espnInvalid = 0;
   let espnLive = 0;
-  try {
+  if (doLive || doReg) try {
     const { data: pendData } = await supabase
       .from('matches')
       .select('id, home_team, away_team, duration')
@@ -340,11 +388,13 @@ export async function GET(req: NextRequest) {
 
   // ── vtipné zhodnocení zápasů (LLM, viz roast.ts), pár za běh ──
   let roastsAdded = 0;
-  try {
-    const { done } = await runRoastBatch(supabase, season.id, 3);
-    roastsAdded = done;
-  } catch {
-    /* generování hodnocení selhalo – tiše přeskočíme, zkusí se příště */
+  if (doRoast) {
+    try {
+      const { done } = await runRoastBatch(supabase, season.id, 3);
+      roastsAdded = done;
+    } catch {
+      /* generování hodnocení selhalo – tiše přeskočíme, zkusí se příště */
+    }
   }
 
   return NextResponse.json({
