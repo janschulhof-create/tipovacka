@@ -120,95 +120,79 @@ export function Baroko({
 
   const avgH = others.reduce((s, p) => s + p.predicted_home, 0) / others.length;
   const avgA = others.reduce((s, p) => s + p.predicted_away, 0) / others.length;
-  const avgGoals = avgH + avgA;
-  const myGoals = myTip.h + myTip.a;
-  const dGoals = myGoals - avgGoals;
-  // odchylka výsledku: kladné = víc věříš domácím než parta
-  const dLean = (myTip.h - myTip.a) - (avgH - avgA);
 
-  const same = others.filter((p) => p.predicted_home === myTip.h && p.predicted_away === myTip.a).length;
-  const fmt = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
+  // zaokrouhlený "tip party" – čte se líp než desetinná čísla
+  const partaH = Math.round(avgH);
+  const partaA = Math.round(avgA);
 
-  // verdikt podle SILNĚJŠÍ z obou odchylek (dřív měly góly přednost, takže
-  // "1:1 vs 1,5:0,5" hlásilo 'jedeš s davem', i když jsi vlastně jinde)
-  const verdict =
-    Math.abs(dGoals) < 0.5 && Math.abs(dLean) < 0.5
-      ? 'Jedeš s davem — nuda, ale bezpečno.'
-      : Math.abs(dLean) >= Math.abs(dGoals)
-        ? dLean > 0
-          ? `Věříš ${home} víc než parta.`
-          : `Věříš ${away} víc než parta.`
-        : dGoals > 0
-          ? 'Čekáš přestřelku, parta ne. Odvážné.'
-          : 'Betonuješ víc než ostatní.';
+  const dGoals = myTip.h + myTip.a - (avgH + avgA); // víc/míň gólů než parta
+  const dLean = myTip.h - myTip.a - (avgH - avgA); // komu víc věříš
+
+  const same = others.filter((p) => p.predicted_home === myTip.h && p.predicted_away === myTip.a);
+  const myWin = Math.sign(myTip.h - myTip.a);
+  const partyWin = Math.sign(avgH - avgA);
+
+  // ── slovní verdikt, žádná matematika ──
+  let title: string;
+  let note: string;
+
+  if (Math.abs(dLean) < 0.5 && Math.abs(dGoals) < 0.5) {
+    title = 'Jedeš s davem';
+    note = 'Tipuješ prakticky to samé co ostatní. Bezpečné, ale nikoho tím neurazíš ani nepředběhneš.';
+  } else if (myWin !== partyWin && partyWin !== 0 && myWin !== 0) {
+    const believeIn = myWin > 0 ? home : away;
+    const crowdIn = partyWin > 0 ? home : away;
+    title = `Jdeš proti partě`;
+    note = `Zatímco ostatní sázejí na ${crowdIn}, ty věříš ${believeIn}. Buď jsi génius, nebo si tě podají v hodnocení.`;
+  } else if (myWin === 0 && partyWin !== 0) {
+    title = 'Ty čekáš plichtu, parta ne';
+    note = 'Ostatní vidí vítěze, ty dělbu bodů. Klasický opatrník — nebo prorok, uvidíme.';
+  } else if (partyWin === 0 && myWin !== 0) {
+    title = 'Parta čeká remízu, ty vítěze';
+    note = `Ostatní zabetonovali, ty tipuješ, že ${myWin > 0 ? home : away} to urve. Odvaha se cení.`;
+  } else if (Math.abs(dLean) >= 0.8) {
+    const t = dLean > 0 ? home : away;
+    title = `Věříš ${t} víc než ostatní`;
+    note = `Stejný vítěz jako parta, ale ty čekáš jasnější záležitost. Sebevědomí ti nechybí.`;
+  } else if (dGoals >= 0.8) {
+    title = 'Čekáš přestřelku';
+    note = 'Ostatní tipují opatrněji, ty věříš, že se bude pálit. Když to vyjde, budeš král.';
+  } else if (dGoals <= -0.8) {
+    title = 'Betonuješ';
+    note = 'Parta čeká víc gólů, ty vsázíš na nudu a čisté konto. Řemeslo, ne romantika.';
+  } else {
+    title = 'Trochu mimo dav';
+    note = 'Nejsi úplně s ostatními, ale ani rebel. Prostě normální tip.';
+  }
+
+  const company =
+    same.length === 0
+      ? 'S tímhle tipem jsi na to úplně sám.'
+      : same.length === 1
+        ? 'Stejný tip má ještě 1 další.'
+        : `Stejný tip má ještě ${same.length} ${same.length < 5 ? 'další' : 'dalších'}.`;
 
   return (
     <div className="rounded-xl border border-terrain-700 bg-terrain-900/40 p-3">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-        🎭 Baroko — odchylka od party
+        🎭 Baroko — jak moc jsi mimo partu
       </div>
-      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px]">
-        <span className="text-slate-100/80">
-          Tvůj tip <b className="tabular-nums text-white">{myTip.h}:{myTip.a}</b>
-        </span>
-        <span className="text-slate-300/60">
-          průměr party <b className="tabular-nums text-slate-100/80">{avgH.toFixed(1)}:{avgA.toFixed(1)}</b>
-        </span>
-      </div>
-      <div className="mt-2 space-y-1">
-        <DevRow
-          label="Góliček celkem"
-          value={fmt(dGoals)}
-          hint={
-            Math.abs(dGoals) < 0.3
-              ? 'stejně jako parta'
-              : dGoals > 0
-                ? 'čekáš víc gólů'
-                : 'čekáš míň gólů'
-          }
-          strong={Math.abs(dGoals) >= 0.8}
-        />
-        <DevRow
-          label="Komu věříš"
-          value={fmt(dLean)}
-          hint={
-            Math.abs(dLean) < 0.3
-              ? 'stejně jako parta'
-              : dLean > 0
-                ? `víc věříš ${home}`
-                : `víc věříš ${away}`
-          }
-          strong={Math.abs(dLean) >= 0.8}
-        />
-      </div>
-      <p className="mt-2 text-[11px] leading-snug text-slate-300/50">
-        {verdict}
-        {same > 0 && ` Stejný tip má ${same === 1 ? 'ještě 1 člověk' : `dalších ${same}`}.`}
-        {same === 0 && ' Tenhle tip nemá nikdo jiný.'}
-      </p>
-    </div>
-  );
-}
 
-/** Jeden řádek odchylky: co to je, o kolik, a co to znamená. */
-function DevRow({
-  label,
-  value,
-  hint,
-  strong,
-}: {
-  label: string;
-  value: string;
-  hint: string;
-  strong: boolean;
-}) {
-  return (
-    <div className="flex items-center gap-2 text-[12px]">
-      <span className="w-24 shrink-0 text-slate-300/50">{label}</span>
-      <span className={`w-10 shrink-0 text-right font-bold tabular-nums ${strong ? 'text-flag' : 'text-slate-100/70'}`}>
-        {value}
-      </span>
-      <span className="min-w-0 truncate text-slate-300/60">{hint}</span>
+      <div className="mt-2 flex items-center gap-3 text-[13px]">
+        <span className="rounded-lg bg-terrain-800 px-2 py-1">
+          <span className="text-slate-300/50">ty </span>
+          <b className="tabular-nums text-white">{myTip.h}:{myTip.a}</b>
+        </span>
+        <span className="text-slate-300/35">vs</span>
+        <span className="rounded-lg bg-terrain-800 px-2 py-1">
+          <span className="text-slate-300/50">parta spíš </span>
+          <b className="tabular-nums text-slate-100/80">{partaH}:{partaA}</b>
+        </span>
+      </div>
+
+      <p className="mt-2 text-sm font-semibold text-flag">{title}</p>
+      <p className="mt-0.5 text-[12.5px] leading-snug text-slate-100/70">{note}</p>
+      <p className="mt-1 text-[11px] text-slate-300/45">{company}</p>
     </div>
   );
 }
