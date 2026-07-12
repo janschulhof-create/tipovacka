@@ -228,7 +228,7 @@ export function HistorieView({ data }: { data: Historie }) {
       <section className="space-y-2">
         <h2 className="eyebrow"><span className="flag-chip" /> Statistiky hráčů</h2>
         <p className="text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {cards.map((c) => (
             <StatCard key={c.label} {...c} />
           ))}
@@ -247,7 +247,7 @@ export function HistorieView({ data }: { data: Historie }) {
       {/* Zajímavosti – tipy a týmy */}
       <section className="space-y-2">
         <h2 className="eyebrow"><span className="flag-chip" /> Zajímavosti sezóny</h2>
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {facts.map((c) => (
             <StatCard key={c.label} {...c} />
           ))}

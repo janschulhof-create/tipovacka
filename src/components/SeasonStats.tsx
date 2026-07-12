@@ -68,10 +68,10 @@ export function SeasonStats({
 
       {continents.length > 0 && (
         <div>
-          <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-            🌍 Pořadí podle kontinentů
-          </div>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+          <h2 className="eyebrow mb-3">
+            <span className="flag-chip" /> 🌍 Pořadí podle kontinentů
+          </h2>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
             {continents.map((c) => (
               <StatCard
                 key={c.key}

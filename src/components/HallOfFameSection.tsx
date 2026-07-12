@@ -101,22 +101,22 @@ export function HallOfFameSection({
         </div>
       )}
 
-      <h2 className="eyebrow mb-2"><span className="flag-chip" /> Rekordy</h2>
+      <h2 className="eyebrow mb-3"><span className="flag-chip" /> Rekordy</h2>
       <p className="mb-2 text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {recordCards.map((c) => (
           <StatCard key={c.label} {...c} scale />
         ))}
       </div>
 
-      <h2 className="eyebrow mb-2 mt-8"><span className="flag-chip" /> Další zajímavosti</h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+      <h2 className="eyebrow mb-3 mt-6 lg:mt-8"><span className="flag-chip" /> Další zajímavosti</h2>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {factCards.map((c) => (
           <StatCard key={c.label} {...c} scale />
         ))}
       </div>
 
-      <h2 className="eyebrow mb-2 mt-8"><span className="flag-chip" /> Top 6 umístění (četnost v kolech)</h2>
+      <h2 className="eyebrow mb-3 mt-6 lg:mt-8"><span className="flag-chip" /> Top 6 umístění (četnost v kolech)</h2>
       <div className="panel-flush">
         <table className="w-full text-sm">
           <thead>
