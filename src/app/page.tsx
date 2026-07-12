@@ -135,13 +135,15 @@ export default async function Home({
         <h2 className="eyebrow">
           <span className="flag-chip" /> Statistiky sezóny
         </h2>
-        <StatsCards standings={standings} goals={goals} misses={misses} />
+        <StatsCards standings={standings} goals={goals} />
         {hasResults && (
           <SeasonStats
             rounds={tipRounds}
             players={activeNames}
             stoppage={stoppage}
             wizard={wizCont.wizard}
+            spodina={wizCont.spodina}
+            misses={misses}
             continents={wizCont.continents}
           />
         )}

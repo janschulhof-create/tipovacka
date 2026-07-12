@@ -464,6 +464,7 @@ export async function getStoppageStats(
  */
 export async function getWizardAndContinentStats(seasonId: number): Promise<{
   wizard: { name: string; count: number }[];
+  spodina: { name: string; count: number }[];
   continents: { key: ContinentKey; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
 }> {
   const sb = createServerReadClient();
@@ -476,7 +477,7 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
 
   type M = { id: number; home_team: string; away_team: string };
   const matches = (ms as M[]) ?? [];
-  if (matches.length === 0) return { wizard: [], continents: [] };
+  if (matches.length === 0) return { wizard: [], spodina: [], continents: [] };
 
   const { data: ps } = await sb
     .from('predictions')
@@ -495,6 +496,7 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
   }
 
   const wizard = new Map<string, number>();
+  const spodina = new Map<string, number>();
   const cont = new Map<ContinentKey, Map<string, { points: number; matches: number }>>();
 
   for (const m of matches) {
@@ -505,6 +507,11 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
     const scorers = tips.filter((t) => t.points > 0);
     if (scorers.length === 1 && tips.length > 1) {
       wizard.set(scorers[0].name, (wizard.get(scorers[0].name) ?? 0) + 1);
+    }
+    // Spodina: jako JEDINÝ nebodoval (všichni ostatní body mají)
+    const blanks = tips.filter((t) => t.points === 0);
+    if (blanks.length === 1 && tips.length > 1) {
+      spodina.set(blanks[0].name, (spodina.get(blanks[0].name) ?? 0) + 1);
     }
 
     // kontinenty: zápas přispěje do tabulky každého zúčastněného kontinentu
@@ -522,6 +529,9 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
 
   return {
     wizard: [...wizard.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'cs')),
+    spodina: [...spodina.entries()]
       .map(([name, count]) => ({ name, count }))
       .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'cs')),
     continents: CONTINENTS.filter((c) => cont.has(c.key)).map((c) => ({
