@@ -4,7 +4,7 @@ export function BrandMark({ className = '' }: { className?: string }) {
     <svg viewBox="0 0 120 120" className={className} role="img" aria-label="Tipovačka">
       <defs>
         <clipPath id="brandBall">
-          <circle cx="60" cy="60" r="21" />
+          <circle cx="0" cy="0" r="21" />
         </clipPath>
       </defs>
       <rect x="0" y="0" width="120" height="120" rx="27" fill="#152244" />

@@ -1,5 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
-<defs><clipPath id="b"><circle cx="60" cy="60" r="21"/></clipPath></defs>
+<defs><clipPath id="b"><circle cx="0" cy="0" r="21"/></clipPath></defs>
 <rect x="0" y="0" width="120" height="120" rx="27" fill="#152244"/>
 <g transform="translate(60 60) rotate(-45)">
 <path d="M-52 0 L-29 -8 L-29 8 Z" fill="#ffffff"/>
