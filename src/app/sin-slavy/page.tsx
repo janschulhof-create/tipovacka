@@ -1,168 +1,65 @@
 import historie from '@/data/historie.json';
 import { PageHeader } from '@/components/PageHeader';
-import { StatCard } from '@/components/StatCard';
-import { funFacts, type SRound } from '@/lib/seasonStats';
+import { CompetitionTabs } from '@/components/CompetitionTabs';
+import { HallOfFameSection, type HofSeason } from '@/components/HallOfFameSection';
+import { getMsSeason } from '@/lib/msSeason';
+import { getActiveSeasonId, getStoppageStats, getWizardAndContinentStats } from '@/lib/queries';
 
 export const dynamic = 'force-dynamic';
 
-type Tip = { pts: number | null };
-type Round = { round: number; matches: { tips: Record<string, Tip> }[] };
-type Stat = {
-  points: number; tens: number; avgGoals: number; avgPoints: number;
-  success: number; roundWins: number; zeros: number; missed: number;
-  bestRound: number; bestRoundNo: number;
-};
-type Season = { season: string; players: string[]; stats: Record<string, Stat>; rounds: Round[] };
+export default async function SinSlavyPage() {
+  // ── Chance liga: pouze DOKONČENÉ sezóny (MS se sem nikdy nezapočítává) ──
+  const liga = historie as unknown as HofSeason;
+  const winner = liga.players.reduce((a, b) => (liga.stats[b].points > liga.stats[a].points ? b : a));
+  const titleRows = [{ name: winner, val: '1×', n: 1 }];
 
-// Síň slávy bere POUZE dokončené sezóny Chance ligy (zatím jedna).
-// Probíhající testovací MS se sem NEzapočítává.
-const seasons: Season[] = [historie as Season];
-const h = seasons[0];
+  // ── MS 2026: probíhající sezóna z DB, stojí bokem ──
+  const ms = await getMsSeason();
+  const seasonId = await getActiveSeasonId();
+  const [stoppage, wizCont] = seasonId
+    ? await Promise.all([getStoppageStats(seasonId), getWizardAndContinentStats(seasonId)])
+    : [[], { wizard: [], spodina: [], continents: [] }];
 
-// --- Top 6 umístění: kolikrát hráč skončil na 1.–6. místě v kole ---
-function positionCounts(season: Season) {
-  const counts: Record<string, number[]> = Object.fromEntries(
-    season.players.map((p) => [p, [0, 0, 0, 0, 0, 0]])
-  );
-  for (const r of season.rounds) {
-    const pts: Record<string, number> = Object.fromEntries(season.players.map((p) => [p, 0]));
-    for (const m of r.matches)
-      for (const [n, t] of Object.entries(m.tips)) if (t.pts != null) pts[n] += t.pts;
-    for (const p of season.players) {
-      // standardní pořadí: místo = 1 + počet hráčů s víc body
-      const place = 1 + season.players.filter((q) => pts[q] > pts[p]).length;
-      if (place >= 1 && place <= 6) counts[p][place - 1]++;
-    }
-  }
-  return counts;
-}
-
-export default function SinSlavyPage() {
-  const titles = new Map<string, number>();
-  for (const s of seasons) {
-    const winner = s.players.reduce((a, b) => (s.stats[b].points > s.stats[a].points ? b : a));
-    titles.set(winner, (titles.get(winner) ?? 0) + 1);
-  }
-  const titleRows = [...titles.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count);
-
-  const kralNulicky = pick(seasons, (s, n) => s.stats[n].zeros, 'max');
-
-  // celá pořadí pro rozbalovací karty rekordů (zatím jedna dokončená sezóna)
-  const rankHist = (
-    val: (s: Stat) => number,
-    dir: 'max' | 'min',
-    fmt: (s: Stat) => string
-  ): { name: string; val: string }[] =>
-    [...h.players]
-      .sort((a, b) => (dir === 'max' ? val(h.stats[b]) - val(h.stats[a]) : val(h.stats[a]) - val(h.stats[b])))
-      .map((n) => ({ name: n, val: fmt(h.stats[n]) }));
-
-  const recordCards: { icon: string; label: string; accent: string; rows: { name: string; val: string }[] }[] = [
-    { icon: '👑', label: 'Nejvíce vítězství', accent: 'text-gold', rows: titleRows.map((t) => ({ name: t.name, val: `${t.count}×` })) },
-    { icon: '💯', label: 'Nejvíce bodů za sezónu', accent: 'text-pitch-light', rows: rankHist((s) => s.points, 'max', (s) => `${s.points} b`) },
-    { icon: '🎯', label: 'Nejvíce přesných tipů', accent: 'text-pitch-light', rows: rankHist((s) => s.tens, 'max', (s) => `${s.tens}× desítka`) },
-    { icon: '💥', label: 'Nejlepší kolo', accent: 'text-flag', rows: rankHist((s) => s.bestRound, 'max', (s) => `${s.bestRound} b (${s.bestRoundNo}. kolo)`) },
-    { icon: '📈', label: 'Nejvyšší průměr na zápas', accent: 'text-pitch-light', rows: rankHist((s) => s.avgPoints, 'max', (s) => `${s.avgPoints}`) },
-    { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rankHist((s) => s.roundWins, 'max', (s) => `${s.roundWins}×`) },
-    { icon: '⚽', label: 'Největší střelec', accent: 'text-flag', rows: rankHist((s) => s.avgGoals, 'max', (s) => `Ø ${s.avgGoals} g/tip`) },
-    { icon: '🧱', label: 'Největší betonář', accent: 'text-sky-400', rows: rankHist((s) => s.avgGoals, 'min', (s) => `Ø ${s.avgGoals} g/tip`) },
-    { icon: '🧠', label: 'Mr. Alzheimer (nejvíc netipoval)', accent: 'text-control', rows: rankHist((s) => s.missed, 'max', (s) => `${s.missed}× netipoval`) },
-  ];
-
-  const counts = positionCounts(h);
-  const ranking = [...h.players].sort((a, b) => h.stats[b].points - h.stats[a].points);
-
-  const ff = funFacts(h.rounds as unknown as SRound[], h.players);
-  const factCards: { icon: string; label: string; accent: string; rows: { name: string; val: string }[] }[] = [
-    { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
-    { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
-    { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
-    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
-    { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light', rows: ff.teamRows },
-    { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', rows: [...ff.teamRows].reverse() },
-    { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
-    { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', rows: ff.surpriseRows },
-    { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
+  // statistiky, které má smysl ukazovat JEN u MS
+  const fmtBal = (b: number) => (b > 0 ? `+${b} b` : b < 0 ? `\u2212${Math.abs(b)} b` : '0 b');
+  const msExtra = [
+    {
+      icon: '⏱️',
+      label: 'Pán nastavení',
+      accent: 'text-green-400',
+      rows: stoppage.map((r) => ({ name: r.name, val: fmtBal(r.balance), n: r.balance })),
+    },
+    ...wizCont.continents.map((c) => ({
+      icon: c.icon,
+      label: c.label,
+      accent: 'text-pitch-light',
+      rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
+    })),
   ].filter((c) => c.rows.length > 0);
 
   return (
     <main>
-      <PageHeader icon="🏆" title="Síň slávy" subtitle="Rekordy historie" />
-      <p className="mb-4 text-xs text-slate-100/45">
-        Historické rekordy z dokončených sezón Chance ligy ({h.season}).
-      </p>
-
-      {/* Zlatý Netrefený míč — vtipná anti-cena za nejvíc nul */}
-      <div className="mb-6 overflow-hidden rounded-2xl border border-gold/40 bg-gold/5 p-5">
-        <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-gold">
-          🥇 Zlatý Netrefený míč
-        </div>
-        <div className="mt-1 font-display text-2xl font-bold text-white">{kralNulicky.names}</div>
-        <div className="text-sm text-slate-100/60">
-          {kralNulicky.val}× tip za nula bodů — největší smolař sezóny.
-        </div>
-      </div>
-
-      {/* Historické rekordy */}
-      <h2 className="eyebrow mb-2"><span className="flag-chip" /> Historické rekordy</h2>
-      <p className="mb-2 text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {recordCards.map((c) => (
-          <StatCard key={c.label} {...c} />
-        ))}
-      </div>
-
-      {/* Další zajímavosti z historie */}
-      <h2 className="eyebrow mb-2 mt-8"><span className="flag-chip" /> Další zajímavosti historie</h2>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        {factCards.map((c) => (
-          <StatCard key={c.label} {...c} />
-        ))}
-      </div>
-
-      {/* Top 6 umístění */}
-      <h2 className="eyebrow mb-2 mt-8"><span className="flag-chip" /> Top 6 umístění (četnost v kolech)</h2>
-      <div className="panel-flush">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-left text-[11px] uppercase tracking-wide text-slate-300/60">
-              <th className="px-3 py-2 font-medium">Hráč</th>
-              {['1.', '2.', '3.', '4.', '5.', '6.'].map((p) => (
-                <th key={p} className="px-2 py-2 text-center font-medium">{p}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {ranking.map((n) => (
-              <tr key={n} className="border-t border-terrain-700">
-                <td className="px-3 py-2 font-medium text-white">{n}</td>
-                {counts[n].map((c, i) => (
-                  <td key={i} className={`px-2 py-2 text-center tabular-nums ${i === 0 && c > 0 ? 'font-bold text-gold' : 'text-slate-100/70'}`}>
-                    {c || '·'}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <PageHeader icon="🏆" title="Síň slávy" subtitle="Rekordy napříč soutěžemi" />
+      <CompetitionTabs
+        liga={
+          <>
+            <p className="mb-4 text-xs text-slate-100/45">
+              Rekordy z dokončených sezón Chance ligy ({liga.season}). MS se do nich nezapočítává.
+            </p>
+            <HallOfFameSection s={liga} titleRows={titleRows} />
+          </>
+        }
+        ms={
+          ms ? (
+            <>
+              <p className="mb-4 text-xs text-slate-100/45">
+                Probíhající {ms.data.season} — vlastní rekordy, mimo ligovou Síň slávy.
+              </p>
+              <HallOfFameSection s={ms.data as unknown as HofSeason} extraCards={msExtra} />
+            </>
+          ) : null
+        }
+      />
     </main>
   );
-}
-
-function pick(seasons: Season[], val: (s: Season, n: string) => number, dir: 'max' | 'min') {
-  let best: { val: number; season: string } | null = null;
-  const winners: { name: string; season: string }[] = [];
-  for (const s of seasons)
-    for (const n of s.players) {
-      const v = val(s, n);
-      if (!best || (dir === 'max' ? v > best.val : v < best.val)) {
-        best = { val: v, season: s.season };
-        winners.length = 0;
-        winners.push({ name: n, season: s.season });
-      } else if (best && v === best.val && s.season === best.season) {
-        winners.push({ name: n, season: s.season });
-      }
-    }
-  return { names: winners.map((w) => w.name).join(', '), val: best!.val, season: best!.season };
 }

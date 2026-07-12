@@ -110,3 +110,34 @@ export function funFacts(rounds: SRound[], players: string[]) {
 
   return { tipRows, teamRows, unluckyRows, surpriseRows, bankerRows, readableRows, unreadableRows, professorRows };
 }
+
+/**
+ * Černokněžník = bodoval jako JEDINÝ v zápase.
+ * Blamáž       = jako JEDINÝ nebodoval (všichni ostatní body brali).
+ * Počítá se jen tam, kde tipovali aspoň dva hráči.
+ */
+export function wizardSpodina(rounds: SRound[]): {
+  wizardRows: RankRow[];
+  spodinaRows: RankRow[];
+} {
+  const wiz = new Map<string, number>();
+  const spo = new Map<string, number>();
+
+  for (const r of rounds) {
+    for (const m of r.matches) {
+      const tips = Object.entries(m.tips).filter(([, t]) => t.pts != null) as [string, Tip][];
+      if (tips.length < 2) continue;
+      const scorers = tips.filter(([, t]) => (t.pts ?? 0) > 0);
+      const blanks = tips.filter(([, t]) => (t.pts ?? 0) === 0);
+      if (scorers.length === 1) wiz.set(scorers[0][0], (wiz.get(scorers[0][0]) ?? 0) + 1);
+      if (blanks.length === 1) spo.set(blanks[0][0], (spo.get(blanks[0][0]) ?? 0) + 1);
+    }
+  }
+
+  const toRows = (m: Map<string, number>): RankRow[] =>
+    [...m.entries()]
+      .map(([name, n]) => ({ name, val: `${n}×`, n }))
+      .sort((a, b) => (b.n ?? 0) - (a.n ?? 0) || a.name.localeCompare(b.name, 'cs'));
+
+  return { wizardRows: toRows(wiz), spodinaRows: toRows(spo) };
+}
