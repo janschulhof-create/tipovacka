@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
 import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/espn';
@@ -46,9 +46,21 @@ export function RoundPanel({
   const [msg, setMsg] = useState<string | null>(null);
   const [tipping, setTipping] = useState(false);
   const [insightMatch, setInsightMatch] = useState<number | null>(null);
+  // poslední stav, o kterém víme, že je v DB (na hlídání neuložených změn)
+  const savedRef = useRef<Scores>({});
+  const [dirtyCount, setDirtyCount] = useState(0);
+  const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+
+  const [now, setNow] = useState(() => Date.now());
+  // zámek musí "tikat" i bez reloadu – jinak by šlo vyplnit tip do zápasu,
+  // který mezitím začal, a při uložení by tiše vypadl
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 20000);
+    return () => clearInterval(t);
+  }, []);
 
   const isLocked = (m: Match) =>
-    m.status !== 'scheduled' || new Date(m.kickoff).getTime() <= Date.now();
+    m.status !== 'scheduled' || new Date(m.kickoff).getTime() <= now;
 
   const loadPredictions = useCallback(
     async (pid: number) => {
@@ -63,6 +75,8 @@ export function RoundPanel({
         next[p.match_id] = { h: String(p.predicted_home), a: String(p.predicted_away) };
       }
       setScores(next);
+      savedRef.current = JSON.parse(JSON.stringify(next)) as Scores;
+      setDirtyCount(0);
     },
     [matches, supabase]
   );
@@ -82,58 +96,114 @@ export function RoundPanel({
     setVal(mid, side, String(Math.max(0, Math.min(99, base + delta))));
   };
 
-  async function save() {
-    if (!playerId) return;
-    setSaving(true);
-    setMsg(null);
-    // vyplněné zápasy si rozdělíme na otevřené (uložíme) a zamčené (nelze uložit)
-    const filled = matches.filter((m) => {
-      const s = scores[m.id];
-      return s && s.h !== '' && s.a !== '';
-    });
-    const blocked = filled.filter((m) => isLocked(m));
-    const rows = filled
-      .filter((m) => !isLocked(m))
-      .map((m) => ({
-        player_id: Number(playerId),
-        match_id: m.id,
-        predicted_home: parseInt(scores[m.id].h, 10),
-        predicted_away: parseInt(scores[m.id].a, 10),
-      }));
+  // spočítá zápasy, které mají vyplněné skóre odlišné od toho, co je v DB
+  const computeDirty = useCallback(
+    (s: Scores) =>
+      matches.filter((m) => {
+        if (isLocked(m)) return false;
+        const cur = s[m.id];
+        if (!cur || cur.h === '' || cur.a === '') return false;
+        const was = savedRef.current[m.id];
+        return !was || was.h !== cur.h || was.a !== cur.a;
+      }).length,
+    // isLocked závisí na `now`, chceme přepočet i při tiknutí hodin
+    [matches, now], // eslint-disable-line react-hooks/exhaustive-deps
+  );
 
-    const blockedMsg =
-      blocked.length > 0
-        ? `⛔ Neuloženo (už začaly / jsou uzavřené): ${blocked.map((m) => `${m.home_team}–${m.away_team}`).join(', ')}.`
-        : '';
+  useEffect(() => {
+    setDirtyCount(computeDirty(scores));
+  }, [scores, computeDirty]);
 
-    if (rows.length === 0) {
+  const save = useCallback(
+    async (silent = false) => {
+      if (!playerId) return;
+      setSaving(true);
+      if (!silent) setMsg(null);
+      // vyplněné zápasy si rozdělíme na otevřené (uložíme) a zamčené (nelze uložit)
+      const filled = matches.filter((m) => {
+        const s = scores[m.id];
+        return s && s.h !== '' && s.a !== '';
+      });
+      const blocked = filled.filter((m) => isLocked(m));
+      const rows = filled
+        .filter((m) => !isLocked(m))
+        .map((m) => ({
+          player_id: Number(playerId),
+          match_id: m.id,
+          predicted_home: parseInt(scores[m.id].h, 10),
+          predicted_away: parseInt(scores[m.id].a, 10),
+        }));
+
+      const blockedMsg =
+        blocked.length > 0
+          ? `⛔ Neuloženo (už začaly / jsou uzavřené): ${blocked.map((m) => `${m.home_team}–${m.away_team}`).join(', ')}.`
+          : '';
+
+      if (rows.length === 0) {
+        setSaving(false);
+        if (!silent) setMsg(blockedMsg || 'Nic k uložení — vyplň skóre u otevřených zápasů.');
+        return;
+      }
+      const { error } = await supabase
+        .from('predictions')
+        .upsert(rows, { onConflict: 'player_id,match_id' });
       setSaving(false);
-      setMsg(blockedMsg || 'Nic k uložení — vyplň skóre u otevřených zápasů.');
-      return;
-    }
-    const { error } = await supabase
-      .from('predictions')
-      .upsert(rows, { onConflict: 'player_id,match_id' });
-    setSaving(false);
-    if (error) {
-      setMsg(`Chyba: ${error.message}`);
-    } else {
+      if (error) {
+        setMsg(`Chyba: ${error.message}`);
+        return;
+      }
       // ověř, že tipy v DB opravdu sedí (chytí i tiché odmítnutí zápisu)
       const { data: check } = await supabase
         .from('predictions')
-        .select('match_id')
+        .select('match_id, predicted_home, predicted_away')
         .eq('player_id', Number(playerId))
         .in('match_id', rows.map((r) => r.match_id));
-      const savedIds = new Set(((check as { match_id: number }[]) ?? []).map((c) => c.match_id));
-      const missing = rows.filter((r) => !savedIds.has(r.match_id));
+      const inDb = new Map(
+        ((check as { match_id: number; predicted_home: number; predicted_away: number }[]) ?? []).map((c) => [
+          c.match_id,
+          { h: String(c.predicted_home), a: String(c.predicted_away) },
+        ]),
+      );
+      const missing = rows.filter((r) => {
+        const d = inDb.get(r.match_id);
+        return !d || d.h !== String(r.predicted_home) || d.a !== String(r.predicted_away);
+      });
+
+      // aktualizuj snapshot podle toho, co REÁLNĚ je v DB
+      const nextSaved: Scores = { ...savedRef.current };
+      for (const [mid, v] of inDb) nextSaved[mid] = v;
+      savedRef.current = nextSaved;
+      setDirtyCount(computeDirty(scores));
+      setLastSavedAt(new Date());
+
       if (missing.length > 0) {
         setMsg(`⚠️ Část tipů se neuložila (${missing.length}). Zkus to prosím znovu. ${blockedMsg}`.trim());
         return;
       }
       setMsg(`✅ Tipy uložené (${rows.length}) ${blockedMsg}`.trim());
-      if (blocked.length === 0) setTipping(false);
-    }
-  }
+    },
+    [playerId, matches, scores, supabase, computeDirty], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // AUTOSAVE: po 3 s nečinnosti ulož rozdělané tipy (tiše, bez zavření režimu)
+  useEffect(() => {
+    if (!editable || !tipping || !playerId || dirtyCount === 0 || saving) return;
+    const t = setTimeout(() => {
+      void save(true);
+    }, 3000);
+    return () => clearTimeout(t);
+  }, [editable, tipping, playerId, dirtyCount, saving, save]);
+
+  // Pojistka: varuj při odchodu, když jsou neuložené tipy
+  useEffect(() => {
+    if (dirtyCount === 0) return;
+    const h = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', h);
+    return () => window.removeEventListener('beforeunload', h);
+  }, [dirtyCount]);
 
   const selectedName = players.find((p) => p.id === playerId)?.name;
   const openCount = matches.filter((m) => !isLocked(m)).length;
@@ -173,18 +243,6 @@ export function RoundPanel({
               {playerId ? `${openCount} zápasů k tipnutí` : `${openCount} otevřených — vyber jméno`}
             </span>
           )}
-        </div>
-      )}
-
-      {/* vědomá akce: spustit tipování */}
-      {editable && openCount > 0 && !tipping && (
-        <div className="p-4">
-          <button onClick={() => { setMsg(null); setTipping(true); }} className="btn-pitch">
-            🎯 Tipovat
-          </button>
-          <p className="mt-2 text-center text-xs text-slate-300/45">
-            {openCount} {openCount === 1 ? 'zápas' : openCount < 5 ? 'zápasy' : 'zápasů'} k tipnutí — klikni, vyplň skóre a ulož
-          </p>
         </div>
       )}
 
@@ -231,12 +289,53 @@ export function RoundPanel({
         </div>
       )}
 
-      {/* uložit (jen v režimu tipování) */}
-      {editable && tipping && openCount > 0 && (
-        <div className="p-4">
-          <button onClick={save} disabled={saving} className="btn-pitch">
-            {saving ? 'Ukládám…' : '💾 Uložit tipy'}
+      {/* spustit tipování — STEJNÉ místo jako Uložit (plovoucí lišta dole) */}
+      {editable && openCount > 0 && !tipping && (
+        <div className="sticky bottom-0 z-20 border-t border-terrain-700 bg-terrain-900/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-terrain-900/80">
+          <button onClick={() => { setMsg(null); setTipping(true); }} className="btn-pitch w-full">
+            🎯 Tipovat
           </button>
+          <p className="mt-2 text-center text-xs text-slate-300/45">
+            {openCount} {openCount === 1 ? 'zápas' : openCount < 5 ? 'zápasy' : 'zápasů'} k tipnutí
+            {!playerId && ' — nejdřív vyber jméno'}
+          </p>
+        </div>
+      )}
+
+      {/* uložit — plovoucí lišta: drží se u spodní hrany, dokud tipuješ */}
+      {editable && tipping && openCount > 0 && (
+        <div className="sticky bottom-0 z-20 border-t border-terrain-700 bg-terrain-900/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-terrain-900/80">
+          <div className="flex items-center gap-3">
+            <button onClick={() => void save()} disabled={saving} className="btn-pitch flex-1">
+              {saving
+                ? 'Ukládám…'
+                : dirtyCount > 0
+                  ? `💾 Uložit tipy (${dirtyCount})`
+                  : '💾 Uložit tipy'}
+            </button>
+            <button
+              onClick={() => setTipping(false)}
+              disabled={saving || dirtyCount > 0}
+              className="shrink-0 rounded-xl border border-terrain-600 px-3 py-2.5 text-sm text-slate-100/70 disabled:opacity-40"
+              title={dirtyCount > 0 ? 'Nejdřív ulož rozdělané tipy' : 'Zavřít tipování'}
+            >
+              Hotovo
+            </button>
+          </div>
+          <p className="mt-2 text-center text-xs">
+            {saving ? (
+              <span className="text-slate-300/60">Ukládám…</span>
+            ) : dirtyCount > 0 ? (
+              <span className="text-flag">● {dirtyCount} neuloženo — ukládá se samo za chvíli</span>
+            ) : lastSavedAt ? (
+              <span className="text-pitch">
+                ✅ Uloženo{' '}
+                {lastSavedAt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            ) : (
+              <span className="text-slate-300/45">Vyplň skóre — tipy se ukládají automaticky</span>
+            )}
+          </p>
         </div>
       )}
 

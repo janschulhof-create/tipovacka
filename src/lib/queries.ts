@@ -1,6 +1,7 @@
 import { createServerReadClient } from '@/lib/supabase/server';
 import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player } from '@/lib/types';
 import { calculatePoints } from './scoring';
+import { CONTINENTS, matchContinents, type ContinentKey } from './continents';
 
 export async function getActiveSeasonId(): Promise<number | null> {
   const sb = createServerReadClient();
@@ -454,4 +455,80 @@ export async function getStoppageStats(
   return [...agg.entries()]
     .map(([name, v]) => ({ name, ...v }))
     .sort((a, b) => b.balance - a.balance || a.name.localeCompare(b.name));
+}
+
+/**
+ * Černokněžník + tabulky kontinentů (jedno načtení dat, dva výstupy).
+ * - Černokněžník: kolikrát tipér jako JEDINÝ bodoval v zápase (ostatní 0 b).
+ * - Kontinenty: body získané v zápasech týmů daného kontinentu.
+ */
+export async function getWizardAndContinentStats(seasonId: number): Promise<{
+  wizard: { name: string; count: number }[];
+  continents: { key: ContinentKey; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
+}> {
+  const sb = createServerReadClient();
+  const { data: ms } = await sb
+    .from('matches')
+    .select('id, home_team, away_team')
+    .eq('season_id', seasonId)
+    .eq('status', 'finished')
+    .not('home_score', 'is', null);
+
+  type M = { id: number; home_team: string; away_team: string };
+  const matches = (ms as M[]) ?? [];
+  if (matches.length === 0) return { wizard: [], continents: [] };
+
+  const { data: ps } = await sb
+    .from('predictions')
+    .select('match_id, points, players(name)')
+    .in('match_id', matches.map((m) => m.id))
+    .not('points', 'is', null);
+
+  type P = { match_id: number; points: number; players: { name: string } | { name: string }[] | null };
+  const byMatch = new Map<number, { name: string; points: number }[]>();
+  for (const r of (ps as P[]) ?? []) {
+    const name = Array.isArray(r.players) ? r.players[0]?.name : r.players?.name;
+    if (!name) continue;
+    const arr = byMatch.get(r.match_id) ?? [];
+    arr.push({ name, points: r.points });
+    byMatch.set(r.match_id, arr);
+  }
+
+  const wizard = new Map<string, number>();
+  const cont = new Map<ContinentKey, Map<string, { points: number; matches: number }>>();
+
+  for (const m of matches) {
+    const tips = byMatch.get(m.id) ?? [];
+    if (tips.length === 0) continue;
+
+    // Černokněžník: bodoval právě jeden, ostatní vyšli naprázdno
+    const scorers = tips.filter((t) => t.points > 0);
+    if (scorers.length === 1 && tips.length > 1) {
+      wizard.set(scorers[0].name, (wizard.get(scorers[0].name) ?? 0) + 1);
+    }
+
+    // kontinenty: zápas přispěje do tabulky každého zúčastněného kontinentu
+    for (const key of matchContinents(m.home_team, m.away_team)) {
+      const tbl = cont.get(key) ?? new Map<string, { points: number; matches: number }>();
+      for (const t of tips) {
+        const cur = tbl.get(t.name) ?? { points: 0, matches: 0 };
+        cur.points += t.points;
+        cur.matches += 1;
+        tbl.set(t.name, cur);
+      }
+      cont.set(key, tbl);
+    }
+  }
+
+  return {
+    wizard: [...wizard.entries()]
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => b.count - a.count || a.name.localeCompare(b.name, 'cs')),
+    continents: CONTINENTS.filter((c) => cont.has(c.key)).map((c) => ({
+      ...c,
+      rows: [...(cont.get(c.key) ?? new Map()).entries()]
+        .map(([name, v]) => ({ name, points: v.points, matches: v.matches }))
+        .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name, 'cs')),
+    })),
+  };
 }

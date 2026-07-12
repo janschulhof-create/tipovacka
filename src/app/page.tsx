@@ -10,6 +10,7 @@ import {
   getRoundPredictions,
   getSeasonChartData,
   getStoppageStats,
+  getWizardAndContinentStats,
   getSeasonTipRounds,
   getLiveMatches,
   getLivePointsByPlayer,
@@ -45,7 +46,7 @@ export default async function Home({
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
   const selectedRound =
     !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : currentRound;
-  const [matches, standings, goals, misses, players, chart, stoppage] = await Promise.all([
+  const [matches, standings, goals, misses, players, chart, stoppage, wizCont] = await Promise.all([
     selectedRound ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
     getStandings(seasonId),
     getGoalStats(seasonId),
@@ -53,6 +54,7 @@ export default async function Home({
     getPlayers(),
     getSeasonChartData(seasonId),
     getStoppageStats(seasonId),
+    getWizardAndContinentStats(seasonId),
   ]);
 
   const tipRounds = await getSeasonTipRounds(seasonId);
@@ -134,7 +136,15 @@ export default async function Home({
           <span className="flag-chip" /> Statistiky sezóny
         </h2>
         <StatsCards standings={standings} goals={goals} misses={misses} />
-        {hasResults && <SeasonStats rounds={tipRounds} players={activeNames} stoppage={stoppage} />}
+        {hasResults && (
+          <SeasonStats
+            rounds={tipRounds}
+            players={activeNames}
+            stoppage={stoppage}
+            wizard={wizCont.wizard}
+            continents={wizCont.continents}
+          />
+        )}
       </section>
     </main>
   );

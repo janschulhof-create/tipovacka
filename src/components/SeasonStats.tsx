@@ -7,10 +7,14 @@ export function SeasonStats({
   rounds,
   players,
   stoppage = [],
+  wizard = [],
+  continents = [],
 }: {
   rounds: SRound[];
   players: string[];
   stoppage?: { name: string; balance: number; affected: number }[];
+  wizard?: { name: string; count: number }[];
+  continents?: { key: string; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
 }) {
   if (players.length === 0) {
     return <p className="px-1 text-sm text-slate-100/45">Statistiky se objeví, jakmile padnou první výsledky.</p>;
@@ -40,13 +44,42 @@ export function SeasonStats({
     { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', scale: true, scaleInvert: true, rows: [...ff.teamRows].reverse() },
     { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', scale: true, scaleInvert: true, rows: ff.surpriseRows },
     { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', scale: true, rows: ff.bankerRows },
+    {
+      icon: '🧙',
+      label: 'Černokněžník (bodoval jako jediný)',
+      accent: 'text-purple-400',
+      scale: true,
+      rows: wizard.map((w) => ({ name: w.name, val: `${w.count}×`, n: w.count })),
+    },
   ].filter((c) => c.rows.length > 0);
 
   return (
-    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-      {cards.map((c) => (
-        <StatCard key={c.label} {...c} />
-      ))}
+    <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {cards.map((c) => (
+          <StatCard key={c.label} {...c} />
+        ))}
+      </div>
+
+      {continents.length > 0 && (
+        <div>
+          <div className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
+            🌍 Pořadí podle kontinentů
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-3">
+            {continents.map((c) => (
+              <StatCard
+                key={c.key}
+                icon={c.icon}
+                label={c.label}
+                accent="text-pitch-light"
+                scale
+                rows={c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points }))}
+              />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

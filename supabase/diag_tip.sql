@@ -1,44 +1,80 @@
 -- =====================================================================
---  DIAGNOSTIKA: chybějící tip (např. Kobřík – Argentina vs Švýcarsko)
---  Spusť v Supabase SQL editoru, postupně 1) → 4).
+--  DIAGNOSTIKA: tip se "uložil", ale v DB není
+--  Vše je samostatné – NIC nedoplňuj, jen spouštěj blok po bloku.
 -- =====================================================================
 
--- 1) Najdi zápas (i případné DUPLICITY – to je hlavní podezřelý!).
---    Když vyjedou DVA řádky, Kobřík mohl tipovat jeden a body/výpis běží na druhém.
+-- 1) Zápas Argentina – Švýcarsko (uvidíš i případné duplicity)
 select m.id, m.round as kolo, m.home_team, m.away_team, m.kickoff, m.status,
-       m.home_score, m.away_score,
        (select count(*) from predictions p where p.match_id = m.id) as pocet_tipu
 from matches m
 where m.season_id = (select id from seasons where is_active)
-  and (lower(m.home_team) like '%argent%' or lower(m.away_team) like '%argent%')
-  and (lower(m.home_team) like '%výcar%' or lower(m.away_team) like '%výcar%'
-       or lower(m.home_team) like '%vycar%' or lower(m.away_team) like '%vycar%')
+  and (m.home_team ilike '%rgentin%' or m.away_team ilike '%rgentin%')
+  and (m.home_team ilike '%výcarsk%' or m.away_team ilike '%výcarsk%')
 order by m.id;
 
--- 2) Má Kobřík na tenhle zápas tip? (doplň ID z kroku 1, klidně obě, když jsou dvě)
-select p.match_id, pl.name, p.predicted_home, p.predicted_away, p.points
+-- 2) Kdo na ten zápas má tip (ID se hledá samo, nic nedoplňuj)
+with z as (
+  select m.id from matches m
+  where m.season_id = (select id from seasons where is_active)
+    and (m.home_team ilike '%rgentin%' or m.away_team ilike '%rgentin%')
+    and (m.home_team ilike '%výcarsk%' or m.away_team ilike '%výcarsk%')
+)
+select pl.name, p.match_id,
+       p.predicted_home || ':' || p.predicted_away as tip, p.points
 from predictions p
 join players pl on pl.id = p.player_id
-where p.match_id in ( /* ← sem ID z kroku 1 */ )
+where p.match_id in (select id from z)
 order by pl.name;
 
--- 3) Kdo všechno na ten zápas tipoval (uvidíš, jestli chybí jen Kobřík)
-select pl.name, p.predicted_home || ':' || p.predicted_away as tip, p.points
+-- 3) Kolik tipů má Kobřík po kolech (chybí jen tenhle, nebo víc?)
+select m.round as kolo, count(*) as tipu
 from predictions p
+join matches m on m.id = p.match_id
 join players pl on pl.id = p.player_id
-where p.match_id in ( /* ← sem ID z kroku 1 */ )
-order by pl.name;
+where pl.name ilike '%kob%'
+  and m.season_id = (select id from seasons where is_active)
+group by m.round order by m.round;
 
--- 4) DOPLNĚNÍ TIPU RUČNĚ (jen když se s partou dohodnete, že tip poslal včas!)
---    Nahraď <MATCH_ID>, <TIP_DOMACI>, <TIP_HOSTE>.
+-- ============ HLAVNÍ PODEZŘELÍ ============
+
+-- 4) UNIQUE constraint na (player_id, match_id).
+--    Appka ukládá přes upsert s onConflict 'player_id,match_id'.
+--    Když constraint chybí / je jiný, zápis může tiše selhat. MUSÍ tu něco vyjet.
+select conname as nazev, pg_get_constraintdef(oid) as definice
+from pg_constraint
+where conrelid = 'predictions'::regclass and contype in ('u', 'p');
+
+-- 5) RLS na predictions: zapnuté?
+select relrowsecurity as rls_zapnute
+from pg_class where oid = 'predictions'::regclass;
+
+-- 6) RLS politiky. Pro upsert z prohlížeče (anon klíč) musí být politika pro
+--    INSERT, UPDATE i SELECT. Když některá chybí, zápis projde "bez chyby",
+--    ale řádek se nezapíše → přesně tenhle příznak.
+select policyname as politika, cmd as prikaz, roles::text as role,
+       qual as using_podminka, with_check as with_check_podminka
+from pg_policies
+where tablename = 'predictions';
+
+-- ============ RUČNÍ DOPLNĚNÍ TIPU (až se domluvíte) ============
+-- Doplň <TIP_D> a <TIP_H> (např. 2 a 1) a odkomentuj:
+--
 -- insert into predictions (player_id, match_id, predicted_home, predicted_away)
--- values (
---   (select id from players where name = 'Kobřík'),
---   <MATCH_ID>, <TIP_DOMACI>, <TIP_HOSTE>
--- )
+-- select (select id from players where name ilike '%kob%' limit 1),
+--        (select m.id from matches m
+--         where m.season_id = (select id from seasons where is_active)
+--           and (m.home_team ilike '%rgentin%' or m.away_team ilike '%rgentin%')
+--           and (m.home_team ilike '%výcarsk%' or m.away_team ilike '%výcarsk%')
+--         limit 1),
+--        <TIP_D>, <TIP_H>
 -- on conflict (player_id, match_id) do update
 --   set predicted_home = excluded.predicted_home,
 --       predicted_away = excluded.predicted_away;
 --
---    Body se dopočítají samy při dalším přepočtu:
--- update matches set reg_checked = false where id = <MATCH_ID>;
+-- -- přepočet bodů:
+-- update matches set reg_checked = false
+-- where id = (select m.id from matches m
+--             where m.season_id = (select id from seasons where is_active)
+--               and (m.home_team ilike '%rgentin%' or m.away_team ilike '%rgentin%')
+--               and (m.home_team ilike '%výcarsk%' or m.away_team ilike '%výcarsk%')
+--             limit 1);
