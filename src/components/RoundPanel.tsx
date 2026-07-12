@@ -305,31 +305,25 @@ export function RoundPanel({
       {/* uložit — plovoucí lišta: drží se u spodní hrany, dokud tipuješ */}
       {editable && tipping && openCount > 0 && (
         <div className="sticky bottom-0 z-20 border-t border-terrain-700 bg-terrain-900/95 p-4 backdrop-blur supports-[backdrop-filter]:bg-terrain-900/80">
-          <div className="flex items-center gap-3">
-            <button onClick={() => void save()} disabled={saving} className="btn-pitch flex-1">
-              {saving
-                ? 'Ukládám…'
-                : dirtyCount > 0
-                  ? `💾 Uložit tipy (${dirtyCount})`
-                  : '💾 Uložit tipy'}
+          {/* jedno tlačítko, které se mění podle stavu:
+              rozdělané tipy → Uložit; vše uložené → Hotovo (zavře tipování) */}
+          {dirtyCount > 0 || saving ? (
+            <button onClick={() => void save()} disabled={saving} className="btn-pitch w-full">
+              {saving ? 'Ukládám…' : `💾 Uložit teď (${dirtyCount})`}
             </button>
-            <button
-              onClick={() => setTipping(false)}
-              disabled={saving || dirtyCount > 0}
-              className="shrink-0 rounded-xl border border-terrain-600 px-3 py-2.5 text-sm text-slate-100/70 disabled:opacity-40"
-              title={dirtyCount > 0 ? 'Nejdřív ulož rozdělané tipy' : 'Zavřít tipování'}
-            >
-              Hotovo
+          ) : (
+            <button onClick={() => setTipping(false)} className="btn-pitch w-full">
+              ✔️ Hotovo
             </button>
-          </div>
+          )}
           <p className="mt-2 text-center text-xs">
             {saving ? (
               <span className="text-slate-300/60">Ukládám…</span>
             ) : dirtyCount > 0 ? (
-              <span className="text-flag">● {dirtyCount} neuloženo — ukládá se samo za chvíli</span>
+              <span className="text-flag">● Uloží se samo za chvíli — nebo klikni</span>
             ) : lastSavedAt ? (
               <span className="text-pitch">
-                ✅ Uloženo{' '}
+                ✅ Všechny tipy uložené{' '}
                 {lastSavedAt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}
               </span>
             ) : (
