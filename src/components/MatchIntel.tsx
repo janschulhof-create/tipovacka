@@ -129,18 +129,18 @@ export function Baroko({
   const same = others.filter((p) => p.predicted_home === myTip.h && p.predicted_away === myTip.a).length;
   const fmt = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
 
+  // verdikt podle SILNĚJŠÍ z obou odchylek (dřív měly góly přednost, takže
+  // "1:1 vs 1,5:0,5" hlásilo 'jedeš s davem', i když jsi vlastně jinde)
   const verdict =
     Math.abs(dGoals) < 0.5 && Math.abs(dLean) < 0.5
       ? 'Jedeš s davem — nuda, ale bezpečno.'
-      : dGoals >= 0.8
-        ? 'Čekáš přestřelku, parta ne. Odvážné.'
-        : dGoals <= -0.8
-          ? 'Betonuješ víc než ostatní.'
-          : dLean >= 0.8
-            ? `Věříš ${home} víc než parta.`
-            : dLean <= -0.8
-              ? `Věříš ${away} víc než parta.`
-              : 'Mírně mimo dav.';
+      : Math.abs(dLean) >= Math.abs(dGoals)
+        ? dLean > 0
+          ? `Věříš ${home} víc než parta.`
+          : `Věříš ${away} víc než parta.`
+        : dGoals > 0
+          ? 'Čekáš přestřelku, parta ne. Odvážné.'
+          : 'Betonuješ víc než ostatní.';
 
   return (
     <div className="rounded-xl border border-terrain-700 bg-terrain-900/40 p-3">
@@ -154,15 +154,61 @@ export function Baroko({
         <span className="text-slate-300/60">
           průměr party <b className="tabular-nums text-slate-100/80">{avgH.toFixed(1)}:{avgA.toFixed(1)}</b>
         </span>
-        <span className={`tabular-nums ${Math.abs(dGoals) >= 0.8 ? 'text-flag' : 'text-slate-300/60'}`}>
-          góly {fmt(dGoals)}
-        </span>
       </div>
-      <p className="mt-1 text-[11px] leading-snug text-slate-300/50">
+      <div className="mt-2 space-y-1">
+        <DevRow
+          label="Góliček celkem"
+          value={fmt(dGoals)}
+          hint={
+            Math.abs(dGoals) < 0.3
+              ? 'stejně jako parta'
+              : dGoals > 0
+                ? 'čekáš víc gólů'
+                : 'čekáš míň gólů'
+          }
+          strong={Math.abs(dGoals) >= 0.8}
+        />
+        <DevRow
+          label="Komu věříš"
+          value={fmt(dLean)}
+          hint={
+            Math.abs(dLean) < 0.3
+              ? 'stejně jako parta'
+              : dLean > 0
+                ? `víc věříš ${home}`
+                : `víc věříš ${away}`
+          }
+          strong={Math.abs(dLean) >= 0.8}
+        />
+      </div>
+      <p className="mt-2 text-[11px] leading-snug text-slate-300/50">
         {verdict}
         {same > 0 && ` Stejný tip má ${same === 1 ? 'ještě 1 člověk' : `dalších ${same}`}.`}
         {same === 0 && ' Tenhle tip nemá nikdo jiný.'}
       </p>
+    </div>
+  );
+}
+
+/** Jeden řádek odchylky: co to je, o kolik, a co to znamená. */
+function DevRow({
+  label,
+  value,
+  hint,
+  strong,
+}: {
+  label: string;
+  value: string;
+  hint: string;
+  strong: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-2 text-[12px]">
+      <span className="w-24 shrink-0 text-slate-300/50">{label}</span>
+      <span className={`w-10 shrink-0 text-right font-bold tabular-nums ${strong ? 'text-flag' : 'text-slate-100/70'}`}>
+        {value}
+      </span>
+      <span className="min-w-0 truncate text-slate-300/60">{hint}</span>
     </div>
   );
 }
