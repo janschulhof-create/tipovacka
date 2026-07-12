@@ -7,7 +7,7 @@ import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/e
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
-import { H2HContent, PredictionContent, useInsight } from './MatchIntel';
+import { Baroko, H2HContent, PredictionContent, useInsight } from './MatchIntel';
 
 type Scores = Record<number, { h: string; a: string }>;
 
@@ -267,6 +267,7 @@ export function RoundPanel({
         {matches.map((m) => (
           <MatchRow
             key={m.id}
+            now={now}
             m={m}
             locked={isLocked(m)}
             canTip={editable && playerId !== ''}
@@ -369,6 +370,21 @@ export function RoundPanel({
   );
 }
 
+/** "za 2 h 14 min" / "za 45 min" / "za 3 dny" – odpočet do uzávěrky (výkopu). */
+function countdown(kickoff: string, now: number): string | null {
+  const ms = new Date(kickoff).getTime() - now;
+  if (ms <= 0) return null;
+  const min = Math.floor(ms / 60000);
+  if (min < 60) return `za ${min} min`;
+  const h = Math.floor(min / 60);
+  if (h < 24) {
+    const rest = min % 60;
+    return rest ? `za ${h} h ${rest} min` : `za ${h} h`;
+  }
+  const d = Math.floor(h / 24);
+  return `za ${d} ${d === 1 ? 'den' : d < 5 ? 'dny' : 'dní'}`;
+}
+
 function MatchRow({
   m,
   locked,
@@ -379,11 +395,13 @@ function MatchRow({
   score,
   onBump,
   onChange,
+  now,
 }: {
   m: Match;
   locked: boolean;
   canTip: boolean;
   tipping: boolean;
+  now: number;
   selectedName?: string;
   preds: RoundPrediction[];
   score: { h: string; a: string };
@@ -403,8 +421,13 @@ function MatchRow({
           <><span className="live-dot" /> <span className="text-flag">živě{m.clock ? ` ${m.clock}` : m.minute != null ? ` ${m.minute}\u2032` : ''}</span></>
         ) : done ? 'konec' : locked ? '🔒 uzavřeno' : '🟢 otevřeno'}
       </span>
-      <span className="flex flex-col items-end gap-1.5">
+      <span className="flex flex-col items-end gap-0.5">
         <span>{dt(m.kickoff)}</span>
+        {!locked && !live && !done && countdown(m.kickoff, now) && (
+          <span className="normal-case text-[10px] font-semibold text-flag">
+            ⏳ uzávěrka {countdown(m.kickoff, now)}
+          </span>
+        )}
       </span>
     </div>
   );
@@ -491,7 +514,7 @@ function MatchRow({
       </div>
 
       {/* rozbalený detail: záložky Tipy | Statistiky | Sestavy */}
-      {open && <MatchExpanded m={m} locked={locked} live={live} preds={preds} />}
+      {open && <MatchExpanded m={m} locked={locked} live={live} preds={preds} selectedName={selectedName} />}
     </li>
   );
 }
@@ -501,12 +524,15 @@ function MatchExpanded({
   locked,
   live,
   preds,
+  selectedName,
 }: {
   m: Match;
   locked: boolean;
   live: boolean;
   preds: RoundPrediction[];
+  selectedName?: string;
 }) {
+  const myTip = selectedName ? preds.find((p) => p.name === selectedName) : undefined;
   const d = m.detail;
   const hasProgress = !!d && ((d.goals?.length ?? 0) > 0 || (d.cards?.length ?? 0) > 0);
   const hasStats = !!d && (!!d.stats || !!d.venue || !!d.attendance);
@@ -514,7 +540,8 @@ function MatchExpanded({
   const hasLineups = !!lu && lu.home.starters.length + lu.away.starters.length > 0;
   const hasRoast = m.status === 'finished' && (!!m.roast || (locked && preds.some((p) => p.points != null)));
 
-  // Predikce dává smysl jen dokud se nehraje/nedohrálo
+  // H2H i predikce dávají smysl jen PŘED zápasem (když se tipuje).
+  // Jakmile se hraje / je dohráno, mají přednost Průběh, Statistiky a Hodnocení.
   const showPrediction = m.status === 'scheduled';
 
   type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'prubeh' | 'staty' | 'sestavy';
@@ -522,7 +549,7 @@ function MatchExpanded({
     [
       { id: 'tipy' as const, label: 'Tipy' },
       hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení' } : null,
-      { id: 'h2h' as const, label: 'H2H' },
+      showPrediction ? { id: 'h2h' as const, label: 'H2H' } : null,
       showPrediction ? { id: 'predikce' as const, label: 'Predikce' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
       hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
@@ -537,9 +564,9 @@ function MatchExpanded({
   const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce');
 
   return (
-    <div className="border-t border-terrain-800/60 bg-terrain-950/40">
+    <div className="min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40">
       {tabs.length > 1 && (
-        <div className="flex gap-1 px-2 pt-2 sm:px-3">
+        <div className="flex gap-1 overflow-x-auto px-2 pt-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:px-3">
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -547,7 +574,7 @@ function MatchExpanded({
                 e.stopPropagation();
                 setTab(t.id);
               }}
-              className={`rounded-t-md px-3 py-1.5 text-xs font-semibold transition ${
+              className={`shrink-0 whitespace-nowrap rounded-t-md px-3 py-1.5 text-xs font-semibold transition ${
                 active === t.id
                   ? 'bg-terrain-800 text-white'
                   : 'text-slate-300/50 hover:text-slate-100/80'
@@ -559,7 +586,19 @@ function MatchExpanded({
         </div>
       )}
       <div className={tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}>
-        {active === 'tipy' && <TipsContent m={m} locked={locked} live={live} preds={preds} />}
+        {active === 'tipy' && (
+          <div className="space-y-3">
+            <TipsContent m={m} locked={locked} live={live} preds={preds} />
+            {showPrediction && (
+              <Baroko
+                myTip={myTip ? { h: myTip.predicted_home, a: myTip.predicted_away } : undefined}
+                preds={preds.filter((p) => p.name !== selectedName)}
+                home={m.home_team}
+                away={m.away_team}
+              />
+            )}
+          </div>
+        )}
         {active === 'hodnoceni' && <RoastContent m={m} preds={preds} />}
         {active === 'h2h' && <H2HContent data={intel} loading={intelLoading} />}
         {active === 'predikce' && (

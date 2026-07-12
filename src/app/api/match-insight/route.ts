@@ -122,5 +122,33 @@ export async function GET(req: Request) {
   const leagueAvg = pms.length ? totalGoals / (pms.length * 2) : 0; // góly na tým a zápas
   const prediction = predictMatch(formOf(teams.home), formOf(teams.away), leagueAvg, h2h, teams.home);
 
-  return NextResponse.json({ teams, h2h, form, prediction, loggedIn: !!player });
+  // ---------- Forma týmů: posledních 5 zápasů každého z nich na turnaji ----------
+  const { data: recent } = await sb
+    .from('matches')
+    .select('home_team, away_team, home_score, away_score, kickoff')
+    .eq('season_id', match.season_id)
+    .eq('status', 'finished')
+    .not('home_score', 'is', null)
+    .order('kickoff', { ascending: false });
+
+  type RM = { home_team: string; away_team: string; home_score: number; away_score: number };
+  const teamForm = (team: string) =>
+    ((recent as RM[]) ?? [])
+      .filter((m) => m.home_team === team || m.away_team === team)
+      .slice(0, 5)
+      .map((m) => {
+        const isHome = m.home_team === team;
+        const gf = isHome ? m.home_score : m.away_score;
+        const ga = isHome ? m.away_score : m.home_score;
+        return {
+          opponent: isHome ? m.away_team : m.home_team,
+          gf,
+          ga,
+          res: gf > ga ? ('W' as const) : gf < ga ? ('L' as const) : ('D' as const),
+        };
+      });
+
+  const form5 = { home: teamForm(teams.home), away: teamForm(teams.away) };
+
+  return NextResponse.json({ teams, h2h, form, form5, prediction, loggedIn: !!player });
 }

@@ -13,10 +13,12 @@ interface Prediction {
   bestTip: { h: number; a: number; ev: number };
   sample: number;
 }
+interface Form5Row { opponent: string; gf: number; ga: number; res: 'W' | 'D' | 'L' }
 export interface InsightData {
   teams: { home: string; away: string };
   h2h: H2HMatch[];
   form: FormRow[];
+  form5: { home: Form5Row[]; away: Form5Row[] };
   prediction: Prediction | null;
   loggedIn: boolean;
 }
@@ -56,6 +58,115 @@ function Score({ hs, as }: { hs: number; as: number }) {
   );
 }
 
+/** Řetízek posledních výsledků (W/D/L) + skóre. */
+function FormChain({ rows }: { rows: Form5Row[] }) {
+  if (!rows.length) return <span className="text-[11px] text-slate-300/40">zatím nehrál</span>;
+  const cls = (r: 'W' | 'D' | 'L') =>
+    r === 'W' ? 'bg-pitch text-white' : r === 'L' ? 'bg-flag text-white' : 'bg-slate-600 text-white';
+  return (
+    <span className="flex flex-wrap items-center gap-1">
+      {rows.map((r, i) => (
+        <span
+          key={i}
+          title={`${r.res === 'W' ? 'výhra' : r.res === 'L' ? 'prohra' : 'remíza'} ${r.gf}:${r.ga} s ${r.opponent}`}
+          className={`flex h-5 min-w-[1.25rem] items-center justify-center rounded px-1 text-[10px] font-bold ${cls(r.res)}`}
+        >
+          {r.res}
+        </span>
+      ))}
+      <span className="ml-1 text-[11px] text-slate-300/45">
+        {rows.map((r) => `${r.gf}:${r.ga}`).join(' · ')}
+      </span>
+    </span>
+  );
+}
+
+/** Forma obou týmů na turnaji (posledních 5). */
+export function TeamFormContent({ data }: { data: InsightData }) {
+  return (
+    <div className="space-y-2">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
+        Forma na turnaji (poslední zápasy)
+      </div>
+      {(['home', 'away'] as const).map((side) => (
+        <div key={side} className="flex flex-wrap items-center gap-2 rounded-xl border border-terrain-700 bg-terrain-900/40 px-3 py-2">
+          <span className="flex min-w-0 items-center gap-1.5 text-[13px] text-slate-100/80">
+            <Flag team={data.teams[side]} /> <span className="truncate">{data.teams[side]}</span>
+          </span>
+          <span className="ml-auto"><FormChain rows={data.form5?.[side] ?? []} /></span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/**
+ * BAROKO — jak moc se tvůj tip liší od průměru party.
+ * Kladné = tipuješ víc gólů / odvážněji než ostatní.
+ */
+export function Baroko({
+  myTip,
+  preds,
+  home,
+  away,
+}: {
+  myTip?: { h: number; a: number };
+  preds: { name: string; predicted_home: number; predicted_away: number }[];
+  home: string;
+  away: string;
+}) {
+  const others = preds.filter((p) => p.predicted_home != null);
+  if (!myTip || others.length < 2) return null;
+
+  const avgH = others.reduce((s, p) => s + p.predicted_home, 0) / others.length;
+  const avgA = others.reduce((s, p) => s + p.predicted_away, 0) / others.length;
+  const avgGoals = avgH + avgA;
+  const myGoals = myTip.h + myTip.a;
+  const dGoals = myGoals - avgGoals;
+  // odchylka výsledku: kladné = víc věříš domácím než parta
+  const dLean = (myTip.h - myTip.a) - (avgH - avgA);
+
+  const same = others.filter((p) => p.predicted_home === myTip.h && p.predicted_away === myTip.a).length;
+  const fmt = (n: number) => (n > 0 ? `+${n.toFixed(1)}` : n.toFixed(1));
+
+  const verdict =
+    Math.abs(dGoals) < 0.5 && Math.abs(dLean) < 0.5
+      ? 'Jedeš s davem — nuda, ale bezpečno.'
+      : dGoals >= 0.8
+        ? 'Čekáš přestřelku, parta ne. Odvážné.'
+        : dGoals <= -0.8
+          ? 'Betonuješ víc než ostatní.'
+          : dLean >= 0.8
+            ? `Věříš ${home} víc než parta.`
+            : dLean <= -0.8
+              ? `Věříš ${away} víc než parta.`
+              : 'Mírně mimo dav.';
+
+  return (
+    <div className="rounded-xl border border-terrain-700 bg-terrain-900/40 p-3">
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
+        🎭 Baroko — odchylka od party
+      </div>
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px]">
+        <span className="text-slate-100/80">
+          Tvůj tip <b className="tabular-nums text-white">{myTip.h}:{myTip.a}</b>
+        </span>
+        <span className="text-slate-300/60">
+          průměr party <b className="tabular-nums text-slate-100/80">{avgH.toFixed(1)}:{avgA.toFixed(1)}</b>
+        </span>
+        <span className={`tabular-nums ${Math.abs(dGoals) >= 0.8 ? 'text-flag' : 'text-slate-300/60'}`}>
+          góly {fmt(dGoals)}
+        </span>
+      </div>
+      <p className="mt-1 text-[11px] leading-snug text-slate-300/50">
+        {verdict}
+        {same > 0 && ` Stejný tip má ${same === 1 ? 'ještě 1 člověk' : `dalších ${same}`}.`}
+        {same === 0 && ' Tenhle tip nemá nikdo jiný.'}
+      </p>
+    </div>
+  );
+}
+
 /** Záložka H2H: vzájemné zápasy + tvoje forma na oba týmy. */
 export function H2HContent({ data, loading }: { data: InsightData | null; loading: boolean }) {
   if (loading) return <p className="text-xs text-slate-300/45">Načítám…</p>;
@@ -63,6 +174,8 @@ export function H2HContent({ data, loading }: { data: InsightData | null; loadin
 
   return (
     <div className="space-y-4">
+      <TeamFormContent data={data} />
+
       <div>
         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
           Vzájemné zápasy
@@ -87,31 +200,37 @@ export function H2HContent({ data, loading }: { data: InsightData | null; loadin
         )}
       </div>
 
-      <div>
-        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-          Jak ti sedí tyhle týmy
-        </div>
-        {!data.loggedIn ? (
-          <Empty text="Přihlas se a uvidíš, jak ti tyhle týmy vycházely." />
-        ) : data.form.length === 0 ? (
-          <Empty text="Zatím jsi na tyhle týmy netipoval." />
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-terrain-700 bg-terrain-900/40">
-            {data.form.map((r) => (
-              <div key={r.matchId} className="flex items-center gap-2 border-b border-terrain-800/60 px-3 py-2 last:border-0">
-                <span className="flex-1 truncate text-[12.5px] text-slate-100/70">
-                  {r.home} – {r.away}
-                </span>
-                <span className="text-[11px] text-slate-300/45">tip {r.ph}:{r.pa}</span>
-                <Score hs={r.hs} as={r.as} />
-                <span className={`rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${pointsBadgeClass(r.points)}`}>
-                  {r.points}b
-                </span>
+      {(['home', 'away'] as const).map((side) => {
+        const team = data.teams[side];
+        const rows = data.form.filter((r) => r.home === team || r.away === team);
+        return (
+          <div key={side}>
+            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
+              <Flag team={team} /> Jak ti sedí {team}
+            </div>
+            {!data.loggedIn ? (
+              <Empty text="Přihlas se a uvidíš, jak ti tenhle tým vycházel." />
+            ) : rows.length === 0 ? (
+              <Empty text={`Na ${team} jsi zatím netipoval.`} />
+            ) : (
+              <div className="overflow-hidden rounded-xl border border-terrain-700 bg-terrain-900/40">
+                {rows.map((r) => (
+                  <div key={r.matchId} className="flex items-center gap-2 border-b border-terrain-800/60 px-3 py-2 last:border-0">
+                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-100/70">
+                      {r.home} – {r.away}
+                    </span>
+                    <span className="shrink-0 text-[11px] text-slate-300/45">tip {r.ph}:{r.pa}</span>
+                    <Score hs={r.hs} as={r.as} />
+                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${pointsBadgeClass(r.points)}`}>
+                      {r.points}b
+                    </span>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </div>
-        )}
-      </div>
+        );
+      })}
     </div>
   );
 }
