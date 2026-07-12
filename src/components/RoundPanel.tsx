@@ -180,7 +180,9 @@ export function RoundPanel({
         setMsg(`⚠️ Část tipů se neuložila (${missing.length}). Zkus to prosím znovu. ${blockedMsg}`.trim());
         return;
       }
-      setMsg(`✅ Tipy uložené (${rows.length}) ${blockedMsg}`.trim());
+      // Úspěch NEhlásíme zvlášť – stav ("✅ Všechny tipy uložené ne 17:20")
+      // ukazuje přímo lišta s tlačítkem. Necháme jen případné varování.
+      setMsg(blockedMsg || null);
     },
     [playerId, matches, scores, supabase, computeDirty], // eslint-disable-line react-hooks/exhaustive-deps
   );
@@ -352,10 +354,14 @@ export function RoundPanel({
         </div>
       )}
 
-      {/* potvrzení / chyba */}
+      {/* už jen chyby a varování — úspěch hlásí lišta s tlačítkem */}
       {msg && (
         <div className="px-4 py-3">
-          <p className={`text-center text-sm ${msg.startsWith('Chyba') ? 'text-red-400' : 'text-pitch-light'}`}>
+          <p
+            className={`text-center text-sm ${
+              msg.startsWith('Chyba') || msg.startsWith('⚠️') ? 'text-red-400' : 'text-flag'
+            }`}
+          >
             {msg}
           </p>
         </div>
