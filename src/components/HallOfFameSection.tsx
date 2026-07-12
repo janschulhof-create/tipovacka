@@ -56,22 +56,21 @@ export function HallOfFameSection({
   // Zlatý Netrefený míč — nejvíc nul
   const worst = [...s.players].sort((a, b) => s.stats[b].zeros - s.stats[a].zeros)[0];
 
+  // Pořadí karet = STEJNÉ jako na dashboardu (jedna rubrika "Rekordy").
+  // extraCards (Pán nastavení, kontinenty) se zařadí na konec — mají je jen některé soutěže.
   const recordCards: { icon: string; label: string; accent: string; rows: Row[] }[] = [
     ...(titleRows?.length ? [{ icon: '👑', label: 'Nejvíce vítězství', accent: 'text-gold', rows: titleRows }] : []),
     { icon: '💯', label: 'Nejvíce bodů', accent: 'text-pitch-light', rows: rank((x) => x.points, 'max', (x) => `${x.points} b`) },
     { icon: '🎯', label: 'Nejvíce přesných tipů', accent: 'text-pitch-light', rows: rank((x) => x.tens, 'max', (x) => `${x.tens}× desítka`) },
-    { icon: '💥', label: 'Nejlepší kolo', accent: 'text-flag', rows: rank((x) => x.bestRound, 'max', (x) => `${x.bestRound} b (${x.bestRoundNo}. kolo)`) },
-    { icon: '📈', label: 'Nejvyšší průměr na zápas', accent: 'text-pitch-light', rows: rank((x) => x.avgPoints, 'max', (x) => `${x.avgPoints}`) },
-    { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rank((x) => x.roundWins, 'max', (x) => `${x.roundWins}×`) },
-    { icon: '💀', label: 'Král nuličky', accent: 'text-control', rows: rank((x) => x.zeros, 'max', (x) => `${x.zeros}× nula`) },
-    { icon: '🧠', label: 'Mr. Alzheimer', accent: 'text-control', rows: rank((x) => x.missed, 'max', (x) => `${x.missed}× netipoval`) },
+    { icon: '📈', label: 'Průměr bodů na zápas', accent: 'text-pitch-light', rows: rank((x) => x.avgPoints, 'max', (x) => `${x.avgPoints}`) },
     { icon: '⚽', label: 'Největší střelec', accent: 'text-flag', rows: rank((x) => x.avgGoals, 'max', (x) => `Ø ${x.avgGoals} g/tip`) },
     { icon: '🧱', label: 'Největší betonář', accent: 'text-sky-400', rows: rank((x) => x.avgGoals, 'min', (x) => `Ø ${x.avgGoals} g/tip`) },
+    { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rank((x) => x.roundWins, 'max', (x) => `${x.roundWins}×`) },
+    { icon: '💥', label: 'Rekord za 1 kolo', accent: 'text-flag', rows: rank((x) => x.bestRound, 'max', (x) => `${x.bestRound} b (${x.bestRoundNo}. kolo)`) },
+    { icon: '💀', label: 'Král nuličky', accent: 'text-control', rows: rank((x) => x.zeros, 'max', (x) => `${x.zeros}× nula`) },
+    { icon: '🧠', label: 'Mr. Alzheimer', accent: 'text-control', rows: rank((x) => x.missed, 'max', (x) => `${x.missed}× netipoval`) },
     { icon: '🧙', label: 'Černokněžník (bodoval jako jediný)', accent: 'text-purple-400', rows: wizardRows },
     { icon: '🤡', label: 'Blamáž (jako jediný nebodoval)', accent: 'text-red-400', rows: spodinaRows },
-  ].filter((c) => c.rows.length > 0);
-
-  const factCards: { icon: string; label: string; accent: string; rows: Row[] }[] = [
     { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
     { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
     { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
@@ -105,13 +104,6 @@ export function HallOfFameSection({
       <p className="mb-2 text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {recordCards.map((c) => (
-          <StatCard key={c.label} {...c} scale />
-        ))}
-      </div>
-
-      <h2 className="eyebrow mb-3 mt-6 lg:mt-8"><span className="flag-chip" /> Další zajímavosti</h2>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {factCards.map((c) => (
           <StatCard key={c.label} {...c} scale />
         ))}
       </div>

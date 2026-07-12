@@ -224,34 +224,24 @@ export function HistorieView({ data }: { data: Historie }) {
         <PositionsChart rounds={data.rounds} players={data.players} />
       </section>
 
-      {/* Statistiky – hráči */}
+      {/* Statistiky sezóny — hráčské karty i zajímavosti pohromadě */}
       <section className="space-y-2">
-        <h2 className="eyebrow"><span className="flag-chip" /> Statistiky hráčů</h2>
+        <h2 className="eyebrow"><span className="flag-chip" /> Statistiky sezóny</h2>
         <p className="text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {cards.map((c) => (
+          {[...cards, ...facts].map((c) => (
             <StatCard key={c.label} {...c} />
           ))}
         </div>
       </section>
 
-      {/* Rozložení bodových zisků */}
+      {/* Rozložení bodových zisků — až za statistikami */}
       <section className="space-y-2">
         <h2 className="eyebrow"><span className="flag-chip" /> Rozložení bodů</h2>
         <p className="text-[11px] text-slate-100/40">
           Jak často kdo bral kolik bodů za tip — desítkáři vs. jistotáři kolem 4–6.
         </p>
         <PointsDistribution data={data} ranked={ranked} />
-      </section>
-
-      {/* Zajímavosti – tipy a týmy */}
-      <section className="space-y-2">
-        <h2 className="eyebrow"><span className="flag-chip" /> Zajímavosti sezóny</h2>
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {facts.map((c) => (
-            <StatCard key={c.label} {...c} />
-          ))}
-        </div>
       </section>
 
       {/* Co by kdyby – alternativní bodování */}

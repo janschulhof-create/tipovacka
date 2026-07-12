@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, type ReactNode } from 'react';
+import { Flag } from './Flag';
 
 /**
  * Přepínač soutěží: Chance liga (dokončené sezóny) × MS 2026 (probíhající).
@@ -30,10 +31,15 @@ export function CompetitionTabs({
     <>
       <div className="mb-4 flex gap-2">
         <button onClick={() => setTab('liga')} className={btn(tab === 'liga')}>
-          🇨🇿 Chance liga
+          <span className="inline-flex items-center gap-2">
+            <Flag team="Česko" />
+            Chance liga
+          </span>
         </button>
         <button onClick={() => setTab('ms')} className={btn(tab === 'ms')}>
-          🌍 {msLabel}
+          <span className="inline-flex items-center gap-2">
+            🌍 {msLabel}
+          </span>
         </button>
       </div>
       {tab === 'liga' ? liga : ms}
