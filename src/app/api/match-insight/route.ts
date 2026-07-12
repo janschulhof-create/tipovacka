@@ -3,6 +3,7 @@ import { createServerAuthClient } from '@/lib/supabase/server';
 import { getSessionPlayer } from '@/lib/auth';
 import { calculatePoints } from '@/lib/scoring';
 import h2hData from '@/data/h2h.json';
+import { predictMatch } from '@/lib/predict';
 
 export const dynamic = 'force-dynamic';
 
@@ -90,5 +91,36 @@ export async function GET(req: Request) {
     }
   }
 
-  return NextResponse.json({ teams, h2h, form, loggedIn: !!player });
+  // ---------- Predikce: síla útoku/obrany z odehraných zápasů turnaje ----------
+  const { data: played } = await sb
+    .from('matches')
+    .select('home_team, away_team, home_score, away_score')
+    .eq('season_id', match.season_id)
+    .eq('status', 'finished')
+    .not('home_score', 'is', null);
+
+  type PM = { home_team: string; away_team: string; home_score: number; away_score: number };
+  const pms = ((played as PM[]) ?? []).filter((m) => m.home_team && m.away_team);
+
+  const formOf = (team: string) => {
+    const acc = { scored: 0, conceded: 0, played: 0 };
+    for (const m of pms) {
+      if (m.home_team === team) {
+        acc.scored += m.home_score;
+        acc.conceded += m.away_score;
+        acc.played++;
+      } else if (m.away_team === team) {
+        acc.scored += m.away_score;
+        acc.conceded += m.home_score;
+        acc.played++;
+      }
+    }
+    return acc;
+  };
+
+  const totalGoals = pms.reduce((s, m) => s + m.home_score + m.away_score, 0);
+  const leagueAvg = pms.length ? totalGoals / (pms.length * 2) : 0; // góly na tým a zápas
+  const prediction = predictMatch(formOf(teams.home), formOf(teams.away), leagueAvg, h2h, teams.home);
+
+  return NextResponse.json({ teams, h2h, form, prediction, loggedIn: !!player });
 }

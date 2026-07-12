@@ -7,7 +7,7 @@ import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/e
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
-import { MatchInsight } from './MatchInsight';
+import { H2HContent, PredictionContent, useInsight } from './MatchIntel';
 
 type Scores = Record<number, { h: string; a: string }>;
 
@@ -45,7 +45,6 @@ export function RoundPanel({
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [tipping, setTipping] = useState(false);
-  const [insightMatch, setInsightMatch] = useState<number | null>(null);
   // poslední stav, o kterém víme, že je v DB (na hlídání neuložených změn)
   const savedRef = useRef<Scores>({});
   const [dirtyCount, setDirtyCount] = useState(0);
@@ -277,7 +276,6 @@ export function RoundPanel({
             score={scores[m.id] ?? { h: '', a: '' }}
             onBump={bump}
             onChange={setVal}
-            onInsight={() => setInsightMatch(m.id)}
           />
         ))}
       </ul>
@@ -367,7 +365,6 @@ export function RoundPanel({
         </div>
       )}
     </div>
-    {insightMatch != null && <MatchInsight matchId={insightMatch} onClose={() => setInsightMatch(null)} />}
     </>
   );
 }
@@ -382,7 +379,6 @@ function MatchRow({
   score,
   onBump,
   onChange,
-  onInsight,
 }: {
   m: Match;
   locked: boolean;
@@ -393,7 +389,6 @@ function MatchRow({
   score: { h: string; a: string };
   onBump: (mid: number, side: 'h' | 'a', d: number) => void;
   onChange: (mid: number, side: 'h' | 'a', v: string) => void;
-  onInsight: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const live = m.status === 'live';
@@ -410,15 +405,6 @@ function MatchRow({
       </span>
       <span className="flex flex-col items-end gap-1.5">
         <span>{dt(m.kickoff)}</span>
-        {tipping && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onInsight(); }}
-            className="flex items-center gap-1 rounded-md bg-terrain-900 px-2 py-1 text-[10px] font-semibold normal-case text-slate-300/70 transition hover:text-white"
-            aria-label="Vzájemné zápasy a tvoje forma"
-          >
-            📊 H2H
-          </button>
-        )}
       </span>
     </div>
   );
@@ -528,11 +514,16 @@ function MatchExpanded({
   const hasLineups = !!lu && lu.home.starters.length + lu.away.starters.length > 0;
   const hasRoast = m.status === 'finished' && (!!m.roast || (locked && preds.some((p) => p.points != null)));
 
-  type TabId = 'tipy' | 'hodnoceni' | 'prubeh' | 'staty' | 'sestavy';
+  // Predikce dává smysl jen dokud se nehraje/nedohrálo
+  const showPrediction = m.status === 'scheduled';
+
+  type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'prubeh' | 'staty' | 'sestavy';
   const tabs = (
     [
       { id: 'tipy' as const, label: 'Tipy' },
       hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení' } : null,
+      { id: 'h2h' as const, label: 'H2H' },
+      showPrediction ? { id: 'predikce' as const, label: 'Predikce' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
       hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
       hasLineups ? { id: 'sestavy' as const, label: 'Sestavy' } : null,
@@ -541,6 +532,9 @@ function MatchExpanded({
 
   const [tab, setTab] = useState<TabId>('tipy');
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
+
+  // data pro H2H/Predikci se načtou až při otevření příslušné záložky
+  const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce');
 
   return (
     <div className="border-t border-terrain-800/60 bg-terrain-950/40">
@@ -567,6 +561,10 @@ function MatchExpanded({
       <div className={tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}>
         {active === 'tipy' && <TipsContent m={m} locked={locked} live={live} preds={preds} />}
         {active === 'hodnoceni' && <RoastContent m={m} preds={preds} />}
+        {active === 'h2h' && <H2HContent data={intel} loading={intelLoading} />}
+        {active === 'predikce' && (
+          <PredictionContent data={intel} loading={intelLoading} home={m.home_team} away={m.away_team} />
+        )}
         {active === 'prubeh' && d && <ProgressContent d={d} />}
         {active === 'staty' && d && <StatsContent d={d} />}
         {active === 'sestavy' && lu && <FormationView lineups={lu} homeTeam={m.home_team} awayTeam={m.away_team} />}
