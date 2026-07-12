@@ -86,21 +86,29 @@ export function RoundPanel({
     if (!playerId) return;
     setSaving(true);
     setMsg(null);
-    const rows = matches
+    // vyplněné zápasy si rozdělíme na otevřené (uložíme) a zamčené (nelze uložit)
+    const filled = matches.filter((m) => {
+      const s = scores[m.id];
+      return s && s.h !== '' && s.a !== '';
+    });
+    const blocked = filled.filter((m) => isLocked(m));
+    const rows = filled
       .filter((m) => !isLocked(m))
-      .filter((m) => {
-        const s = scores[m.id];
-        return s && s.h !== '' && s.a !== '';
-      })
       .map((m) => ({
         player_id: Number(playerId),
         match_id: m.id,
         predicted_home: parseInt(scores[m.id].h, 10),
         predicted_away: parseInt(scores[m.id].a, 10),
       }));
+
+    const blockedMsg =
+      blocked.length > 0
+        ? `⛔ Neuloženo (už začaly / jsou uzavřené): ${blocked.map((m) => `${m.home_team}–${m.away_team}`).join(', ')}.`
+        : '';
+
     if (rows.length === 0) {
       setSaving(false);
-      setMsg('Nic k uložení — vyplň skóre u otevřených zápasů.');
+      setMsg(blockedMsg || 'Nic k uložení — vyplň skóre u otevřených zápasů.');
       return;
     }
     const { error } = await supabase
@@ -110,8 +118,20 @@ export function RoundPanel({
     if (error) {
       setMsg(`Chyba: ${error.message}`);
     } else {
-      setMsg(`✅ Tipy uložené (${rows.length})`);
-      setTipping(false);
+      // ověř, že tipy v DB opravdu sedí (chytí i tiché odmítnutí zápisu)
+      const { data: check } = await supabase
+        .from('predictions')
+        .select('match_id')
+        .eq('player_id', Number(playerId))
+        .in('match_id', rows.map((r) => r.match_id));
+      const savedIds = new Set(((check as { match_id: number }[]) ?? []).map((c) => c.match_id));
+      const missing = rows.filter((r) => !savedIds.has(r.match_id));
+      if (missing.length > 0) {
+        setMsg(`⚠️ Část tipů se neuložila (${missing.length}). Zkus to prosím znovu. ${blockedMsg}`.trim());
+        return;
+      }
+      setMsg(`✅ Tipy uložené (${rows.length}) ${blockedMsg}`.trim());
+      if (blocked.length === 0) setTipping(false);
     }
   }
 
