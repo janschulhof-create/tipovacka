@@ -194,6 +194,21 @@ export function RoundPanel({
     return () => clearTimeout(t);
   }, [editable, tipping, playerId, dirtyCount, saving, save]);
 
+  // POJISTKA: když tipér odchází (přepne appku / skryje záložku), ulož HNED.
+  // Tohle chrání tipy nejvíc – nečeká se na doběhnutí odpočtu.
+  useEffect(() => {
+    if (!editable || !tipping || !playerId || dirtyCount === 0) return;
+    const flush = () => {
+      if (document.visibilityState === 'hidden') void save(true);
+    };
+    document.addEventListener('visibilitychange', flush);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      document.removeEventListener('visibilitychange', flush);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [editable, tipping, playerId, dirtyCount, save]);
+
   // Pojistka: varuj při odchodu, když jsou neuložené tipy
   useEffect(() => {
     if (dirtyCount === 0) return;
@@ -324,7 +339,11 @@ export function RoundPanel({
             ) : lastSavedAt ? (
               <span className="text-pitch">
                 ✅ Všechny tipy uložené{' '}
-                {lastSavedAt.toLocaleTimeString('cs-CZ', { hour: '2-digit', minute: '2-digit' })}
+                {lastSavedAt.toLocaleString('cs-CZ', {
+                  weekday: 'short',
+                  hour: '2-digit',
+                  minute: '2-digit',
+                })}
               </span>
             ) : (
               <span className="text-slate-300/45">Vyplň skóre — tipy se ukládají automaticky</span>
