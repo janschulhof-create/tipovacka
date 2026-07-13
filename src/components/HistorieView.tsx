@@ -5,6 +5,8 @@ import { StandingsChart } from './StandingsChart';
 import { PositionsChart } from './PositionsChart';
 import { pointsTextClass } from '@/lib/points';
 import { StatCard } from './StatCard';
+import { canonTeam } from '@/lib/teamAliases';
+import { wizardSpodina, type SRound } from '@/lib/seasonStats';
 
 type Tip = { h: number | null; a: number | null; pts: number | null };
 type Match = {
@@ -63,8 +65,8 @@ function funFacts(data: Historie) {
         if (t.h == null || t.a == null) continue;
         tipFreq.set(`${t.h}:${t.a}`, (tipFreq.get(`${t.h}:${t.a}`) ?? 0) + 1);
         if (t.pts != null) {
-          addTeam(m.home, t.pts);
-          addTeam(m.away, t.pts);
+          addTeam(canonTeam(m.home), t.pts);
+          addTeam(canonTeam(m.away), t.pts);
           mSum += t.pts;
           mCnt += 1;
           if (Math.abs(t.h - m.hs) + Math.abs(t.a - m.as) === 1) unlucky[name] += 1;
@@ -128,18 +130,33 @@ export function HistorieView({ data }: { data: Historie }) {
       )
       .map((n) => ({ name: n, val: fmt(data.stats[n]) }));
 
+  const ff = funFacts(data);
+  const { wizardRows, spodinaRows } = wizardSpodina(data.rounds as unknown as SRound[]);
+
+  // Pořadí karet = STEJNÉ jako na dashboardu a v Síni slávy.
   const cards: { icon: string; label: string; accent: string; rows: RankRow[] }[] = [
+    { icon: '💯', label: 'Nejvíce bodů', accent: 'text-pitch-light', rows: rankPlayers((s) => s.points, 'max', (s) => `${s.points} b`) },
     { icon: '🎯', label: 'Nejvíce přesných tipů', accent: 'text-pitch-light', rows: rankPlayers((s) => s.tens, 'max', (s) => `${s.tens}× desítka`) },
-    { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rankPlayers((s) => s.roundWins, 'max', (s) => `${s.roundWins}×`) },
-    { icon: '💥', label: 'Rekord za 1 kolo', accent: 'text-flag', rows: rankPlayers((s) => s.bestRound, 'max', (s) => `${s.bestRound} b · ${s.bestRoundNo}. kolo`) },
     { icon: '📈', label: 'Průměr bodů na zápas', accent: 'text-pitch-light', rows: rankPlayers((s) => s.avgPoints, 'max', (s) => `${s.avgPoints}`) },
     { icon: '⚽', label: 'Největší střelec', accent: 'text-flag', rows: rankPlayers((s) => s.avgGoals, 'max', (s) => `Ø ${s.avgGoals} g/tip`) },
     { icon: '🧱', label: 'Největší betonář', accent: 'text-sky-400', rows: rankPlayers((s) => s.avgGoals, 'min', (s) => `Ø ${s.avgGoals} g/tip`) },
+    { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rankPlayers((s) => s.roundWins, 'max', (s) => `${s.roundWins}×`) },
+    { icon: '💥', label: 'Rekord za 1 kolo', accent: 'text-flag', rows: rankPlayers((s) => s.bestRound, 'max', (s) => `${s.bestRound} b · ${s.bestRoundNo}. kolo`) },
     { icon: '💀', label: 'Král nuličky', accent: 'text-control', rows: rankPlayers((s) => s.zeros, 'max', (s) => `${s.zeros}× nula`) },
     { icon: '🧠', label: 'Mr. Alzheimer', accent: 'text-control', rows: rankPlayers((s) => s.missed, 'max', (s) => `${s.missed}× netipoval`) },
-  ];
+    { icon: '🧙', label: 'Černokněžník (bodoval jako jediný)', accent: 'text-purple-400', rows: wizardRows },
+    { icon: '🤡', label: 'Blamáž (jako jediný nebodoval)', accent: 'text-red-400', rows: spodinaRows },
+    { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
+    { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
+    { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
+    { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
+    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
+    { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light', rows: ff.teamRows },
+    { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', rows: [...ff.teamRows].reverse() },
+    { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', rows: ff.surpriseRows },
+    { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
+  ].filter((c) => c.rows.length > 0);
 
-  const ff = funFacts(data);
 
   // kumulativní body po každém kole → „pořadí po kole" v detailu
   const cumByRound: Record<string, number>[] = (() => {
@@ -150,17 +167,6 @@ export function HistorieView({ data }: { data: Historie }) {
       return { ...run };
     });
   })();
-  const facts: { icon: string; label: string; accent: string; rows: RankRow[] }[] = [
-    { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
-    { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light', rows: ff.teamRows },
-    { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', rows: [...ff.teamRows].reverse() },
-    { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
-    { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', rows: ff.surpriseRows },
-    { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
-    { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
-    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
-    { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
-  ];
 
   return (
     <div className="space-y-7">
@@ -229,7 +235,7 @@ export function HistorieView({ data }: { data: Historie }) {
         <h2 className="eyebrow"><span className="flag-chip" /> Statistiky sezóny</h2>
         <p className="text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
         <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {[...cards, ...facts].map((c) => (
+          {cards.map((c) => (
             <StatCard key={c.label} {...c} />
           ))}
         </div>

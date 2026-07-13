@@ -86,7 +86,7 @@ export default async function Home({
           <section className="space-y-3">
             {roundOpen && !sessionPlayer && (
               <p className="px-1 text-center text-[13px] text-slate-300/60">
-                Pro tipování se <Link href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
+                Pro tipování se <Link prefetch={false} href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
               </p>
             )}
             {matches.length ? (

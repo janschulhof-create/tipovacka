@@ -6,6 +6,10 @@ import { ProfileView } from '@/components/ProfileView';
 import { EmailForm } from '@/components/EmailForm';
 import { ChangePasswordForm } from '@/components/ChangePasswordForm';
 import { signOutAction } from '@/app/ucet/actions';
+import { H2HCompare, type H2HSeason } from '@/components/H2HCompare';
+import { getMsSeason } from '@/lib/msSeason';
+import historie from '@/data/historie.json';
+import type { SRound } from '@/lib/seasonStats';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +22,28 @@ export default async function ProfilPage({
   if (!player) redirect('/prihlaseni');
 
   const { vs } = await searchParams;
+
+  // podklady pro H2H porovnání (MS + Chance liga)
+  const liga = historie as unknown as { season: string; players: string[]; rounds: SRound[] };
+  const msSeason = await getMsSeason();
+  const h2hSeasons: H2HSeason[] = [
+    ...(msSeason
+      ? [{
+          key: 'ms-2026',
+          competition: 'MS 2026',
+          season: msSeason.data.season,
+          players: msSeason.data.players,
+          rounds: msSeason.rounds,
+        }]
+      : []),
+    {
+      key: `liga-${liga.season}`,
+      competition: 'Chance liga',
+      season: liga.season,
+      players: liga.players,
+      rounds: liga.rounds,
+    },
+  ];
 
   const sb = await createServerAuthClient();
   const {
@@ -42,6 +68,14 @@ export default async function ProfilPage({
       ) : (
         <p className="px-1 py-6 text-sm text-slate-100/50">Zatím žádné statistiky — začni tipovat.</p>
       )}
+
+      {/* Plné porovnání se všemi statistikami */}
+      <section className="panel mt-6 p-5">
+        <h2 className="eyebrow mb-3">
+          <span className="flag-chip" /> ⚔️ H2H — porovnej se s kýmkoli
+        </h2>
+        <H2HCompare seasons={h2hSeasons} fixedPlayer={player.name} />
+      </section>
 
       <section className="panel mt-6 p-5">
         <div className="eyebrow mb-4"><span className="flag-chip" /> Můj účet</div>

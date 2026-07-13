@@ -1,6 +1,8 @@
 // Sdílený výpočet statistik – používá Historie, Síň slávy i živá sezóna (MS).
 // Vstupem je jednotný tvar "rounds" (kola → zápasy → tipy).
 
+import { canonTeam } from './teamAliases';
+
 export type Tip = { h: number | null; a: number | null; pts: number | null };
 export type SMatch = { home: string; away: string; hs: number | null; as: number | null; tips: Record<string, Tip> };
 export type SRound = { round: number; matches: SMatch[] };
@@ -85,7 +87,7 @@ export function funFacts(rounds: SRound[], players: string[]) {
         if (t.h == null || t.a == null) continue;
         tipFreq.set(`${t.h}:${t.a}`, (tipFreq.get(`${t.h}:${t.a}`) ?? 0) + 1);
         if (t.pts != null) {
-          addTeam(m.home, t.pts); addTeam(m.away, t.pts);
+          addTeam(canonTeam(m.home), t.pts); addTeam(canonTeam(m.away), t.pts);
           mSum += t.pts; mCnt += 1;
           if (Math.abs(t.h - m.hs) + Math.abs(t.a - m.as) === 1) unlucky[name] += 1;
           const sc = `${t.h}:${t.a}`;

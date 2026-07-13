@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
 import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
@@ -37,7 +36,15 @@ export function RoundPanel({
   onPlayerChange?: (v: number | '') => void;
   showSelector?: boolean;
 }) {
-  const supabase = createClient();
+  // Supabase klient (~200 kB JS) se stáhne až ve chvíli, kdy je fakt potřeba
+  // (načtení/uložení tipů) – ne při startu stránky. Výrazně zrychlí první vykreslení.
+  const sbRef = useRef<Promise<import('@supabase/supabase-js').SupabaseClient> | null>(null);
+  const getSupabase = useCallback(() => {
+    if (!sbRef.current) {
+      sbRef.current = import('@/lib/supabase/client').then((m) => m.createClient());
+    }
+    return sbRef.current;
+  }, []);
   const [localPlayerId, setLocalPlayerId] = useState<number | ''>('');
   const playerId = playerIdProp !== undefined ? playerIdProp : localPlayerId;
   const setPlayerId = onPlayerChange ?? setLocalPlayerId;
@@ -63,7 +70,8 @@ export function RoundPanel({
 
   const loadPredictions = useCallback(
     async (pid: number) => {
-      const { data } = await supabase
+      const sb = await getSupabase();
+      const { data } = await sb
         .from('predictions')
         .select('match_id, predicted_home, predicted_away')
         .eq('player_id', pid)
@@ -77,7 +85,7 @@ export function RoundPanel({
       savedRef.current = JSON.parse(JSON.stringify(next)) as Scores;
       setDirtyCount(0);
     },
-    [matches, supabase]
+    [matches, getSupabase]
   );
 
   useEffect(() => {
@@ -143,7 +151,8 @@ export function RoundPanel({
         if (!silent) setMsg(blockedMsg || 'Nic k uložení — vyplň skóre u otevřených zápasů.');
         return;
       }
-      const { error } = await supabase
+      const sb = await getSupabase();
+      const { error } = await sb
         .from('predictions')
         .upsert(rows, { onConflict: 'player_id,match_id' });
       setSaving(false);
@@ -152,7 +161,7 @@ export function RoundPanel({
         return;
       }
       // ověř, že tipy v DB opravdu sedí (chytí i tiché odmítnutí zápisu)
-      const { data: check } = await supabase
+      const { data: check } = await sb
         .from('predictions')
         .select('match_id, predicted_home, predicted_away')
         .eq('player_id', Number(playerId))
@@ -183,7 +192,7 @@ export function RoundPanel({
       // ukazuje přímo lišta s tlačítkem. Necháme jen případné varování.
       setMsg(blockedMsg || null);
     },
-    [playerId, matches, scores, supabase, computeDirty], // eslint-disable-line react-hooks/exhaustive-deps
+    [playerId, matches, scores, getSupabase, computeDirty], // eslint-disable-line react-hooks/exhaustive-deps
   );
 
   // AUTOSAVE: po 3 s nečinnosti ulož rozdělané tipy (tiše, bez zavření režimu)

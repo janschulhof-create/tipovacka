@@ -8,8 +8,23 @@ import { AuthStatus } from '@/components/AuthStatus';
 import { getSessionPlayer } from '@/lib/auth';
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
 
-const inter = Inter({ subsets: ['latin', 'latin-ext'], variable: '--font-sans', display: 'swap' });
-const oswald = Oswald({ subsets: ['latin', 'latin-ext'], variable: '--font-display', display: 'swap' });
+// Jen řezy, které se opravdu používají → místo velkých variabilních souborů
+// (jeden měl 85 kB) se stáhnou malé statické. Šetří ~100 kB při startu.
+const inter = Inter({
+  subsets: ['latin', 'latin-ext'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-sans',
+  display: 'swap',
+});
+// Nadpisový font nepreloadujeme – text se díky display:swap vykreslí hned
+// náhradním fontem a Oswald se doplní, jakmile dorazí.
+const oswald = Oswald({
+  subsets: ['latin', 'latin-ext'],
+  weight: ['600', '700'],
+  variable: '--font-display',
+  display: 'swap',
+  preload: false,
+});
 
 export const metadata: Metadata = {
   title: 'Tipovačka',
@@ -29,7 +44,7 @@ export const viewport: Viewport = {
   themeColor: '#0b1220',
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
+  // maximumScale záměrně NEnastavujeme – blokovalo by přiblížení dvěma prsty.
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
@@ -47,7 +62,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
 
         {/* horní brand lišta jen na mobilu */}
         <header className="sticky top-0 z-20 flex items-center gap-2 border-b border-terrain-700 bg-terrain-900/80 px-4 py-3 backdrop-blur lg:hidden">
-          <Link href="/" className="flex items-center gap-2">
+          <Link prefetch={false} href="/" className="flex items-center gap-2">
             <BrandMark className="h-7 w-7" />
             <span className="font-display text-base font-semibold tracking-wide text-white">
               Tipovačka

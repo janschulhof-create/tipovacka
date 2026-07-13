@@ -9,6 +9,7 @@ const ITEMS = [
   { href: '/profil', label: 'Můj profil', icon: '👤' },
   { href: '/historie', label: 'Historie', icon: '📚' },
   { href: '/sin-slavy', label: 'Síň slávy', icon: '🏆' },
+  { href: '/h2h', label: 'H2H', icon: '⚔️' },
   { href: '/pravidla', label: 'Pravidla', icon: '📋' },
 ];
 
@@ -21,7 +22,7 @@ export function SideRail() {
   const pathname = usePathname();
   return (
     <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-terrain-700 bg-terrain-900/70 px-4 py-6 backdrop-blur lg:flex">
-      <Link href="/" className="mb-8 flex items-center gap-3">
+      <Link prefetch={false} href="/" className="mb-8 flex items-center gap-3">
         <BrandMark className="h-10 w-10" />
         <div className="leading-tight">
           <div className="font-display text-lg font-semibold tracking-wide text-white">Tipovačka</div>
@@ -33,7 +34,7 @@ export function SideRail() {
         {ITEMS.map((it) => {
           const active = isActive(pathname, it.href);
           return (
-            <Link
+            <Link prefetch={false}
               key={it.href}
               href={it.href}
               className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
@@ -64,7 +65,7 @@ export function BottomNav() {
         {ITEMS.map((it) => {
           const active = isActive(pathname, it.href);
           return (
-            <Link
+            <Link prefetch={false}
               key={it.href}
               href={it.href}
               aria-current={active ? 'page' : undefined}

@@ -76,7 +76,7 @@ export function StandingsTable({
             const total = showLive ? d.total : r.points;
             return (
               <li key={r.player_id} className="relative z-10">
-                <Link
+                <Link prefetch={false}
                   href={`/hrac/${r.player_id}`}
                   className="flex items-center gap-3 rounded-xl px-2 py-2 transition hover:bg-terrain-900/50"
                 >
