@@ -71,18 +71,21 @@ export async function GET(req: NextRequest) {
       : Promise.resolve({ count: 0 }),
   ]);
   const doLive = (liveRes.count ?? 0) > 0; // něco se hraje/začíná → ESPN live + rozpis
+  // Rozpis (nové zápasy po losu!) musí běžet i mimo herní okno – jinak by se
+  // play-off vůbec nezaložilo. Stačí párkrát za hodinu, CPU to nezatíží.
+  const scheduleTick = now.getMinutes() % 15 === 0;
   const doReg = (regRes.count ?? 0) > 0; // dohrané, ještě nepřepočtené → ESPN pending
   const doRoast = (roastRes.count ?? 0) > 0; // dohrané bez hodnocení → LLM
 
-  if (!doLive && !doReg && !doRoast) {
+  if (!doLive && !doReg && !doRoast && !scheduleTick) {
     return NextResponse.json({ idle: true, at: now.toISOString() });
   }
 
   // Football-data = POUZE ROZPIS (týmy, čas výkopu, kolo). Nic víc.
   // Skóre, stav zápasu, live, statistiky i sestavy řídí výhradně ESPN (níže).
   // Rozpis lze vypnout přes USE_FOOTBALL_DATA=0. Výpadek nikdy neshodí sync.
-  // Rozpis z football-data řešíme jen když je kolem nějaký zápas (šetří CPU/zápisy).
-  const useFootballData = process.env.USE_FOOTBALL_DATA !== '0' && doLive;
+  // Běží při zápase (kvůli přesunům výkopu) a jinak každých 15 min (kvůli losu).
+  const useFootballData = process.env.USE_FOOTBALL_DATA !== '0' && (doLive || scheduleTick);
   let fixtures: NormalizedMatch[] = [];
   let footballDataError: string | null = null;
   if (useFootballData) {
@@ -403,7 +406,7 @@ export async function GET(req: NextRequest) {
     fetched: fixtures.length,
     espn: { set: espnSet, live: espnLive, skipped: espnSkipped, invalid: espnInvalid },
     schedule: !useFootballData
-      ? { source: 'football-data', enabled: false }
+      ? { source: 'football-data', enabled: false, ranThisTick: false }
       : footballDataError
         ? { source: 'football-data', ok: false, error: footballDataError, updated, inserted }
         : { source: 'football-data', ok: true, updated, inserted },
