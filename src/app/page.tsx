@@ -4,14 +4,9 @@ import {
   getSeasonRounds,
   getRoundMatches,
   getStandings,
-  getGoalStats,
-  getMisses,
   getPlayers,
   getRoundPredictions,
   getSeasonChartData,
-  getStoppageStats,
-  getWizardAndContinentStats,
-  getSeasonTipRounds,
   getLiveMatches,
   getLivePointsByPlayer,
 } from '@/lib/queries';
@@ -19,8 +14,8 @@ import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
-import { StatsCards } from '@/components/StatsCards';
-import { SeasonStats } from '@/components/SeasonStats';
+import { Suspense } from 'react';
+import { SeasonStatsSection, SeasonStatsSkeleton } from '@/components/SeasonStatsSection';
 import { LiveBanner } from '@/components/LiveBanner';
 import { LiveRefresh } from '@/components/LiveRefresh';
 import Link from 'next/link';
@@ -46,28 +41,26 @@ export default async function Home({
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
   const selectedRound =
     !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : currentRound;
-  const [matches, standings, goals, misses, players, chart, stoppage, wizCont] = await Promise.all([
-    selectedRound ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
-    getStandings(seasonId),
-    getGoalStats(seasonId),
-    getMisses(seasonId),
-    getPlayers(),
-    getSeasonChartData(seasonId),
-    getStoppageStats(seasonId),
-    getWizardAndContinentStats(seasonId),
-  ]);
+  // Kritická cesta = jen to, co je vidět hned (zápasy, tabulka, graf).
+  // Vše paralelně; dřív se 5 dotazů volalo za sebou a latence se sčítaly.
+  const [matches, standings, players, chart, liveMatches, liveInc, sessionPlayer] =
+    await Promise.all([
+      selectedRound ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
+      getStandings(seasonId),
+      getPlayers(),
+      getSeasonChartData(seasonId),
+      getLiveMatches(seasonId),
+      getLivePointsByPlayer(seasonId),
+      getSessionPlayer(),
+    ]);
 
-  const tipRounds = await getSeasonTipRounds(seasonId);
-  const liveMatches = await getLiveMatches(seasonId);
-  const liveInc = await getLivePointsByPlayer(seasonId);
-  const sessionPlayer = await getSessionPlayer();
+  // závisí na zápasech, proto až teď
+  const predictions = await getRoundPredictions(matches.map((m) => m.id));
+
   const roundOpen = matches.some(
     (m) => m.status === 'scheduled' && new Date(m.kickoff).getTime() > Date.now()
   );
   const activeNames = players.map((p) => p.name);
-  const hasResults = tipRounds.some((r) => r.matches.some((m) => m.hs != null));
-
-  const predictions = await getRoundPredictions(matches.map((m) => m.id));
 
   return (
     <main className="space-y-6">
@@ -135,18 +128,9 @@ export default async function Home({
         <h2 className="eyebrow">
           <span className="flag-chip" /> Statistiky sezóny
         </h2>
-        <StatsCards standings={standings} goals={goals} />
-        {hasResults && (
-          <SeasonStats
-            rounds={tipRounds}
-            players={activeNames}
-            stoppage={stoppage}
-            wizard={wizCont.wizard}
-            spodina={wizCont.spodina}
-            misses={misses}
-            continents={wizCont.continents}
-          />
-        )}
+        <Suspense fallback={<SeasonStatsSkeleton />}>
+          <SeasonStatsSection seasonId={seasonId} standings={standings} activeNames={activeNames} />
+        </Suspense>
       </section>
     </main>
   );
