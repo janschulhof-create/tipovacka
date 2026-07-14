@@ -600,6 +600,7 @@ function MatchExpanded({
             <TipsContent m={m} locked={locked} live={live} preds={preds} />
             {showPrediction && (
               <Baroko
+                seed={m.id}
                 myTip={myTip ? { h: myTip.predicted_home, a: myTip.predicted_away } : undefined}
                 preds={preds.filter((p) => p.name !== selectedName)}
                 home={m.home_team}

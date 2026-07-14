@@ -105,11 +105,14 @@ export function TeamFormContent({ data }: { data: InsightData }) {
  * Kladné = tipuješ víc gólů / odvážněji než ostatní.
  */
 export function Baroko({
+  seed,
   myTip,
   preds,
   home,
   away,
 }: {
+  /** ID zápasu – hlášky jsou pak u každého zápasu jiné, ale stálé (nemění se při renderu). */
+  seed: number;
   myTip?: { h: number; a: number };
   preds: { name: string; predicted_home: number; predicted_away: number }[];
   home: string;
@@ -133,44 +136,85 @@ export function Baroko({
   const partyWin = Math.sign(avgH - avgA);
 
   // ── slovní verdikt, žádná matematika ──
+  // Deterministický výběr hlášky podle ID zápasu: u každého zápasu jiná,
+  // ale při každém otevření stejná (nepřeskakuje pod rukama).
+  let rs = (seed * 2654435761 + 97) % 2147483647;
+  if (rs <= 0) rs += 2147483646;
+  const rnd = () => (rs = (rs * 48271) % 2147483647) / 2147483647;
+  const pick = <T,>(arr: T[]): T => arr[Math.floor(rnd() * arr.length)];
+
+  const mine = myWin > 0 ? home : myWin < 0 ? away : null;
+  const theirs = partyWin > 0 ? home : partyWin < 0 ? away : null;
+
   let title: string;
   let note: string;
 
   if (Math.abs(dLean) < 0.5 && Math.abs(dGoals) < 0.5) {
-    title = 'Jedeš s davem';
-    note = 'Tipuješ prakticky to samé co ostatní. Bezpečné, ale nikoho tím neurazíš ani nepředběhneš.';
+    [title, note] = pick([
+      ['Jedeš s davem', 'Tipuješ přesně to co ostatní. Bezpečné. Nudné. Nikoho nepředběhneš, ale ani se neztrapníš — což je celkem tvůj styl, ne?'],
+      ['Ovce', 'Naprostá shoda s partou. Buď máte všichni pravdu, nebo se všichni společně sesypete. Sázím na to druhé.'],
+      ['Bez fantazie', 'Ani o gól vedle davu. Tipuješ jako by ti někdo opisoval přes rameno. Nebo ty jemu?'],
+      ['Kopie party', 'Naprosto stejný tip jako ostatní. Když to vyjde, nikdo si tě nevšimne. Když ne, aspoň v tom nejsi sám.'],
+    ]);
   } else if (myWin !== partyWin && partyWin !== 0 && myWin !== 0) {
-    const believeIn = myWin > 0 ? home : away;
-    const crowdIn = partyWin > 0 ? home : away;
-    title = `Jdeš proti partě`;
-    note = `Zatímco ostatní sázejí na ${crowdIn}, ty věříš ${believeIn}. Buď jsi génius, nebo si tě podají v hodnocení.`;
+    [title, note] = pick([
+      ['Jdeš proti partě', `Ostatní sázejí na ${theirs}, ty věříš ${mine}. Buď jsi génius, nebo tě v hodnocení rozcupují. Historie napovídá…`],
+      ['Rebel, nebo blázen?', `Celá parta vidí ${theirs}. Ty jediný ${mine}. Tenhle tip tě buď vystřelí nahoru, nebo si na tebe budeme ukazovat.`],
+      ['Sám proti všem', `Parta má jasno: ${theirs}. Ty máš taky jasno — a je to jinak. Doufám, že víš něco, co my ne.`],
+      ['Odvaha na hraně', `Vsadit na ${mine}, když všichni ostatní věří ${theirs}? Buď hrdina, nebo Blamáž kola. Mezitím nic.`],
+    ]);
   } else if (myWin === 0 && partyWin !== 0) {
-    title = 'Ty čekáš plichtu, parta ne';
-    note = 'Ostatní vidí vítěze, ty dělbu bodů. Klasický opatrník — nebo prorok, uvidíme.';
+    [title, note] = pick([
+      ['Ty čekáš plichtu, parta ne', 'Ostatní vidí vítěze, ty dělbu bodů. Opatrnický tip pro opatrného člověka. Nebo prorok? Uvidíme.'],
+      ['Alibista', `Parta tipuje ${theirs}, ty nechceš urazit ani jednoho. Remíza je tip pro ty, co se bojí rozhodnout.`],
+      ['Diplomat', 'Ostatní si troufli na vítěze, ty rozdáváš body na obě strany. Bezpečné? To se ještě uvidí.'],
+    ]);
   } else if (partyWin === 0 && myWin !== 0) {
-    title = 'Parta čeká remízu, ty vítěze';
-    note = `Ostatní zabetonovali, ty tipuješ, že ${myWin > 0 ? home : away} to urve. Odvaha se cení.`;
+    [title, note] = pick([
+      ['Parta betonuje, ty útočíš', `Ostatní čekají plichtu, ty tvrdíš, že ${mine} to urve. Odvaha se cení — pokud vyjde.`],
+      ['Jediný s názorem', `Celá parta zaparkovala na remíze. Ty jako jediný věříš, že ${mine} má na to vyhrát. Troufalé.`],
+      ['Vsadils na vítěze', `Ostatní se schovali za remízu. Ty jsi ukázal prstem na ${mine}. Buď frajer, nebo za chvíli terč.`],
+    ]);
   } else if (Math.abs(dLean) >= 0.8) {
     const t = dLean > 0 ? home : away;
-    title = `Věříš ${t} víc než ostatní`;
-    note = `Stejný vítěz jako parta, ale ty čekáš jasnější záležitost. Sebevědomí ti nechybí.`;
+    [title, note] = pick([
+      [`Věříš ${t} víc než ostatní`, 'Stejný vítěz jako parta, ale ty čekáš jasnou záležitost. Sebevědomí ti nechybí. Body snad taky ne.'],
+      ['Přehnané sebevědomí?', `Parta na ${t} taky sází, ale opatrněji. Ty čekáš výprask. Fotbal takové drzosti nemá rád.`],
+      [`Sázíš na debakl ${t === home ? away : home}`, 'Ostatní jsou zdrženlivější. Ty už máš v hlavě kanonádu. Pozor, ať to není kanonáda do tvého tipu.'],
+    ]);
   } else if (dGoals >= 0.8) {
-    title = 'Čekáš přestřelku';
-    note = 'Ostatní tipují opatrněji, ty věříš, že se bude pálit. Když to vyjde, budeš král.';
+    [title, note] = pick([
+      ['Čekáš přestřelku', 'Ostatní tipují opatrně, ty věříš, že se bude pálit. Když to vyjde, budeš král. Když ne, budeš terč.'],
+      ['Kanonýr', 'Nasypal jsi tam víc gólů než parta. Buď víš o dírách v obraně, nebo prostě rád riskuješ.'],
+      ['Optimista', 'Parta čeká šachy, ty čekáš divočinu. Fotbal ale bývá nudnější, než bychom chtěli.'],
+    ]);
   } else if (dGoals <= -0.8) {
-    title = 'Betonuješ';
-    note = 'Parta čeká víc gólů, ty vsázíš na nudu a čisté konto. Řemeslo, ne romantika.';
+    [title, note] = pick([
+      ['Betonuješ', 'Parta čeká góly, ty vsázíš na nudu a čisté konto. Řemeslo, ne romantika.'],
+      ['Pesimista', 'Míň gólů než všichni ostatní. Buď to máš přečtené, nebo prostě nevěříš, že někdo dá gól. Ani jeden.'],
+      ['Antifotbal', 'Zatímco parta čeká zábavu, ty tipuješ zabetonovanou nudu. Fanoušci ti neděkují. Body možná ano.'],
+    ]);
   } else {
-    title = 'Trochu mimo dav';
-    note = 'Nejsi úplně s ostatními, ale ani rebel. Prostě normální tip.';
+    [title, note] = pick([
+      ['Trochu mimo dav', 'Nejsi úplně s ostatními, ale ani rebel. Prostě průměrný tip průměrného tipéra.'],
+      ['Vlažný rebel', 'Lišíš se od party. Ale tak nepatrně, že si toho stejně nikdo nevšimne.'],
+      ['Nerozhodný', 'Ani s davem, ani proti němu. Jako bys tipoval jednou nohou.'],
+    ]);
   }
 
   const company =
     same.length === 0
-      ? 'S tímhle tipem jsi na to úplně sám.'
+      ? pick([
+          'S tímhle tipem jsi na to úplně sám. Sláva, nebo ostuda — o obojí se dělit nebudeš.',
+          'Tenhle tip nemá nikdo jiný. Buď jsi napřed, nebo úplně mimo.',
+          'Jsi s tím sám. Což je buď známka geniality, nebo varovný signál.',
+        ])
       : same.length === 1
-        ? 'Stejný tip má ještě 1 další.'
-        : `Stejný tip má ještě ${same.length} ${same.length < 5 ? 'další' : 'dalších'}.`;
+        ? pick([
+            'Stejný tip má ještě 1 další. Aspoň nebudeš za blbce sám.',
+            'Ještě jeden má stejný tip. Sdílená ostuda, poloviční ostuda.',
+          ])
+        : `Stejný tip má ještě ${same.length} ${same.length < 5 ? 'další' : 'dalších'}. ${pick(['Buď máte pravdu, nebo padnete společně.', 'Stádo se mýlí svorně, ale mýlí se rádo.'])}`;
 
   return (
     <div className="rounded-xl border border-terrain-700 bg-terrain-900/40 p-3">
