@@ -41,10 +41,12 @@ export function HallOfFameSection({
   s,
   titleRows,
   extraCards = [],
+  trailingCards = [],
 }: {
   s: HofSeason;
   titleRows?: Row[];
   extraCards?: StatCardDef[];
+  trailingCards?: StatCardDef[];
 }) {
   // Karty ze sdíleného zdroje → shodné s Historií i dashboardem.
   const recordCards = buildStatCards({
@@ -53,6 +55,7 @@ export function HallOfFameSection({
     rounds: s.rounds,
     titleRows,
     extraCards,
+    trailingCards,
   });
 
   // Zlatý Netrefený míč — nejvíc nul

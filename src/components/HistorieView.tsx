@@ -44,10 +44,12 @@ export function HistorieView({
   data,
   titleRows,
   extraCards = [],
+  trailingCards = [],
 }: {
   data: Historie;
   titleRows?: RankRow[];
   extraCards?: StatCardDef[];
+  trailingCards?: StatCardDef[];
 }) {
   const ranked = [...data.players].sort((a, b) => data.stats[b].points - data.stats[a].points);
   const winner = ranked[0];
@@ -59,6 +61,7 @@ export function HistorieView({
     rounds: data.rounds as unknown as SRound[],
     titleRows,
     extraCards,
+    trailingCards,
   });
 
   // kumulativní body po každém kole → „pořadí po kole" v detailu

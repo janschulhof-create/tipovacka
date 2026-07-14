@@ -31,20 +31,21 @@ export default async function HistoriePage() {
       accent: 'text-green-400',
       rows: stoppage.map((r) => ({ name: r.name, val: fmtBal(r.balance), n: r.balance })),
     },
-    ...wizCont.continents.map((c) => ({
-      icon: c.icon,
-      label: c.label,
-      accent: 'text-pitch-light',
-      rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
-    })),
   ].filter((c) => c.rows.length > 0);
+
+  const msContinents: StatCardDef[] = wizCont.continents.map((c) => ({
+    icon: c.icon,
+    label: c.label,
+    accent: 'text-pitch-light',
+    rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
+  }));
 
   return (
     <main>
       <PageHeader icon="📚" title="Historie" subtitle="Kompletní průběh soutěží" />
       <CompetitionTabs
         liga={<HistorieView data={liga} titleRows={titleRows} />}
-        ms={ms ? <HistorieView data={ms.data} extraCards={msExtra} /> : null}
+        ms={ms ? <HistorieView data={ms.data} extraCards={msExtra} trailingCards={msContinents} /> : null}
       />
     </main>
   );

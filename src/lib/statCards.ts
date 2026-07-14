@@ -30,10 +30,12 @@ export function buildStatCards(opts: {
   rounds: SRound[];
   /** Počet titulů (jen tam, kde dává smysl – dokončené sezóny ligy). */
   titleRows?: RankRow[];
-  /** Statistiky navíc pro konkrétní soutěž (Pán nastavení, kontinenty u MS). */
+  /** Statistiky navíc uprostřed – Pán nastavení (jen MS). Řadí se jako na dashboardu. */
   extraCards?: StatCardDef[];
+  /** Statistiky navíc na konci – kontinentální tabulky (jen MS). */
+  trailingCards?: StatCardDef[];
 }): StatCardDef[] {
-  const { players, stats, rounds, titleRows, extraCards = [] } = opts;
+  const { players, stats, rounds, titleRows, extraCards = [], trailingCards = [] } = opts;
 
   const rank = (pick: (s: CardStat) => number, dir: 'max' | 'min', fmt: (s: CardStat) => string): RankRow[] =>
     [...players]
@@ -58,6 +60,7 @@ export function buildStatCards(opts: {
     { icon: '🤡', label: 'Blamáž (jako jediný nebodoval)', accent: 'text-red-400', rows: spodinaRows },
     { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
     { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
+    ...extraCards, // Pán nastavení – stejná pozice jako na dashboardu
     { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
     { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
     { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
@@ -65,6 +68,6 @@ export function buildStatCards(opts: {
     { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', rows: [...ff.teamRows].reverse() },
     { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', rows: ff.surpriseRows },
     { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
-    ...extraCards,
+    ...trailingCards, // kontinentální tabulky
   ].filter((c) => c.rows.length > 0);
 }

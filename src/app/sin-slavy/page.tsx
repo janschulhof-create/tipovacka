@@ -29,13 +29,14 @@ export default async function SinSlavyPage() {
       accent: 'text-green-400',
       rows: stoppage.map((r) => ({ name: r.name, val: fmtBal(r.balance), n: r.balance })),
     },
-    ...wizCont.continents.map((c) => ({
-      icon: c.icon,
-      label: c.label,
-      accent: 'text-pitch-light',
-      rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
-    })),
   ].filter((c) => c.rows.length > 0);
+
+  const msContinents = wizCont.continents.map((c) => ({
+    icon: c.icon,
+    label: c.label,
+    accent: 'text-pitch-light',
+    rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
+  }));
 
   return (
     <main>
@@ -55,7 +56,7 @@ export default async function SinSlavyPage() {
               <p className="mb-4 text-xs text-slate-100/45">
                 Probíhající {ms.data.season} — vlastní rekordy, mimo ligovou Síň slávy.
               </p>
-              <HallOfFameSection s={ms.data as unknown as HofSeason} extraCards={msExtra} />
+              <HallOfFameSection s={ms.data as unknown as HofSeason} extraCards={msExtra} trailingCards={msContinents} />
             </>
           ) : null
         }

@@ -161,8 +161,6 @@ export function H2HCompare({
 
     return [
       { icon: '💯', label: 'Body', a: A.points, b: B.points, fmt: int, higherWins: true },
-      { icon: '⚔️', label: 'Vyhrané zápasy proti sobě', a: ex.winsA, b: ex.winsB, fmt: (n) => `${n}×`, higherWins: true },
-      { icon: '🥊', label: 'Body ve vzájemných zápasech', a: ex.ptsA, b: ex.ptsB, fmt: (n) => `${n} b`, higherWins: true },
       { icon: '🎯', label: 'Přesné tipy', a: A.tens, b: B.tens, fmt: (n) => `${n}×`, higherWins: true },
       { icon: '📈', label: 'Průměr na zápas', a: A.avgPoints, b: B.avgPoints, fmt: dec, higherWins: true },
       { icon: '🏅', label: 'Vyhraná kola celkem', a: A.roundWins, b: B.roundWins, fmt: (n) => `${n}×`, higherWins: true },
