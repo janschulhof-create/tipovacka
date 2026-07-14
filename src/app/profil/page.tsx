@@ -30,7 +30,7 @@ export default async function ProfilPage({
     ...(msSeason
       ? [{
           key: 'ms-2026',
-          competition: 'MS 2026',
+          competition: 'MS 2026' as const,
           season: msSeason.data.season,
           players: msSeason.data.players,
           rounds: msSeason.rounds,
@@ -38,7 +38,7 @@ export default async function ProfilPage({
       : []),
     {
       key: `liga-${liga.season}`,
-      competition: 'Chance liga',
+      competition: 'Chance liga' as const,
       season: liga.season,
       players: liga.players,
       rounds: liga.rounds,

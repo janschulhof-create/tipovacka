@@ -5,8 +5,8 @@ import { StandingsChart } from './StandingsChart';
 import { PositionsChart } from './PositionsChart';
 import { pointsTextClass } from '@/lib/points';
 import { StatCard } from './StatCard';
-import { canonTeam } from '@/lib/teamAliases';
-import { wizardSpodina, type SRound } from '@/lib/seasonStats';
+import type { SRound } from '@/lib/seasonStats';
+import { buildStatCards, type CardStat, type StatCardDef } from '@/lib/statCards';
 
 type Tip = { h: number | null; a: number | null; pts: number | null };
 type Match = {
@@ -40,123 +40,26 @@ export type Historie = {
 type RankRow = { name: string; val: string };
 
 /** Zajímavosti počítané přímo z tipů a výsledků — vrací celé žebříčky. */
-function funFacts(data: Historie) {
-  const tipFreq = new Map<string, number>();
-  const readable = new Map<string, number>();   // tip → kolikrát za 10 b
-  const unreadable = new Map<string, number>(); // tip → kolikrát za 0 b
-  const professor: Record<string, number> = Object.fromEntries(data.players.map((p) => [p, 0]));
-  const team = new Map<string, { sum: number; cnt: number }>();
-  const unlucky: Record<string, number> = Object.fromEntries(data.players.map((p) => [p, 0]));
-  const matchAgg: { label: string; result: string; avg: number }[] = [];
-
-  const addTeam = (t: string, pts: number) => {
-    const cur = team.get(t) ?? { sum: 0, cnt: 0 };
-    cur.sum += pts;
-    cur.cnt += 1;
-    team.set(t, cur);
-  };
-
-  for (const r of data.rounds) {
-    for (const m of r.matches) {
-      if (m.hs == null || m.as == null) continue;
-      let mSum = 0;
-      let mCnt = 0;
-      for (const [name, t] of Object.entries(m.tips)) {
-        if (t.h == null || t.a == null) continue;
-        tipFreq.set(`${t.h}:${t.a}`, (tipFreq.get(`${t.h}:${t.a}`) ?? 0) + 1);
-        if (t.pts != null) {
-          addTeam(canonTeam(m.home), t.pts);
-          addTeam(canonTeam(m.away), t.pts);
-          mSum += t.pts;
-          mCnt += 1;
-          if (Math.abs(t.h - m.hs) + Math.abs(t.a - m.as) === 1) unlucky[name] += 1;
-          const sc = `${t.h}:${t.a}`;
-          if (t.pts === 10) readable.set(sc, (readable.get(sc) ?? 0) + 1);
-          if (t.pts === 0) unreadable.set(sc, (unreadable.get(sc) ?? 0) + 1);
-          if (t.pts === 4) professor[name] += 1;
-        }
-      }
-      if (mCnt > 0) matchAgg.push({ label: `${m.home} – ${m.away}`, result: `${m.hs}:${m.as}`, avg: mSum / mCnt });
-    }
-  }
-
-  const tipRows: RankRow[] = [...tipFreq.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([k, v]) => ({ name: k, val: `${v}× vsazeno` }));
-
-  const teamRows: RankRow[] = [...team.entries()]
-    .filter(([, v]) => v.cnt >= 3)
-    .map(([t, v]) => ({ t, avg: v.sum / v.cnt }))
-    .sort((a, b) => b.avg - a.avg)
-    .map((x) => ({ name: x.t, val: `Ø ${x.avg.toFixed(1)} b/tip` }));
-
-  const unluckyRows: RankRow[] = Object.entries(unlucky)
-    .sort((a, b) => b[1] - a[1])
-    .map(([n, v]) => ({ name: n, val: `${v}× gól od desítky` }));
-
-  const matchSorted = [...matchAgg].sort((a, b) => a.avg - b.avg);
-  const surpriseRows: RankRow[] = matchSorted
-    .slice(0, 6)
-    .map((m) => ({ name: `${m.label} (${m.result})`, val: `Ø ${m.avg.toFixed(1)} b` }));
-  const bankerRows: RankRow[] = [...matchSorted]
-    .reverse()
-    .slice(0, 6)
-    .map((m) => ({ name: `${m.label} (${m.result})`, val: `Ø ${m.avg.toFixed(1)} b` }));
-
-  const readableRows: RankRow[] = [...readable.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([k, v]) => ({ name: k, val: `${v}× za 10 b` }));
-  const unreadableRows: RankRow[] = [...unreadable.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8)
-    .map(([k, v]) => ({ name: k, val: `${v}× za 0 b` }));
-  const professorRows: RankRow[] = Object.entries(professor)
-    .sort((a, b) => b[1] - a[1])
-    .map(([n, v]) => ({ name: n, val: `${v}× jen vítěz (4 b)` }));
-
-  return { tipRows, teamRows, unluckyRows, surpriseRows, bankerRows, readableRows, unreadableRows, professorRows };
-}
-
-export function HistorieView({ data }: { data: Historie }) {
+export function HistorieView({
+  data,
+  titleRows,
+  extraCards = [],
+}: {
+  data: Historie;
+  titleRows?: RankRow[];
+  extraCards?: StatCardDef[];
+}) {
   const ranked = [...data.players].sort((a, b) => data.stats[b].points - data.stats[a].points);
   const winner = ranked[0];
 
-  const rankPlayers = (pick: (s: Stat) => number, dir: 'max' | 'min', fmt: (s: Stat) => string): RankRow[] =>
-    [...data.players]
-      .sort((a, b) =>
-        dir === 'max' ? pick(data.stats[b]) - pick(data.stats[a]) : pick(data.stats[a]) - pick(data.stats[b])
-      )
-      .map((n) => ({ name: n, val: fmt(data.stats[n]) }));
-
-  const ff = funFacts(data);
-  const { wizardRows, spodinaRows } = wizardSpodina(data.rounds as unknown as SRound[]);
-
-  // Pořadí karet = STEJNÉ jako na dashboardu a v Síni slávy.
-  const cards: { icon: string; label: string; accent: string; rows: RankRow[] }[] = [
-    { icon: '💯', label: 'Nejvíce bodů', accent: 'text-pitch-light', rows: rankPlayers((s) => s.points, 'max', (s) => `${s.points} b`) },
-    { icon: '🎯', label: 'Nejvíce přesných tipů', accent: 'text-pitch-light', rows: rankPlayers((s) => s.tens, 'max', (s) => `${s.tens}× desítka`) },
-    { icon: '📈', label: 'Průměr bodů na zápas', accent: 'text-pitch-light', rows: rankPlayers((s) => s.avgPoints, 'max', (s) => `${s.avgPoints}`) },
-    { icon: '⚽', label: 'Největší střelec', accent: 'text-flag', rows: rankPlayers((s) => s.avgGoals, 'max', (s) => `Ø ${s.avgGoals} g/tip`) },
-    { icon: '🧱', label: 'Největší betonář', accent: 'text-sky-400', rows: rankPlayers((s) => s.avgGoals, 'min', (s) => `Ø ${s.avgGoals} g/tip`) },
-    { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light', rows: rankPlayers((s) => s.roundWins, 'max', (s) => `${s.roundWins}×`) },
-    { icon: '💥', label: 'Rekord za 1 kolo', accent: 'text-flag', rows: rankPlayers((s) => s.bestRound, 'max', (s) => `${s.bestRound} b · ${s.bestRoundNo}. kolo`) },
-    { icon: '💀', label: 'Král nuličky', accent: 'text-control', rows: rankPlayers((s) => s.zeros, 'max', (s) => `${s.zeros}× nula`) },
-    { icon: '🧠', label: 'Mr. Alzheimer', accent: 'text-control', rows: rankPlayers((s) => s.missed, 'max', (s) => `${s.missed}× netipoval`) },
-    { icon: '🧙', label: 'Černokněžník (bodoval jako jediný)', accent: 'text-purple-400', rows: wizardRows },
-    { icon: '🤡', label: 'Blamáž (jako jediný nebodoval)', accent: 'text-red-400', rows: spodinaRows },
-    { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300', rows: ff.professorRows },
-    { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag', rows: ff.unluckyRows },
-    { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light', rows: ff.tipRows },
-    { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400', rows: ff.readableRows },
-    { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400', rows: ff.unreadableRows },
-    { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light', rows: ff.teamRows },
-    { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', rows: [...ff.teamRows].reverse() },
-    { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', rows: ff.surpriseRows },
-    { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', rows: ff.bankerRows },
-  ].filter((c) => c.rows.length > 0);
-
+  // Karty ze sdíleného zdroje → shodné se Síní slávy i dashboardem.
+  const cards = buildStatCards({
+    players: data.players,
+    stats: data.stats as unknown as Record<string, CardStat>,
+    rounds: data.rounds as unknown as SRound[],
+    titleRows,
+    extraCards,
+  });
 
   // kumulativní body po každém kole → „pořadí po kole" v detailu
   const cumByRound: Record<string, number>[] = (() => {

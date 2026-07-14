@@ -5,11 +5,13 @@ import { computePerPlayer, funFacts, wizardSpodina, type SRound } from '@/lib/se
 
 export type H2HSeason = {
   key: string; // 'liga-2025/26' | 'ms-2026'
-  competition: string; // 'Chance liga' | 'MS 2026'
+  competition: 'MS 2026' | 'Chance liga';
   season: string; // '2025/26'
   players: string[];
   rounds: SRound[];
 };
+
+const ALL = '__all__'; // volba "všechny sezóny"
 
 type Row = {
   label: string;
@@ -26,30 +28,27 @@ function extras(rounds: SRound[], a: string, b: string) {
   const { wizardRows, spodinaRows } = wizardSpodina(rounds);
   const g = (rows: { name: string; n?: number }[], who: string) => rows.find((r) => r.name === who)?.n ?? 0;
 
-  // přímé souboje po kolech: kdo měl v kole víc bodů
+  // Přímý souboj se počítá PO ZÁPASECH: bod bere ten, kdo v daném zápase
+  // získal víc bodů než soupeř. Remíza = shodný počet bodů za zápas.
   let winsA = 0;
   let winsB = 0;
   let drawsR = 0;
+  let ptsA = 0; // body nasbírané v zápasech, kde tipovali oba
+  let ptsB = 0;
+
   for (const r of rounds) {
-    let pa = 0;
-    let pb = 0;
-    let any = false;
     for (const m of r.matches) {
-      const ta = m.tips[a];
-      const tb = m.tips[b];
-      if (ta?.pts != null) {
-        pa += ta.pts;
-        any = true;
-      }
-      if (tb?.pts != null) {
-        pb += tb.pts;
-        any = true;
-      }
+      const ta = m.tips[a]?.pts;
+      const tb = m.tips[b]?.pts;
+      if (ta == null && tb == null) continue; // zápas netipoval ani jeden
+      const va = ta ?? 0;
+      const vb = tb ?? 0;
+      ptsA += va;
+      ptsB += vb;
+      if (va > vb) winsA++;
+      else if (vb > va) winsB++;
+      else drawsR++;
     }
-    if (!any) continue;
-    if (pa > pb) winsA++;
-    else if (pb > pa) winsB++;
-    else drawsR++;
   }
 
   return {
@@ -60,6 +59,8 @@ function extras(rounds: SRound[], a: string, b: string) {
     winsA,
     winsB,
     drawsR,
+    ptsA,
+    ptsB,
   };
 }
 
@@ -107,14 +108,40 @@ export function H2HCompare({
   /** Když je zadaný (profil), levý tipér je pevně daný a nejde měnit. */
   fixedPlayer?: string;
 }) {
-  const [seasonKey, setSeasonKey] = useState(seasons[0]?.key ?? '');
-  const season = seasons.find((s) => s.key === seasonKey) ?? seasons[0];
+  const comps = ['MS 2026', 'Chance liga'].filter((c) => seasons.some((s) => s.competition === c));
+  const [comp, setComp] = useState<string>(comps[0] ?? 'Chance liga');
+  // U ligy jde vybrat konkrétní ročník; výchozí = všechny sezóny dohromady.
+  const [ligaSeason, setLigaSeason] = useState<string>(ALL);
+
+  const compSeasons = useMemo(() => seasons.filter((s) => s.competition === comp), [seasons, comp]);
+  const ligaYears = useMemo(
+    () => [...new Set(compSeasons.map((s) => s.season))].sort().reverse(),
+    [compSeasons],
+  );
+
+  // Vybraná data: u ligy buď jeden ročník, nebo všechny sezóny sloučené dohromady.
+  const season = useMemo<H2HSeason | null>(() => {
+    const pick =
+      comp === 'Chance liga' && ligaSeason !== ALL
+        ? compSeasons.filter((s) => s.season === ligaSeason)
+        : compSeasons;
+    if (pick.length === 0) return null;
+    if (pick.length === 1) return pick[0];
+    // sloučení víc sezón do jedné (kola za sebou, hráči sjednoceni)
+    return {
+      key: `${comp}-all`,
+      competition: pick[0].competition,
+      season: 'všechny sezóny',
+      players: [...new Set(pick.flatMap((s) => s.players))].sort((a, b) => a.localeCompare(b, 'cs')),
+      rounds: pick.flatMap((s) => s.rounds),
+    };
+  }, [comp, ligaSeason, compSeasons]);
 
   const roster = season?.players ?? [];
-  const [a, setA] = useState(fixedPlayer && roster.includes(fixedPlayer) ? fixedPlayer : (roster[0] ?? ''));
-  const [b, setB] = useState(roster.find((p) => p !== (fixedPlayer ?? roster[0])) ?? '');
+  const [a, setA] = useState('');
+  const [b, setB] = useState('');
 
-  // při změně soutěže dorovnej hráče, kteří v ní nejsou
+  // dorovnání hráčů, kteří ve vybrané soutěži/sezóně nejsou
   const pa = fixedPlayer && roster.includes(fixedPlayer) ? fixedPlayer : roster.includes(a) ? a : (roster[0] ?? '');
   const pb = roster.includes(b) && b !== pa ? b : (roster.find((p) => p !== pa) ?? '');
 
@@ -134,7 +161,8 @@ export function H2HCompare({
 
     return [
       { icon: '💯', label: 'Body', a: A.points, b: B.points, fmt: int, higherWins: true },
-      { icon: '⚔️', label: 'Vyhraná kola proti sobě', a: ex.winsA, b: ex.winsB, fmt: int, higherWins: true },
+      { icon: '⚔️', label: 'Vyhrané zápasy proti sobě', a: ex.winsA, b: ex.winsB, fmt: (n) => `${n}×`, higherWins: true },
+      { icon: '🥊', label: 'Body ve vzájemných zápasech', a: ex.ptsA, b: ex.ptsB, fmt: (n) => `${n} b`, higherWins: true },
       { icon: '🎯', label: 'Přesné tipy', a: A.tens, b: B.tens, fmt: (n) => `${n}×`, higherWins: true },
       { icon: '📈', label: 'Průměr na zápas', a: A.avgPoints, b: B.avgPoints, fmt: dec, higherWins: true },
       { icon: '🏅', label: 'Vyhraná kola celkem', a: A.roundWins, b: B.roundWins, fmt: (n) => `${n}×`, higherWins: true },
@@ -160,33 +188,55 @@ export function H2HCompare({
 
   return (
     <div className="space-y-4">
-      {/* výběr soutěže + tipérů */}
-      <div className="flex flex-wrap gap-2">
-        {seasons.length > 1 && (
-          <select value={season.key} onChange={(e) => setSeasonKey(e.target.value)} className={sel}>
-            {seasons.map((s) => (
-              <option key={s.key} value={s.key}>
-                {s.competition} — {s.season}
-              </option>
-            ))}
-          </select>
-        )}
-        {!fixedPlayer && (
-          <select value={pa} onChange={(e) => setA(e.target.value)} className={sel}>
+      {/* výběr soutěže → (u ligy) ročník → tipéři */}
+      <div className="space-y-2">
+        <div className="flex flex-wrap gap-2">
+          {comps.length > 1 && (
+            <select value={comp} onChange={(e) => setComp(e.target.value)} className={sel}>
+              {comps.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* ročník – jen u Chance ligy */}
+          {comp === 'Chance liga' && (
+            <select value={ligaSeason} onChange={(e) => setLigaSeason(e.target.value)} className={sel}>
+              <option value={ALL}>Všechny sezóny</option>
+              {ligaYears.map((y) => (
+                <option key={y} value={y}>
+                  {y}
+                </option>
+              ))}
+            </select>
+          )}
+        </div>
+
+        {/* tipéři na vlastním řádku */}
+        <div className="flex flex-wrap items-center gap-2">
+          {fixedPlayer ? (
+            <span className="rounded-lg border border-terrain-600 bg-terrain-800 px-2.5 py-2 text-sm font-semibold text-white">
+              {pa}
+            </span>
+          ) : (
+            <select value={pa} onChange={(e) => setA(e.target.value)} className={sel}>
+              {roster.map((p) => (
+                <option key={p} value={p} disabled={p === pb}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          )}
+          <span className="text-xs font-semibold uppercase tracking-wide text-slate-300/45">vs</span>
+          <select value={pb} onChange={(e) => setB(e.target.value)} className={sel}>
             {roster.map((p) => (
-              <option key={p} value={p} disabled={p === pb}>
+              <option key={p} value={p} disabled={p === pa}>
                 {p}
               </option>
             ))}
           </select>
-        )}
-        <select value={pb} onChange={(e) => setB(e.target.value)} className={sel}>
-          {roster.map((p) => (
-            <option key={p} value={p} disabled={p === pa}>
-              {p}
-            </option>
-          ))}
-        </select>
+        </div>
       </div>
 
       {/* hlavička souboje */}
@@ -194,7 +244,7 @@ export function H2HCompare({
         <div className="min-w-0 text-left">
           <div className="truncate font-display text-lg font-bold text-white">{pa}</div>
           <div className="text-[11px] uppercase tracking-wide text-pitch-light">
-            {ex.winsA} vyhraných kol
+            {ex.ptsA} b · {ex.winsA} vyhraných zápasů
           </div>
         </div>
         <div className="shrink-0 text-center">
@@ -202,12 +252,14 @@ export function H2HCompare({
             {ex.winsA} : {ex.winsB}
           </div>
           <div className="text-[10px] uppercase tracking-wide text-slate-300/45">
-            {ex.drawsR > 0 ? `${ex.drawsR}× shoda` : 'vzájemně'}
+            {ex.drawsR > 0 ? `${ex.drawsR}× remíza` : 'vzájemný souboj'}
           </div>
         </div>
         <div className="min-w-0 text-right">
           <div className="truncate font-display text-lg font-bold text-white">{pb}</div>
-          <div className="text-[11px] uppercase tracking-wide text-flag">{ex.winsB} vyhraných kol</div>
+          <div className="text-[11px] uppercase tracking-wide text-flag">
+            {ex.ptsB} b · {ex.winsB} vyhraných zápasů
+          </div>
         </div>
       </div>
 

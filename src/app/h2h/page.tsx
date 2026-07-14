@@ -12,7 +12,7 @@ export default async function H2HPage() {
   const seasons: H2HSeason[] = [
     {
       key: `liga-${liga.season}`,
-      competition: 'Chance liga',
+      competition: 'Chance liga' as const,
       season: liga.season,
       players: liga.players,
       rounds: liga.rounds,
@@ -23,7 +23,7 @@ export default async function H2HPage() {
   if (ms) {
     seasons.unshift({
       key: 'ms-2026',
-      competition: 'MS 2026',
+      competition: 'MS 2026' as const,
       season: ms.data.season,
       players: ms.data.players,
       rounds: ms.rounds,
