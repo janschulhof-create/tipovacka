@@ -2,13 +2,16 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
+import { roundLabel } from '@/lib/roundLabel';
 
 export function RoundSelector({
   rounds,
   current,
+  knockout = false,
 }: {
   rounds: number[];
   current: number;
+  knockout?: boolean;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
@@ -34,7 +37,7 @@ export function RoundSelector({
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-2 rounded-lg border border-terrain-600 bg-terrain-900/60 px-3.5 py-2 font-display text-sm font-semibold tracking-wide text-white transition hover:bg-terrain-800"
       >
-        {current}. kolo
+        {roundLabel(current, knockout)}
         <span className="text-xs text-slate-300/50">{open ? '▲' : '▼'}</span>
       </button>
 
@@ -50,7 +53,7 @@ export function RoundSelector({
                   : 'text-slate-100/75 hover:bg-terrain-800/70'
               }`}
             >
-              {r}. kolo
+              {roundLabel(r, knockout)}
               {r === current && <span className="text-control">●</span>}
             </button>
           ))}

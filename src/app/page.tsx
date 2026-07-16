@@ -12,6 +12,7 @@ import {
 } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
+import { isKnockoutSeason, roundLabel } from '@/lib/roundLabel';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { Suspense } from 'react';
@@ -31,6 +32,7 @@ export default async function Home({
   const season = await getActiveSeason();
   if (!season) return <Empty msg="Není nastavená aktivní sezóna." />;
   const seasonId = season.id;
+  const knockout = isKnockoutSeason(season.name);
 
   const [rounds, currentRound] = await Promise.all([
     getSeasonRounds(seasonId),
@@ -70,13 +72,13 @@ export default async function Home({
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}
       <header className="flex items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold tracking-wide text-white sm:text-3xl">
-          {selectedRound ? `${selectedRound}. kolo` : 'Aktuální kolo'}
+          {selectedRound ? roundLabel(selectedRound, knockout) : 'Aktuální kolo'}
           <span className="ml-2 hidden align-middle text-sm font-normal text-slate-300/50 sm:inline">
             {season.name}
           </span>
         </h1>
         {selectedRound != null && rounds.length > 0 && (
-          <RoundSelector rounds={rounds} current={selectedRound} />
+          <RoundSelector rounds={rounds} current={selectedRound} knockout={knockout} />
         )}
       </header>
 

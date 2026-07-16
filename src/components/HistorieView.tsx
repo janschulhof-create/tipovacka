@@ -1,5 +1,6 @@
 'use client';
 
+import { roundLabel, afterRoundLabel, isKnockoutSeason } from '@/lib/roundLabel';
 import { useState } from 'react';
 import { StandingsChart } from './StandingsChart';
 import { PositionsChart } from './PositionsChart';
@@ -51,6 +52,7 @@ export function HistorieView({
   extraCards?: StatCardDef[];
   trailingCards?: StatCardDef[];
 }) {
+  const knockout = isKnockoutSeason(data.season);
   const ranked = [...data.players].sort((a, b) => data.stats[b].points - data.stats[a].points);
   const winner = ranked[0];
 
@@ -167,7 +169,7 @@ export function HistorieView({
         <h2 className="eyebrow"><span className="flag-chip" /> Výsledky po kolech ({data.rounds.length} kol)</h2>
         <div className="space-y-2">
           {data.rounds.map((r, i) => (
-            <RoundAccordion key={r.round} round={r} players={data.players} cumPts={cumByRound[i]} />
+            <RoundAccordion key={r.round} round={r} players={data.players} cumPts={cumByRound[i]} knockout={knockout} />
           ))}
         </div>
       </section>
@@ -315,7 +317,7 @@ function PointsDistribution({ data, ranked }: { data: Historie; ranked: string[]
   );
 }
 
-function RoundAccordion({ round, players, cumPts }: { round: Round; players: string[]; cumPts: Record<string, number> }) {
+function RoundAccordion({ round, players, cumPts, knockout }: { round: Round; players: string[]; cumPts: Record<string, number>; knockout: boolean }) {
   const [open, setOpen] = useState(false);
 
   const roundPts: Record<string, number> = {};
@@ -334,7 +336,7 @@ function RoundAccordion({ round, players, cumPts }: { round: Round; players: str
         onClick={() => setOpen((o) => !o)}
         className="flex w-full items-center justify-between px-4 py-3 text-left transition hover:bg-terrain-900/40"
       >
-        <span className="text-sm font-semibold text-white">{round.round}. kolo</span>
+        <span className="text-sm font-semibold text-white">{roundLabel(round.round, knockout)}</span>
         <span className="flex items-center gap-2 text-xs text-slate-300/50">
           {winners.length > 0 && <span className="text-gold">🏆 {winners.join(', ')} ({best})</span>}
           <span>{open ? '▲' : '▼'}</span>
@@ -346,7 +348,7 @@ function RoundAccordion({ round, players, cumPts }: { round: Round; players: str
           {/* pořadí v kole + pořadí po kole */}
           <div className="grid grid-cols-2 gap-3 px-4 py-3">
             <MiniRank title="Pořadí v kole" rows={roundRank.map((n) => ({ name: n, pts: roundPts[n] }))} />
-            <MiniRank title={`Pořadí po ${round.round}. kole`} rows={cumRank.map((n) => ({ name: n, pts: cumPts[n] }))} />
+            <MiniRank title={`Pořadí ${afterRoundLabel(round.round, knockout)}`} rows={cumRank.map((n) => ({ name: n, pts: cumPts[n] }))} />
           </div>
 
           <div className="divide-y divide-terrain-700 border-t border-terrain-700">
