@@ -5,7 +5,7 @@ import { fetchEspnResults, fetchEspnSummary, mergeStats, orientDetail, pairKey, 
 import { runRoastBatch } from '@/lib/roastBatch';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 type Row = { id: number; home_team: string; away_team: string; duration?: string | null };
 
@@ -33,10 +33,35 @@ export async function GET(req: NextRequest) {
 
   const supabase = createAdminClient();
 
+  // Stávající cron zůstává na /api/sync. Jedním během současně spustíme
+  // synchronizaci Chance ligy a Evropy přes již připravený endpoint.
+  // Volání běží paralelně s MS, takže není nutné zakládat další cron.
+  const additionalCompetitionsPromise = req.nextUrl.searchParams.get('debug')
+    ? Promise.resolve(null)
+    : fetch(new URL('/api/sync-football', req.nextUrl.origin), {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${secret}` },
+        cache: 'no-store',
+      })
+        .then(async (response) => {
+          let body: unknown = null;
+          try {
+            body = await response.json();
+          } catch {
+            body = { error: 'invalid JSON response' };
+          }
+          return { ok: response.ok, status: response.status, body };
+        })
+        .catch((error) => ({ ok: false, status: 0, body: { error: String(error) } }));
+
   const { data: season, error: seasonErr } = await supabase
     .from('seasons').select('id').eq('competition_key', 'ms').eq('is_active', true).single();
   if (seasonErr || !season) {
-    return NextResponse.json({ error: 'no active season' }, { status: 500 });
+    const additionalCompetitions = await additionalCompetitionsPromise;
+    return NextResponse.json(
+      { error: 'no active MS season', additionalCompetitions, at: new Date().toISOString() },
+      { status: 500 },
+    );
   }
 
   // ── Šetření CPU: nejdřív levně zjisti, jestli je vůbec co dělat ──
@@ -78,7 +103,8 @@ export async function GET(req: NextRequest) {
   const doRoast = (roastRes.count ?? 0) > 0; // dohrané bez hodnocení → LLM
 
   if (!doLive && !doReg && !doRoast && !scheduleTick) {
-    return NextResponse.json({ idle: true, at: now.toISOString() });
+    const additionalCompetitions = await additionalCompetitionsPromise;
+    return NextResponse.json({ idle: true, additionalCompetitions, at: now.toISOString() });
   }
 
   // Football-data = POUZE ROZPIS (týmy, čas výkopu, kolo). Nic víc.
@@ -400,6 +426,8 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  const additionalCompetitions = await additionalCompetitionsPromise;
+
   return NextResponse.json({
     updated,
     inserted,
@@ -412,6 +440,7 @@ export async function GET(req: NextRequest) {
         : { source: 'football-data', ok: true, updated, inserted },
     roasts: roastsAdded,
     competition: process.env.FOOTBALL_DATA_COMPETITION ?? 'WC',
+    additionalCompetitions,
     at: new Date().toISOString(),
   });
 }

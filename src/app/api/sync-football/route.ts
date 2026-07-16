@@ -27,23 +27,52 @@ export async function GET(req: NextRequest) {
 
   const keys = parseKeys(req.nextUrl.searchParams.get('competition'));
   const full = req.nextUrl.searchParams.get('full') === '1';
-  const dates = req.nextUrl.searchParams.get('dates') ?? (full ? '20260701-20270615' : dateWindow(7, 45));
+  const requestedDates = req.nextUrl.searchParams.get('dates');
   const supabase = createAdminClient();
   const results: Record<string, unknown> = {};
 
   for (const key of keys) {
     const competition = getCompetition(key);
-    const { data: season, error: seasonError } = await supabase
+    let { data: season, error: seasonError } = await supabase
       .from('seasons')
       .select('id, name')
       .eq('competition_key', key)
       .eq('is_active', true)
       .maybeSingle();
 
+    // Pokud byla SQL migrace spuštěná, ale řádek sezony chybí, založí ho
+    // první běh automaticky. Není tedy potřeba ručně zakládat sezonu.
+    if (!season && !seasonError) {
+      const seasonName = key === 'liga' ? 'Chance liga 2026/27' : 'Evropa 2026/27';
+      const { data: savedSeason, error: saveError } = await supabase
+        .from('seasons')
+        .upsert(
+          { name: seasonName, api_season: 2026, competition_key: key, is_active: true },
+          { onConflict: 'competition_key,name' },
+        )
+        .select('id, name')
+        .single();
+      season = savedSeason;
+      seasonError = saveError;
+    }
+
     if (seasonError || !season) {
-      results[key] = { ok: false, error: 'no active season' };
+      results[key] = {
+        ok: false,
+        error: 'no active season; run the multi-competition SQL migration first',
+        detail: seasonError?.message ?? null,
+      };
       continue;
     }
+
+    // Při úplně prvním běhu načti automaticky celou sezonu. Další běhy
+    // používají kratší průběžné okno, takže stávající častý cron zůstává levný.
+    const { count: existingCount, error: countError } = await supabase
+      .from('matches')
+      .select('id', { count: 'exact', head: true })
+      .eq('season_id', season.id);
+    const bootstrap = !countError && (existingCount ?? 0) === 0;
+    const dates = requestedDates ?? ((full || bootstrap) ? '20260701-20270615' : dateWindow(7, 45));
 
     const fetched: CompetitionFixture[] = [];
     const sourceErrors: { slug: string; error: string }[] = [];
@@ -65,18 +94,55 @@ export async function GET(req: NextRequest) {
 
     let inserted = 0;
     let updated = 0;
+    let unchanged = 0;
     let skippedOvertime = 0;
+
+    type ExistingMatch = {
+      id: number;
+      external_api_id: number | null;
+      source_league: string | null;
+      round: number;
+      round_label: string | null;
+      kickoff: string;
+      home_team: string;
+      away_team: string;
+      home_score: number | null;
+      away_score: number | null;
+      status: string;
+      minute: number | null;
+      clock: string | null;
+      duration: string | null;
+      selection_reason: string | null;
+    };
+
+    const { data: existingRows, error: existingError } = await supabase
+      .from('matches')
+      .select(
+        'id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, status, minute, clock, duration, selection_reason',
+      )
+      .eq('season_id', season.id);
+
+    if (existingError) {
+      results[key] = { ok: false, error: existingError.message };
+      continue;
+    }
+
+    const existingBySourceId = new Map<string, ExistingMatch>();
+    for (const row of (existingRows as ExistingMatch[]) ?? []) {
+      if (row.source_league && row.external_api_id != null) {
+        existingBySourceId.set(`${row.source_league}|${row.external_api_id}`, row);
+      }
+    }
+
+    const inserts: Record<string, unknown>[] = [];
+    const updates: { id: number; payload: Record<string, unknown> }[] = [];
+    const sameValue = (a: unknown, b: unknown): boolean => {
+      if (a == null && b == null) return true;
+      return String(a) === String(b);
+    };
 
     for (const m of selected) {
       if (m.status === 'finished' && m.duration !== 'REGULAR') skippedOvertime++;
-
-      const { data: existing } = await supabase
-        .from('matches')
-        .select('id')
-        .eq('season_id', season.id)
-        .eq('source_league', m.source_league)
-        .eq('external_api_id', m.external_api_id)
-        .maybeSingle();
 
       const payload = {
         season_id: season.id,
@@ -96,23 +162,53 @@ export async function GET(req: NextRequest) {
         selection_reason: m.selection_reason,
       };
 
-      if (existing?.id) {
-        const { error } = await supabase.from('matches').update(payload).eq('id', existing.id);
-        if (!error) updated++;
-      } else {
-        const { error } = await supabase.from('matches').insert(payload);
-        if (!error) inserted++;
+      const existing = existingBySourceId.get(`${m.source_league}|${m.external_api_id}`);
+      if (!existing) {
+        inserts.push(payload);
+        continue;
       }
+
+      const changed =
+        !sameValue(existing.round, payload.round) ||
+        !sameValue(existing.round_label, payload.round_label) ||
+        new Date(existing.kickoff).getTime() !== new Date(payload.kickoff).getTime() ||
+        !sameValue(existing.home_team, payload.home_team) ||
+        !sameValue(existing.away_team, payload.away_team) ||
+        !sameValue(existing.home_score, payload.home_score) ||
+        !sameValue(existing.away_score, payload.away_score) ||
+        !sameValue(existing.status, payload.status) ||
+        !sameValue(existing.minute, payload.minute) ||
+        !sameValue(existing.clock, payload.clock) ||
+        !sameValue(existing.duration, payload.duration) ||
+        !sameValue(existing.selection_reason, payload.selection_reason);
+
+      if (changed) updates.push({ id: existing.id, payload });
+      else unchanged++;
+    }
+
+    if (inserts.length > 0) {
+      const { error } = await supabase.from('matches').insert(inserts);
+      if (error) sourceErrors.push({ slug: 'database-insert', error: error.message });
+      else inserted = inserts.length;
+    }
+
+    // Aktualizujeme jen skutečně změněné zápasy. Běžný častý cron tak
+    // nezapisuje znovu celý rozpis, ale typicky jen právě hrané zápasy.
+    for (const item of updates) {
+      const { error } = await supabase.from('matches').update(item.payload).eq('id', item.id);
+      if (!error) updated++;
     }
 
     results[key] = {
       ok: sourceErrors.length < competition.espnSlugs.length,
       season: season.name,
       dates,
+      bootstrap,
       fetched: fetched.length,
       selected: selected.length,
       inserted,
       updated,
+      unchanged,
       skippedOvertime,
       sourceErrors,
     };
