@@ -79,6 +79,7 @@ export async function GET(req: NextRequest) {
 
   const keys = parseKeys(req.nextUrl.searchParams.get('competition'));
   const full = req.nextUrl.searchParams.get('full') === '1';
+  const repairRequested = req.nextUrl.searchParams.get('repair') === '1';
   const requestedRange = parseRequestedRange(req.nextUrl.searchParams.get('dates'));
   const supabase = createAdminClient();
   const results: Record<string, unknown> = {};
@@ -133,6 +134,18 @@ export async function GET(req: NextRequest) {
 
     const existingRows = ((existingData as ExistingMatch[]) ?? []);
     const bootstrap = existingRows.length === 0;
+    const seasonStartMs = Date.UTC(Number(season.api_season ?? 2026), 6, 1);
+    const firstRoundRows = existingRows.filter((match) => match.round === 1);
+    const firstRoundTeams = new Set(firstRoundRows.flatMap((match) => [match.home_team, match.away_team]));
+    const sourceRepairNeeded = repairRequested
+      || (key === 'liga' && existingRows.length > 0 && (
+        existingRows.length !== 240
+        || firstRoundRows.length !== 8
+        || firstRoundTeams.size !== 16
+      ))
+      || (key === 'evropa' && existingRows.some(
+        (match) => new Date(match.kickoff).getTime() < seasonStartMs,
+      ));
     const futureRows = existingRows
       .filter((m) => new Date(m.kickoff).getTime() > nowMs && m.status !== 'cancelled')
       .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
@@ -157,7 +170,7 @@ export async function GET(req: NextRequest) {
 
     const range = requestedRange ?? apiDateWindow(2, 60);
     const mode: 'full-season' | 'schedule-window' | 'live-ids' | 'idle' =
-      full || bootstrap
+      full || bootstrap || sourceRepairNeeded
         ? 'full-season'
         : requestedRange || scheduleDue
           ? 'schedule-window'
@@ -214,15 +227,22 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // ESPN může výjimečně vrátit stejný event zároveň pod hlavní soutěží
+    // i kvalifikačním slugem. Event ID je globální, proto jej uložíme jen jednou.
+    const uniqueFetched = Array.from(
+      new Map(fetched.map((match) => [match.external_api_id, match])).values(),
+    );
     const selected = key === 'evropa'
-      ? fetched
+      ? uniqueFetched
           .map((m) => ({ ...m, selection_reason: selectionReason(m.home_team, m.away_team) }))
           .filter((m) => m.selection_reason !== null)
-      : fetched.map((m) => ({ ...m, selection_reason: 'all' as const }));
+      : uniqueFetched.map((m) => ({ ...m, selection_reason: 'all' as const }));
 
     let inserted = 0;
     let updated = 0;
     let unchanged = 0;
+    let removed = 0;
+    let invalidatedPredictions = 0;
 
     const existingBySourceId = new Map<string, ExistingMatch>();
     for (const row of existingRows) {
@@ -231,8 +251,45 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Jednorázová samooprava starých chybných importů. Mazání proběhne až po
+    // úspěšném načtení nového zdroje; případné tipy se odstraní kaskádou,
+    // protože byly vytvořené nad nesprávným zápasem/sezonou.
+    if (sourceRepairNeeded && uniqueFetched.length > 0) {
+      const selectedKeys = new Set(
+        selected.map((match) => `${match.source_league}|${match.external_api_id}`),
+      );
+      const staleRows = existingRows.filter((match) => {
+        if (key === 'evropa') {
+          return new Date(match.kickoff).getTime() < seasonStartMs
+            || !competition.espnSlugs.includes(match.source_league ?? '');
+        }
+        return match.source_league === 'cze.1'
+          && match.external_api_id != null
+          && !selectedKeys.has(`cze.1|${match.external_api_id}`);
+      });
+
+      if (staleRows.length > 0) {
+        const staleIds = staleRows.map((match) => match.id);
+        const { count } = await supabase
+          .from('predictions')
+          .select('id', { count: 'exact', head: true })
+          .in('match_id', staleIds);
+        const { error } = await supabase.from('matches').delete().in('id', staleIds);
+        if (error) sourceErrors.push({ source: 'database-repair-delete', error: error.message });
+        else {
+          removed = staleIds.length;
+          invalidatedPredictions += count ?? 0;
+          for (const stale of staleRows) {
+            if (stale.source_league && stale.external_api_id != null) {
+              existingBySourceId.delete(`${stale.source_league}|${stale.external_api_id}`);
+            }
+          }
+        }
+      }
+    }
+
     const inserts: Record<string, unknown>[] = [];
-    const updates: { id: number; payload: Record<string, unknown> }[] = [];
+    const updates: { id: number; payload: Record<string, unknown>; pairingChanged: boolean }[] = [];
 
     for (const m of selected) {
       const payload = {
@@ -281,7 +338,11 @@ export async function GET(req: NextRequest) {
         !sameValue(existing.pen_away, payload.pen_away) ||
         !sameValue(existing.selection_reason, payload.selection_reason);
 
-      if (changed) updates.push({ id: existing.id, payload });
+      if (changed) updates.push({
+        id: existing.id,
+        payload,
+        pairingChanged: existing.home_team !== payload.home_team || existing.away_team !== payload.away_team,
+      });
       else unchanged++;
     }
 
@@ -289,6 +350,17 @@ export async function GET(req: NextRequest) {
       const { error } = await supabase.from('matches').insert(inserts);
       if (error) sourceErrors.push({ source: 'database-insert', error: error.message });
       else inserted = inserts.length;
+    }
+
+    const pairingChangedIds = updates.filter((item) => item.pairingChanged).map((item) => item.id);
+    if (pairingChangedIds.length > 0) {
+      const { count } = await supabase
+        .from('predictions')
+        .select('id', { count: 'exact', head: true })
+        .in('match_id', pairingChangedIds);
+      const { error } = await supabase.from('predictions').delete().in('match_id', pairingChangedIds);
+      if (error) warnings.push({ source: 'prediction-repair', error: error.message });
+      else invalidatedPredictions += count ?? 0;
     }
 
     for (const item of updates) {
@@ -322,26 +394,29 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    if (mode !== 'idle' && fetched.length === 0 && sourceErrors.length === 0) {
+    if (mode !== 'idle' && uniqueFetched.length === 0 && sourceErrors.length === 0) {
       sourceErrors.push({
-        source: 'official-public-feeds',
-        error: 'Oficiální zdroje vrátily 0 zápasů. Podrobnost je uvedena v sourceErrors; žádný API klíč není potřeba.',
+        source: key === 'liga' ? 'chanceliga-official' : 'espn-public',
+        error: 'Zdroj vrátil 0 zápasů. Žádný API klíč není potřeba; podrobnost je uvedena v sourceErrors.',
       });
     }
 
     results[key] = {
       ok: sourceErrors.length === 0,
       idle: mode === 'idle',
-      source: key === 'liga' ? 'chanceliga-official' : 'uefa-official-public',
+      source: key === 'liga' ? 'chanceliga-official-validated' : 'espn-public',
       season: season.name,
       mode,
       range: mode === 'schedule-window' ? `${range.from}..${range.to}` : null,
       bootstrap,
-      fetched: fetched.length,
+      sourceRepairNeeded,
+      fetched: uniqueFetched.length,
       selected: selected.length,
       inserted,
       updated,
       unchanged,
+      removed,
+      invalidatedPredictions,
       liveCandidates: liveCandidates.length,
       requests,
       requestsRemaining,

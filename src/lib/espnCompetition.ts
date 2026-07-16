@@ -30,8 +30,11 @@ export interface ApiFetchResult {
 
 const SOURCE_LABELS: Record<string, string> = {
   'cze.1': 'Chance liga',
+  'uefa.champions_qual': 'Liga mistrů · kvalifikace',
   'uefa.champions': 'Liga mistrů',
+  'uefa.europa_qual': 'Evropská liga · kvalifikace',
   'uefa.europa': 'Evropská liga',
+  'uefa.europa.conf_qual': 'Konferenční liga · kvalifikace',
   'uefa.europa.conf': 'Konferenční liga',
 };
 
@@ -39,17 +42,6 @@ const CHANCE_LIGA_URLS = [
   'https://www.chanceliga.cz/rozpis-zapasu',
   'https://en.chanceliga.cz/rozpis-zapasu?type=1',
 ] as const;
-
-const UEFA_COMPETITIONS_URL = 'https://comp.uefa.com/v2/competitions';
-const UEFA_MATCHES_URL = 'https://match.uefa.com/v5/matches';
-
-// Stabilní veřejná ID hlavních mužských klubových soutěží UEFA.
-// Díky nim synchronizace nepotřebuje API klíč ani placený katalog soutěží.
-const UEFA_COMPETITION_IDS: Record<string, string> = {
-  'uefa.champions': '1',
-  'uefa.europa': '14',
-  'uefa.europa.conf': '2019',
-};
 
 const PUBLIC_HEADERS = {
   Accept: 'application/json, text/html;q=0.9, */*;q=0.8',
@@ -62,15 +54,19 @@ export function sourceLabel(slug: string): string {
   return SOURCE_LABELS[slug] ?? slug;
 }
 
-function ymd(d: Date): string {
+function isoYmd(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
-export function apiDateWindow(daysBack = 2, daysForward = 60): { from: string; to: string } {
+function compactYmd(value: string): string {
+  return value.replaceAll('-', '');
+}
+
+export function apiDateWindow(daysBack = 2, daysForward = 90): { from: string; to: string } {
   const now = new Date();
   return {
-    from: ymd(new Date(now.getTime() - daysBack * 864e5)),
-    to: ymd(new Date(now.getTime() + daysForward * 864e5)),
+    from: isoYmd(new Date(now.getTime() - daysBack * 864e5)),
+    to: isoYmd(new Date(now.getTime() + daysForward * 864e5)),
   };
 }
 
@@ -112,36 +108,12 @@ function stripTags(value: string): string {
     .trim();
 }
 
-function numeric(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function stableNumericId(value: unknown): number | null {
-  const stringValue = String(value ?? '').trim();
-  if (!stringValue) return null;
-  if (/^\d+$/.test(stringValue)) {
-    const parsed = Number(stringValue);
-    if (Number.isSafeInteger(parsed) && parsed > 0 && parsed <= 2_147_483_647) return parsed;
-  }
-
-  // FNV-1a převedené do kladného 31bit integeru, aby se vešlo do PostgreSQL INTEGER.
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < stringValue.length; i++) {
-    hash ^= stringValue.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return (hash >>> 1) || 1;
-}
-
-function isoWeek(iso: string): { year: number; week: number } {
-  const d = new Date(iso);
-  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
-  const day = x.getUTCDay() || 7;
-  x.setUTCDate(x.getUTCDate() + 4 - day);
-  const year = x.getUTCFullYear();
-  const start = new Date(Date.UTC(year, 0, 1));
-  const week = Math.ceil((((x.getTime() - start.getTime()) / 864e5) + 1) / 7);
-  return { year, week };
+function lastMatch(text: string, re: RegExp): RegExpExecArray | null {
+  let result: RegExpExecArray | null = null;
+  let match: RegExpExecArray | null;
+  re.lastIndex = 0;
+  while ((match = re.exec(text)) !== null) result = match;
+  return result;
 }
 
 function inRange(kickoff: string, range?: { from: string; to: string }): boolean {
@@ -152,40 +124,6 @@ function inRange(kickoff: string, range?: { from: string; to: string }): boolean
   return time >= from && time <= to;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Chance Liga – oficiální web                                                 */
-/* -------------------------------------------------------------------------- */
-
-interface HtmlAnchor {
-  start: number;
-  end: number;
-  href: string;
-  text: string;
-}
-
-function extractAnchors(html: string): HtmlAnchor[] {
-  const anchors: HtmlAnchor[] = [];
-  const re = /<a\b[^>]*?href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
-  let match: RegExpExecArray | null;
-  while ((match = re.exec(html)) !== null) {
-    anchors.push({
-      start: match.index,
-      end: re.lastIndex,
-      href: decodeHtml(match[2]),
-      text: stripTags(match[3]),
-    });
-  }
-  return anchors;
-}
-
-function lastMatch(text: string, re: RegExp): RegExpExecArray | null {
-  let result: RegExpExecArray | null = null;
-  let match: RegExpExecArray | null;
-  re.lastIndex = 0;
-  while ((match = re.exec(text)) !== null) result = match;
-  return result;
-}
-
 function pragueDateToIso(
   day: number,
   month: number,
@@ -193,8 +131,6 @@ function pragueDateToIso(
   hour: number,
   minute: number,
 ): string {
-  // Převod lokálního času Europe/Prague bez externí knihovny. Dvojí průchod
-  // korektně pokryje i přechod mezi letním a zimním časem.
   const formatter = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Prague',
     year: 'numeric',
@@ -225,65 +161,151 @@ function pragueDateToIso(
   return new Date(guess).toISOString();
 }
 
-interface ChanceCandidate extends CompetitionFixture {
-  quality: number;
+/* -------------------------------------------------------------------------- */
+/* Chance Liga – oficiální web LFA                                             */
+/* -------------------------------------------------------------------------- */
+
+interface HtmlAnchor {
+  start: number;
+  end: number;
+  href: string;
+  text: string;
+}
+
+function extractAnchors(html: string): HtmlAnchor[] {
+  const anchors: HtmlAnchor[] = [];
+  const re = /<a\b[^>]*?href\s*=\s*(["'])(.*?)\1[^>]*>([\s\S]*?)<\/a>/gi;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(html)) !== null) {
+    anchors.push({
+      start: match.index,
+      end: re.lastIndex,
+      href: decodeHtml(match[2]),
+      text: stripTags(match[3]),
+    });
+  }
+  return anchors;
 }
 
 function cleanChanceTeam(value: string): string {
-  // Oficiální web má v odkazu zároveň celý název a třípísmennou zkratku
-  // (např. „FC Viktoria Plzeň PLZ"). Zkratka není součást názvu týmu.
   return canonTeam(value.replace(/\s+[A-ZÁČĎÉĚÍŇÓŘŠŤÚŮÝŽ]{2,5}$/, '').trim());
 }
 
-export function parseChanceLigaHtml(html: string, range?: { from: string; to: string }): CompetitionFixture[] {
+function isChanceScoreAnchor(anchor: HtmlAnchor): boolean {
+  if (!/\/zapas\/(?:online\/)?\d+(?:-|\/|$)/i.test(anchor.href)) return false;
+  const text = anchor.text.replace(/\s+/g, ' ').trim();
+  // Důležité: postranní seznam používá stejný odkaz, ale text odkazu je čas
+  // („so 17:00"). Přijímáme jen skutečné skóre hlavního řádku utkání.
+  return /^(?:-\s*:\s*-|\d+\s*:\s*\d+(?:\s*\([^)]*\))?)$/i.test(text);
+}
+
+function nearestTeamAnchor(
+  anchors: HtmlAnchor[],
+  scoreIndex: number,
+  direction: -1 | 1,
+): HtmlAnchor | null {
+  for (let step = 1; step <= 10; step++) {
+    const candidate = anchors[scoreIndex + direction * step];
+    if (!candidate) break;
+    if (isChanceScoreAnchor(candidate)) break;
+    if (/\/klub\//i.test(candidate.href) && candidate.text.trim()) return candidate;
+  }
+  return null;
+}
+
+function scorePair(text: string): { home: number | null; away: number | null } {
+  const match = text.match(/(\d+)\s*:\s*(\d+)/);
+  return match ? { home: Number(match[1]), away: Number(match[2]) } : { home: null, away: null };
+}
+
+function validateChanceSchedule(fixtures: CompetitionFixture[], requireComplete: boolean): void {
+  const regular = fixtures.filter((fixture) => fixture.round >= 1 && fixture.round <= 30);
+  const problems: string[] = [];
+  const ids = new Set<number>();
+
+  for (const fixture of regular) {
+    if (ids.has(fixture.external_api_id)) problems.push(`duplicitní ID ${fixture.external_api_id}`);
+    ids.add(fixture.external_api_id);
+    if (!fixture.home_team || !fixture.away_team || fixture.home_team === fixture.away_team) {
+      problems.push(`neplatná dvojice u ID ${fixture.external_api_id}`);
+    }
+  }
+
+  const byRound = new Map<number, CompetitionFixture[]>();
+  for (const fixture of regular) {
+    const list = byRound.get(fixture.round) ?? [];
+    list.push(fixture);
+    byRound.set(fixture.round, list);
+  }
+
+  for (const [round, matches] of byRound) {
+    const teams = matches.flatMap((match) => [match.home_team, match.away_team]);
+    if (new Set(teams).size !== teams.length) problems.push(`${round}. kolo obsahuje tým vícekrát`);
+    if (matches.length !== 8) problems.push(`${round}. kolo má ${matches.length} místo 8 zápasů`);
+  }
+
+  if (requireComplete) {
+    for (let round = 1; round <= 30; round++) {
+      if ((byRound.get(round)?.length ?? 0) !== 8) {
+        problems.push(`${round}. kolo není kompletní`);
+      }
+    }
+    if (regular.length !== 240) problems.push(`základní část má ${regular.length} místo 240 zápasů`);
+  }
+
+  if (problems.length > 0) {
+    throw new Error(`Kontrola oficiálního rozpisu Chance Ligy selhala: ${Array.from(new Set(problems)).slice(0, 12).join('; ')}`);
+  }
+}
+
+/**
+ * Parser oficiálního rozpisu. Používá pouze trojici sousedních odkazů
+ * „domácí klub – skóre – hostující klub“, takže ignoruje duplicitní odkazy
+ * v postranním programu a nemůže posunout dvojice o jeden tým.
+ */
+export function parseChanceLigaHtml(
+  html: string,
+  range?: { from: string; to: string },
+): CompetitionFixture[] {
   const anchors = extractAnchors(html);
-  const teamAnchors = anchors.filter((anchor) => /\/klub\//i.test(anchor.href));
-  const matchAnchors = anchors.filter((anchor) => /\/zapas\/(\d+)(?:-|\/|$)/i.test(anchor.href));
-  const byId = new Map<number, ChanceCandidate>();
+  const scoreIndexes = anchors
+    .map((anchor, index) => ({ anchor, index }))
+    .filter(({ anchor }) => isChanceScoreAnchor(anchor));
+  const fixtures: CompetitionFixture[] = [];
+  const byId = new Map<number, CompetitionFixture>();
   const now = Date.now();
+  let previousScoreEnd = 0;
+  let currentRound: number | null = null;
 
-  for (const anchor of matchAnchors) {
-    const idMatch = anchor.href.match(/\/zapas\/(\d+)/i);
+  for (const { anchor, index } of scoreIndexes) {
+    const idMatch = anchor.href.match(/\/zapas\/(?:online\/)?(\d+)/i);
     const externalId = idMatch ? Number(idMatch[1]) : Number.NaN;
-    if (!Number.isFinite(externalId) || externalId <= 0) continue;
+    if (!Number.isSafeInteger(externalId) || externalId <= 0) continue;
 
-    const homeAnchor = [...teamAnchors]
-      .reverse()
-      .find((team) => team.end <= anchor.start && anchor.start - team.end <= 2800);
-    const awayAnchor = teamAnchors.find(
-      (team) => team.start >= anchor.end && team.start - anchor.end <= 2800,
-    );
+    const homeAnchor = nearestTeamAnchor(anchors, index, -1);
+    const awayAnchor = nearestTeamAnchor(anchors, index, 1);
     if (!homeAnchor || !awayAnchor) continue;
 
     const home = cleanChanceTeam(homeAnchor.text);
     const away = cleanChanceTeam(awayAnchor.text);
     if (!home || !away || home === away) continue;
 
-    const beforeHtml = html.slice(Math.max(0, anchor.start - 5000), anchor.start);
-    // Čas bereme jen z bezprostředního bloku konkrétního utkání. U pozdějších
-    // kol web zobrazuje „-” místo času; širší výřez by jinak mohl omylem převzít
-    // čas předchozího zápasu. Začátek bloku určí předchozí klubový odkaz.
-    const homeTeamIndex = teamAnchors.indexOf(homeAnchor);
-    const previousTeamEnd = homeTeamIndex > 0
-      ? teamAnchors[homeTeamIndex - 1].end
-      : Math.max(0, homeAnchor.start - 1200);
-    const localBeforeHtml = html.slice(previousTeamEnd, anchor.start);
-    const aroundHtml = html.slice(Math.max(0, homeAnchor.start - 600), Math.min(html.length, awayAnchor.end + 600));
-    const beforeText = stripTags(beforeHtml);
-    const localBeforeText = stripTags(localBeforeHtml);
-    const aroundText = stripTags(aroundHtml);
+    const rowPrefix = stripTags(html.slice(previousScoreEnd, anchor.start));
+    previousScoreEnd = anchor.end;
 
-    const dateMatch = lastMatch(localBeforeText, /(\d{2})\/(\d{2})\/(\d{4})/g)
-      ?? lastMatch(beforeText, /(\d{2})\/(\d{2})\/(\d{4})/g);
+    const roundMatch = lastMatch(rowPrefix, /(\d{1,2})\s*\.\s*(?:kolo|matchweek)/gi);
+    if (roundMatch) currentRound = Number(roundMatch[1]);
+    if (!currentRound) continue;
+
+    const dateMatch = lastMatch(rowPrefix, /(\d{2})[\/.](\d{2})[\/.](\d{4})/g);
     if (!dateMatch) continue;
 
-    const timeInAnchor = anchor.text.match(/(?:^|\s)([01]?\d|2[0-3]):([0-5]\d)(?:\s|$)/);
-    const timeBefore = lastMatch(localBeforeText, /(?:^|\s)([01]?\d|2[0-3]):([0-5]\d)(?:\s|$)/g);
-    const timeMatch = timeInAnchor ?? timeBefore;
+    const timeMatch = lastMatch(rowPrefix, /(?:^|\s)([01]?\d|2[0-3]):([0-5]\d)(?:\s|$)/g);
     const timeConfirmed = !!timeMatch;
+    // Neurčené termíny se na oficiálním webu zobrazují jako „-“. Provizorní
+    // čas se při každém běhu přepíše, jakmile LFA přesný výkop zveřejní.
     const hour = timeMatch ? Number(timeMatch[1]) : 12;
     const minute = timeMatch ? Number(timeMatch[2]) : 0;
-
     const kickoff = pragueDateToIso(
       Number(dateMatch[1]),
       Number(dateMatch[2]),
@@ -293,61 +315,45 @@ export function parseChanceLigaHtml(html: string, range?: { from: string; to: st
     );
     if (!inRange(kickoff, range)) continue;
 
-    const roundMatch = lastMatch(beforeText, /(\d{1,2})\s*\.\s*(?:kolo|matchweek)/gi);
-    const round = roundMatch ? Number(roundMatch[1]) : isoWeek(kickoff).week;
-    const section = /nadstavba|championship group|relegation group|play.?off/i.test(aroundText)
-      ? 'Nadstavba'
-      : null;
-    const roundLabel = section ? `${section} · ${round}. kolo` : `${round}. kolo`;
-
-    const scores = Array.from(anchor.text.matchAll(/(\d+)\s*:\s*(\d+)/g));
-    const homeScore = scores[0] ? Number(scores[0][1]) : null;
-    const awayScore = scores[0] ? Number(scores[0][2]) : null;
-    const penHome = scores[1] ? Number(scores[1][1]) : null;
-    const penAway = scores[1] ? Number(scores[1][2]) : null;
-    const scoreLike = /(?:\d+\s*:\s*\d+|-\s*:\s*-)/.test(anchor.text);
-
+    const score = scorePair(anchor.text);
+    const aroundText = stripTags(
+      html.slice(Math.max(0, homeAnchor.start - 400), Math.min(html.length, awayAnchor.end + 500)),
+    );
     const kickoffMs = new Date(kickoff).getTime();
-    const inLiveWindow = timeConfirmed && now >= kickoffMs - 5 * 60_000 && now <= kickoffMs + 3 * 3600_000;
+    const inLiveWindow = timeConfirmed && now >= kickoffMs - 10 * 60_000 && now <= kickoffMs + 4 * 3600_000;
     let status: MatchStatus = 'scheduled';
     if (/odložen|postpon/i.test(aroundText)) status = 'postponed';
     else if (/zrušen|cancel|abandon/i.test(aroundText)) status = 'cancelled';
+    else if (/konec|dohráno|finished/i.test(aroundText)) status = 'finished';
     else if (inLiveWindow) status = 'live';
-    else if (homeScore != null && awayScore != null && now > kickoffMs + 2.5 * 3600_000) status = 'finished';
+    else if (score.home != null && score.away != null && now > kickoffMs + 3.5 * 3600_000) status = 'finished';
 
-    const duration: CompetitionFixture['duration'] = penHome != null || penAway != null
-      ? 'PENALTY_SHOOTOUT'
-      : 'REGULAR';
-
-    const candidate: ChanceCandidate = {
+    const fixture: CompetitionFixture = {
       external_api_id: externalId,
       source_league: 'cze.1',
       source_label: sourceLabel('cze.1'),
-      round,
-      round_label: roundLabel,
+      round: currentRound,
+      round_label: `${currentRound}. kolo`,
       kickoff,
       home_team: home,
       away_team: away,
-      home_score: status === 'scheduled' ? null : homeScore,
-      away_score: status === 'scheduled' ? null : awayScore,
+      home_score: status === 'scheduled' ? null : score.home,
+      away_score: status === 'scheduled' ? null : score.away,
       status,
       minute: null,
       clock: status === 'live' ? 'Živě' : null,
-      duration,
+      duration: 'REGULAR',
       extra_home: null,
       extra_away: null,
-      pen_home: penHome,
-      pen_away: penAway,
-      quality: (scoreLike ? 20 : 0) + (timeConfirmed ? 5 : 0) + (roundMatch ? 2 : 0),
+      pen_home: null,
+      pen_away: null,
     };
 
-    const previous = byId.get(externalId);
-    if (!previous || candidate.quality > previous.quality) byId.set(externalId, candidate);
+    byId.set(externalId, fixture);
   }
 
-  return Array.from(byId.values())
-    .map(({ quality: _quality, ...fixture }) => fixture)
-    .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
+  fixtures.push(...byId.values());
+  return fixtures.sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
 }
 
 async function fetchChanceLigaPage(range?: { from: string; to: string }): Promise<ApiFetchResult> {
@@ -365,307 +371,259 @@ async function fetchChanceLigaPage(range?: { from: string; to: string }): Promis
       const html = await response.text();
       const fixtures = parseChanceLigaHtml(html, range);
       if (fixtures.length === 0) {
-        const matchLinks = (html.match(/\/zapas\/\d+/gi) ?? []).length;
-        errors.push(`${new URL(url).host}: stránka načtena, ale parser našel 0 zápasů (matchLinks=${matchLinks})`);
+        errors.push(`${new URL(url).host}: stránka načtena, ale parser našel 0 skutečných řádků zápasů`);
         continue;
       }
+      // U celé sezony přijmeme data jen tehdy, když projdou strukturální
+      // kontrolou 30 kol × 8 utkání. Částečné datumové okno validujeme mírněji.
+      validateChanceSchedule(fixtures, !range);
       return { fixtures, requests, remaining: null };
     } catch (error) {
       errors.push(`${new URL(url).host}: ${String(error)}`);
     }
   }
 
-  throw new Error(`Oficiální web Chance Ligy se nepodařilo načíst: ${errors.join(' | ')}`);
+  throw new Error(`Oficiální web Chance Ligy se nepodařilo bezpečně načíst: ${errors.join(' | ')}`);
 }
 
 /* -------------------------------------------------------------------------- */
-/* Evropské poháry – veřejné endpointy UEFA                                    */
+/* Evropské poháry – veřejný ESPN scoreboard                                  */
 /* -------------------------------------------------------------------------- */
 
-interface UefaCompetition {
-  id?: string | number;
-  code?: string;
-  sportsType?: string;
-  teamCategory?: string;
-  age?: string;
-  sex?: string;
-  metaData?: { name?: string };
-  translations?: {
-    name?: Record<string, string>;
-    tournamentName?: Record<string, string>;
-  };
+interface EspnTeam {
+  displayName?: string;
+  name?: string;
+  shortDisplayName?: string;
 }
 
-interface UefaScoreResult {
-  home?: number;
-  away?: number;
+interface EspnCompetitor {
+  homeAway?: 'home' | 'away';
+  score?: string;
+  team?: EspnTeam;
 }
 
-interface UefaMatch {
-  id?: string | number;
-  competition?: UefaCompetition;
-  seasonYear?: string;
-  kickOffTime?: { date?: string; dateTime?: string; utcOffsetInHours?: number };
-  status?: 'UPCOMING' | 'FINISHED' | 'LIVE' | 'CURRENT' | 'ABANDONED' | 'CANCELED' | string;
-  phase?: string;
-  minute?: { normal?: number; injury?: number };
-  homeTeam?: {
-    internationalName?: string;
-    isPlaceHolder?: boolean;
-    translations?: { displayName?: Record<string, string>; displayOfficialName?: Record<string, string> };
-  };
-  awayTeam?: {
-    internationalName?: string;
-    isPlaceHolder?: boolean;
-    translations?: { displayName?: Record<string, string>; displayOfficialName?: Record<string, string> };
-  };
-  round?: {
-    orderInCompetition?: number;
-    metaData?: { name?: string; type?: string };
-    translations?: { name?: Record<string, string> };
-  };
-  matchday?: {
-    sequenceNumber?: string;
-    name?: string;
-    longName?: string;
-    translations?: { name?: Record<string, string>; longName?: Record<string, string> };
-  };
-  score?: {
-    regular?: UefaScoreResult;
-    total?: UefaScoreResult;
-    penalty?: UefaScoreResult;
-  };
+interface EspnEvent {
+  id?: string;
+  date?: string;
+  name?: string;
+  shortName?: string;
+  week?: { number?: number };
+  competitions?: Array<{
+    notes?: Array<{ headline?: string }>;
+    type?: { text?: string };
+    status?: {
+      displayClock?: string;
+      type?: {
+        state?: string;
+        completed?: boolean;
+        detail?: string;
+        shortDetail?: string;
+        description?: string;
+      };
+    };
+    competitors?: EspnCompetitor[];
+  }>;
 }
 
-let uefaCompetitionsPromise: Promise<UefaCompetition[]> | null = null;
-let uefaCompetitionsLoadedAt = 0;
+function parseScore(value: string | undefined): number | null {
+  if (value == null || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
 
-async function uefaGet<T>(url: string, params: Record<string, string> = {}): Promise<T> {
-  const query = new URLSearchParams(params).toString();
-  const target = query ? `${url}?${query}` : url;
-  const response = await fetchWithTimeout(target);
-  if (!response.ok) {
-    const body = await response.text().catch(() => '');
-    throw new Error(`UEFA HTTP ${response.status}${body ? `: ${body.slice(0, 180)}` : ''}`);
+function parseMinute(clock: string | undefined): number | null {
+  const match = (clock ?? '').match(/\d+/);
+  return match ? Number(match[0]) : null;
+}
+
+function mapEspnStatus(event: EspnEvent): MatchStatus {
+  const status = event.competitions?.[0]?.status;
+  const state = status?.type?.state;
+  const text = `${status?.type?.detail ?? ''} ${status?.type?.shortDetail ?? ''} ${status?.type?.description ?? ''}`;
+  if (/postpon/i.test(text)) return 'postponed';
+  if (/cancel|abandon/i.test(text)) return 'cancelled';
+  if (status?.type?.completed || state === 'post') return 'finished';
+  if (state === 'in') return 'live';
+  return 'scheduled';
+}
+
+function isoWeek(iso: string): { year: number; week: number } {
+  const d = new Date(iso);
+  const x = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+  const day = x.getUTCDay() || 7;
+  x.setUTCDate(x.getUTCDate() + 4 - day);
+  const year = x.getUTCFullYear();
+  const start = new Date(Date.UTC(year, 0, 1));
+  const week = Math.ceil((((x.getTime() - start.getTime()) / 864e5) + 1) / 7);
+  return { year, week };
+}
+
+function translatedPhase(raw: string): { code: number; label: string } | null {
+  const text = raw.trim();
+  const phases: Array<[RegExp, number, string]> = [
+    [/first qualifying|1st qualifying/i, 1, '1. předkolo'],
+    [/second qualifying|2nd qualifying/i, 2, '2. předkolo'],
+    [/third qualifying|3rd qualifying/i, 3, '3. předkolo'],
+    [/qualifying play.?off|play.?off round/i, 4, 'Play-off kvalifikace'],
+    [/league phase|group stage/i, 10, 'Ligová fáze'],
+    [/knockout.*play.?off/i, 11, 'Play-off vyřazovací fáze'],
+    [/round of 16|last 16/i, 12, 'Osmifinále'],
+    [/quarter/i, 13, 'Čtvrtfinále'],
+    [/semi/i, 14, 'Semifinále'],
+    [/final/i, 15, 'Finále'],
+  ];
+  for (const [pattern, code, label] of phases) {
+    if (pattern.test(text)) return { code, label };
   }
-  const data = (await response.json()) as T | { error?: { title?: string; message?: string } };
-  if (data && typeof data === 'object' && 'error' in data && data.error) {
-    throw new Error(`UEFA API: ${data.error.title ?? 'chyba'} – ${data.error.message ?? ''}`);
-  }
-  return data as T;
+  return text ? { code: 50, label: text } : null;
 }
 
-async function getUefaCompetitions(): Promise<UefaCompetition[]> {
-  const now = Date.now();
-  if (!uefaCompetitionsPromise || now - uefaCompetitionsLoadedAt > 6 * 3600_000) {
-    uefaCompetitionsLoadedAt = now;
-    uefaCompetitionsPromise = uefaGet<UefaCompetition[]>(UEFA_COMPETITIONS_URL).catch((error) => {
-      uefaCompetitionsPromise = null;
-      throw error;
-    });
-  }
-  return uefaCompetitionsPromise;
-}
-
-function translated(record: Record<string, string> | undefined): string {
-  if (!record) return '';
-  return record.EN ?? record.en ?? record.CS ?? record.cs ?? Object.values(record)[0] ?? '';
-}
-
-function competitionName(competition: UefaCompetition): string {
-  return [
-    competition.metaData?.name,
-    translated(competition.translations?.name),
-    translated(competition.translations?.tournamentName),
+function europeRound(event: EspnEvent, slug: string): { round: number; label: string } {
+  const competition = event.competitions?.[0];
+  const phaseText = [
+    ...(competition?.notes?.map((note) => note.headline) ?? []),
+    competition?.type?.text,
   ]
-    .filter(Boolean)
+    .filter((value): value is string => !!value)
     .join(' ');
-}
+  const phase = translatedPhase(phaseText);
+  const slugIndex = [
+    'uefa.champions_qual',
+    'uefa.champions',
+    'uefa.europa_qual',
+    'uefa.europa',
+    'uefa.europa.conf_qual',
+    'uefa.europa.conf',
+  ].indexOf(slug) + 1;
 
-async function resolveUefaCompetition(sourceLeague: string): Promise<UefaCompetition> {
-  const competitions = await getUefaCompetitions();
-  const candidates = competitions.filter((competition) => {
-    const code = (competition.code ?? '').toUpperCase();
-    const name = competitionName(competition);
-    if (competition.sportsType && competition.sportsType !== 'FOOTBALL') return false;
-    if (competition.teamCategory && competition.teamCategory !== 'CLUB') return false;
-    if (competition.sex && competition.sex !== 'MALE') return false;
-
-    if (sourceLeague === 'uefa.champions') {
-      return code === 'UCL' || /(?:UEFA\s+)?Champions League/i.test(name);
-    }
-    if (sourceLeague === 'uefa.europa') {
-      return code === 'UEL' || (/Europa League/i.test(name) && !/Conference/i.test(name));
-    }
-    if (sourceLeague === 'uefa.europa.conf') {
-      return code === 'UECL' || /Conference League|Europa Conference/i.test(name);
-    }
-    return false;
-  });
-
-  const competition = candidates[0];
-  if (!competition?.id) {
-    const known = competitions
-      .map((item) => `${item.code ?? '?'}:${competitionName(item)}`)
-      .filter((name) => /Champions|Europa|Conference/i.test(name))
-      .slice(0, 15)
-      .join(', ');
-    throw new Error(`UEFA soutěž ${sourceLeague} nenalezena. Dostupné podobné soutěže: ${known || 'žádné'}`);
+  if (phase) {
+    return {
+      round: Math.max(1, slugIndex) * 100 + phase.code,
+      label: `${sourceLabel(slug)} · ${phase.label}`,
+    };
   }
-  return competition;
-}
 
-function uefaStatus(value: string | undefined): MatchStatus {
-  switch ((value ?? '').toUpperCase()) {
-    case 'LIVE':
-    case 'CURRENT':
-      return 'live';
-    case 'FINISHED':
-      return 'finished';
-    case 'POSTPONED':
-      return 'postponed';
-    case 'ABANDONED':
-    case 'CANCELED':
-    case 'CANCELLED':
-      return 'cancelled';
-    default:
-      return 'scheduled';
-  }
-}
-
-function uefaTeamName(team: UefaMatch['homeTeam']): string {
-  return canonTeam(
-    team?.internationalName
-      || translated(team?.translations?.displayOfficialName)
-      || translated(team?.translations?.displayName)
-      || '',
-  );
-}
-
-function uefaRound(sourceLeague: string, match: UefaMatch, kickoff: string): { round: number; label: string } {
-  const wk = isoWeek(kickoff);
-  const sourceIndex = sourceLeague === 'uefa.champions' ? 1 : sourceLeague === 'uefa.europa' ? 2 : 3;
-  const name = match.round?.metaData?.name
-    ?? translated(match.round?.translations?.name)
-    ?? match.matchday?.longName
-    ?? translated(match.matchday?.translations?.longName)
-    ?? match.matchday?.name
-    ?? translated(match.matchday?.translations?.name)
-    ?? `týden ${wk.week}/${wk.year}`;
+  const week = isoWeek(event.date ?? new Date().toISOString());
   return {
-    round: wk.year * 10_000 + wk.week * 10 + sourceIndex,
-    label: `${sourceLabel(sourceLeague)} · ${name}`,
+    round: Math.max(1, slugIndex) * 100_000 + week.year * 100 + week.week,
+    label: `${sourceLabel(slug)} · týden ${week.week}/${week.year}`,
   };
 }
 
-function normalizeUefaMatch(match: UefaMatch, forcedSource: string): CompetitionFixture | null {
-  const id = stableNumericId(match.id);
-  const kickoffValue = match.kickOffTime?.dateTime
-    ?? (match.kickOffTime?.date ? `${match.kickOffTime.date}T12:00:00Z` : null);
-  if (id == null || !kickoffValue) return null;
+function normalizeEspnEvent(event: EspnEvent, slug: string): CompetitionFixture | null {
+  const competition = event.competitions?.[0];
+  if (!event.id || !event.date || !competition) return null;
+  const externalId = Number(event.id);
+  if (!Number.isSafeInteger(externalId) || externalId <= 0) return null;
 
-  const kickoffDate = new Date(kickoffValue);
-  if (!Number.isFinite(kickoffDate.getTime())) return null;
-  const kickoff = kickoffDate.toISOString();
-  const home = uefaTeamName(match.homeTeam);
-  const away = uefaTeamName(match.awayTeam);
-  if (!home || !away || match.homeTeam?.isPlaceHolder || match.awayTeam?.isPlaceHolder) return null;
+  const home = competition.competitors?.find((item) => item.homeAway === 'home');
+  const away = competition.competitors?.find((item) => item.homeAway === 'away');
+  const homeTeam = canonTeam(home?.team?.displayName ?? home?.team?.name ?? home?.team?.shortDisplayName ?? '');
+  const awayTeam = canonTeam(away?.team?.displayName ?? away?.team?.name ?? away?.team?.shortDisplayName ?? '');
+  if (!homeTeam || !awayTeam || /\bTBD\b|to be determined/i.test(`${homeTeam} ${awayTeam}`)) return null;
 
-  const status = uefaStatus(match.status);
-  const regularHome = numeric(match.score?.regular?.home);
-  const regularAway = numeric(match.score?.regular?.away);
-  const totalHome = numeric(match.score?.total?.home);
-  const totalAway = numeric(match.score?.total?.away);
-  const penHome = numeric(match.score?.penalty?.home);
-  const penAway = numeric(match.score?.penalty?.away);
-  const duration: CompetitionFixture['duration'] = penHome != null || penAway != null
+  const status = mapEspnStatus(event);
+  const clock = competition.status?.displayClock ?? competition.status?.type?.shortDetail ?? null;
+  const statusText = `${competition.status?.type?.detail ?? ''} ${competition.status?.type?.shortDetail ?? ''}`;
+  const duration: CompetitionFixture['duration'] = /penalt/i.test(statusText)
     ? 'PENALTY_SHOOTOUT'
-    : ((regularHome != null && totalHome != null && regularHome !== totalHome)
-      || (regularAway != null && totalAway != null && regularAway !== totalAway))
+    : /extra time|aet/i.test(statusText)
       ? 'EXTRA_TIME'
       : 'REGULAR';
-  const round = uefaRound(forcedSource, match, kickoff);
-  const normalMinute = numeric(match.minute?.normal);
-  const injuryMinute = numeric(match.minute?.injury);
-  const minute = normalMinute == null ? null : normalMinute + (injuryMinute ?? 0);
-  const clock = status === 'live'
-    ? normalMinute == null
-      ? (match.phase ?? 'Živě')
-      : `${normalMinute}${injuryMinute ? `+${injuryMinute}` : ''}'`
-    : null;
+  const round = europeRound(event, slug);
+  const rawHomeScore = parseScore(home?.score);
+  const rawAwayScore = parseScore(away?.score);
 
   return {
-    external_api_id: id,
-    source_league: forcedSource,
-    source_label: sourceLabel(forcedSource),
+    external_api_id: externalId,
+    source_league: slug,
+    source_label: sourceLabel(slug),
     round: round.round,
     round_label: round.label,
-    kickoff,
-    home_team: home,
-    away_team: away,
-    home_score: status === 'scheduled' ? null : (regularHome ?? totalHome),
-    away_score: status === 'scheduled' ? null : (regularAway ?? totalAway),
+    kickoff: event.date,
+    home_team: homeTeam,
+    away_team: awayTeam,
+    // Bodování je založené na výsledku po základní hrací době. ESPN u zápasů
+    // po prodloužení/penaltách ne vždy rozlišuje 90minutový stav, proto jej
+    // raději necháme prázdný než spočítat body chybně.
+    home_score: status === 'finished' && duration !== 'REGULAR' ? null : rawHomeScore,
+    away_score: status === 'finished' && duration !== 'REGULAR' ? null : rawAwayScore,
     status,
-    minute,
-    clock,
+    minute: status === 'live' ? parseMinute(clock ?? undefined) : null,
+    clock: status === 'live' ? clock : null,
     duration,
-    extra_home: duration !== 'REGULAR' ? totalHome : null,
-    extra_away: duration !== 'REGULAR' ? totalAway : null,
-    pen_home: penHome,
-    pen_away: penAway,
+    extra_home: null,
+    extra_away: null,
+    pen_home: null,
+    pen_away: null,
   };
 }
 
-async function fetchUefaLeagueFixtures(
-  sourceLeague: string,
-  season: number,
-  range?: { from: string; to: string },
-): Promise<ApiFetchResult> {
-  const competitionId = UEFA_COMPETITION_IDS[sourceLeague]
-    ?? String((await resolveUefaCompetition(sourceLeague)).id);
-  const fixtures: CompetitionFixture[] = [];
-  let requests = UEFA_COMPETITION_IDS[sourceLeague] ? 0 : 1;
-  const pageSize = 100;
-
-  for (let offset = 0; offset < 1000; offset += pageSize) {
-    const matches = await uefaGet<UefaMatch[]>(UEFA_MATCHES_URL, {
-      competitionId,
-      seasonYear: String(season),
-      limit: String(pageSize),
-      offset: String(offset),
-      order: 'ASC',
-    });
-    requests++;
-    for (const match of matches) {
-      const normalized = normalizeUefaMatch(match, sourceLeague);
-      if (normalized && inRange(normalized.kickoff, range)) fixtures.push(normalized);
-    }
-    if (matches.length < pageSize) break;
+function dateChunks(range: { from: string; to: string }, days = 35): Array<{ from: string; to: string }> {
+  const output: Array<{ from: string; to: string }> = [];
+  let cursor = new Date(`${range.from}T00:00:00.000Z`);
+  const end = new Date(`${range.to}T00:00:00.000Z`);
+  while (cursor <= end) {
+    const chunkEnd = new Date(Math.min(end.getTime(), cursor.getTime() + (days - 1) * 864e5));
+    output.push({ from: isoYmd(cursor), to: isoYmd(chunkEnd) });
+    cursor = new Date(chunkEnd.getTime() + 864e5);
   }
+  return output;
+}
 
-  const deduped = new Map<number, CompetitionFixture>();
-  for (const fixture of fixtures) deduped.set(fixture.external_api_id, fixture);
+async function fetchEspnWindow(slug: string, range: { from: string; to: string }): Promise<ApiFetchResult> {
+  const chunks = dateChunks(range);
+  const requests = chunks.map(async (chunk) => {
+    const dates = `${compactYmd(chunk.from)}-${compactYmd(chunk.to)}`;
+    const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${dates}&limit=500`;
+    const response = await fetchWithTimeout(url);
+    if (!response.ok) throw new Error(`ESPN ${slug} HTTP ${response.status}`);
+    return (await response.json()) as { events?: EspnEvent[] };
+  });
+
+  const responses = await Promise.all(requests);
+  const byId = new Map<number, CompetitionFixture>();
+  for (const response of responses) {
+    for (const event of response.events ?? []) {
+      const fixture = normalizeEspnEvent(event, slug);
+      if (fixture && inRange(fixture.kickoff, range)) byId.set(fixture.external_api_id, fixture);
+    }
+  }
   return {
-    fixtures: Array.from(deduped.values()).sort(
+    fixtures: Array.from(byId.values()).sort(
       (a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime(),
     ),
-    requests,
+    requests: chunks.length,
     remaining: null,
   };
 }
 
-async function fetchUefaFixturesByIds(sourceLeague: string, ids: number[]): Promise<ApiFetchResult> {
-  const unique = Array.from(new Set(ids.filter((id) => Number.isFinite(id) && id > 0))).slice(0, 80);
-  if (unique.length === 0) return { fixtures: [], requests: 0, remaining: null };
+async function fetchEspnLeagueFixtures(
+  slug: string,
+  season: number,
+  range?: { from: string; to: string },
+): Promise<ApiFetchResult> {
+  // ESPN publikuje los postupně. Místo jednoho ročního dotazu (který může
+  // vrátit nesprávnou sezonu nebo prázdná data) synchronizujeme kratší okna.
+  // Výchozí okno nikdy nezačne před 1. červencem dané sezony, takže se do
+  // Evropy 2026/27 nemohou znovu dostat zápasy z jara 2026.
+  const moving = apiDateWindow(14, 120);
+  const seasonRange = {
+    from: `${season}-07-01`,
+    to: `${season + 1}-06-30`,
+  };
+  const effective = range ?? {
+    from: moving.from < seasonRange.from ? seasonRange.from : moving.from,
+    to: moving.to > seasonRange.to ? seasonRange.to : moving.to,
+  };
+  return fetchEspnWindow(slug, effective);
+}
 
-  const matches = await uefaGet<UefaMatch[]>(UEFA_MATCHES_URL, {
-    matchId: unique.join(','),
-    order: 'ASC',
-  });
-  const fixtures = matches
-    .map((match) => normalizeUefaMatch(match, sourceLeague))
-    .filter((fixture): fixture is CompetitionFixture => fixture !== null);
-  return { fixtures, requests: 1, remaining: null };
+async function fetchEspnFixturesByIds(slug: string, ids: number[]): Promise<ApiFetchResult> {
+  const wanted = new Set(ids.filter((id) => Number.isSafeInteger(id) && id > 0));
+  if (wanted.size === 0) return { fixtures: [], requests: 0, remaining: null };
+  const result = await fetchEspnWindow(slug, apiDateWindow(2, 2));
+  return { ...result, fixtures: result.fixtures.filter((fixture) => wanted.has(fixture.external_api_id)) };
 }
 
 /* -------------------------------------------------------------------------- */
@@ -678,7 +636,7 @@ export async function fetchOfficialLeagueFixtures(
   range?: { from: string; to: string },
 ): Promise<ApiFetchResult> {
   if (sourceLeague === 'cze.1') return fetchChanceLigaPage(range);
-  if (sourceLeague.startsWith('uefa.')) return fetchUefaLeagueFixtures(sourceLeague, season, range);
+  if (sourceLeague.startsWith('uefa.')) return fetchEspnLeagueFixtures(sourceLeague, season, range);
   throw new Error(`Nepodporovaný veřejný zdroj soutěže: ${sourceLeague}`);
 }
 
@@ -691,7 +649,7 @@ export async function fetchOfficialFixturesByIds(
     const wanted = new Set(ids);
     return { ...all, fixtures: all.fixtures.filter((fixture) => wanted.has(fixture.external_api_id)) };
   }
-  if (sourceLeague.startsWith('uefa.')) return fetchUefaFixturesByIds(sourceLeague, ids);
+  if (sourceLeague.startsWith('uefa.')) return fetchEspnFixturesByIds(sourceLeague, ids);
   throw new Error(`Nepodporovaný veřejný zdroj soutěže: ${sourceLeague}`);
 }
 

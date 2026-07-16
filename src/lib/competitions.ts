@@ -49,7 +49,11 @@ export const COMPETITIONS: Competition[] = [
     kind: 'curated',
     selection: 'curated',
     active: true,
-    espnSlugs: ['uefa.champions', 'uefa.europa', 'uefa.europa.conf'],
+    espnSlugs: [
+      'uefa.champions_qual', 'uefa.champions',
+      'uefa.europa_qual', 'uefa.europa',
+      'uefa.europa.conf_qual', 'uefa.europa.conf',
+    ],
   },
 ];
 

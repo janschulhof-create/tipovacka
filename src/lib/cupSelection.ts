@@ -5,7 +5,7 @@ const CZECH_TEAMS = new Set(
   [
     'Sparta', 'Slavia', 'Plzeň', 'Baník', 'Slovácko', 'Jablonec', 'Olomouc',
     'Boleslav', 'Liberec', 'Hradec Králové', 'Dukla', 'Bohemians', 'Teplice',
-    'Karviná', 'Pardubice', 'Zlín', 'Zbrojovka Brno',
+    'Karviná', 'Pardubice', 'Zlín', 'Zbrojovka Brno', 'Artis Brno',
   ].map((t) => canonTeam(t)),
 );
 

@@ -33,10 +33,9 @@ Megatipovačky, automatické načítání rozpisu a výsledků.
         └───────────────────────┬──────────────────────┘
                                 │ service role (jen server)
                                 ▼
-                       ┌──────────────────────────────┐
-                       │ ChanceLiga.cz + veřejná UEFA │
-                       │ data (bez klíče a bez tarifu)│
-                       └──────────────────────────────┘
+                       ┌────────────────────┐
+                       │  API-Football v3   │  rozpis + výsledky + stav
+                       └────────────────────┘
 ```
 
 **Princip:**
@@ -80,15 +79,24 @@ a SQL `calculate_points` (kanonická, počítá produkčně).
 
 ---
 
-## 4) Zdroje fotbalových dat
+## 4) Zdroj dat
 
-| Soutěž | Zdroj | Klíč / tarif |
-|---|---|---|
-| MS 2026 | stávající football-data + ESPN integrace | beze změny |
-| Chance liga | oficiální rozpis a výsledky `chanceliga.cz` | žádný |
-| Liga mistrů, Evropská liga, Konferenční liga | veřejné datové endpointy UEFA | žádný |
+| Soutěž | Zdroj | Klíč / tarif | Použití |
+|---|---|---|---|
+| **Chance liga** | oficiální web LFA / Chance Ligy | žádný | rozpis, termíny a výsledky; parser kontroluje 30 kol × 8 zápasů |
+| **Evropské poháry** | veřejný ESPN scoreboard | žádný | kvalifikace i hlavní fáze, průběžné skóre a stav utkání |
+| **MS 2026** | stávající synchronizace projektu | beze změny | zachovaný původní provoz |
 
-Stávající cron volá pouze `/api/sync?key=...`. Tento endpoint obslouží MS 2026 a současně spustí synchronizaci Chance ligy a Evropy. Podrobnosti a diagnostické URL jsou v [`MIGRACE_CHANCE_LIGA.md`](MIGRACE_CHANCE_LIGA.md).
+Pro českou ligu není použitý náhodný bezplatný agregátor. Zdrojem je oficiální
+rozpis soutěže. Synchronizace přijímá pouze skutečný řádek ve formátu
+`domácí klub – skóre – hostující klub`; duplicitní odkazy z postranního programu
+ignoruje. Při plné synchronizaci navíc ověří přesně 240 zápasů základní části,
+osm utkání v každém kole a šestnáct různých týmů na kolo. Neúplná nebo
+strukturálně chybná data se do databáze nezapíšou.
+
+Evropa používá ESPN slugs pro kvalifikaci i hlavní soutěže Ligy mistrů,
+Evropské ligy a Konferenční ligy. Data se načítají v kratších datumových oknech,
+aby se do sezony 2026/27 nepřimíchala předchozí sezona.
 
 ---
 
@@ -129,7 +137,7 @@ src/
     page.tsx            # HOME (server)
     tipovat/page.tsx    # výběr hráče + matches (server) → PredictionForm
     sin-slavy/page.tsx  # historické statistiky (server)
-    api/sync/route.ts   # společný cron: MS + další soutěže
+    api/sync/route.ts   # sync z API-Football (cron / ruční)
   components/
     StandingsTable.tsx  StatsCards.tsx  MatchList.tsx  PredictionForm.tsx
   lib/
@@ -148,7 +156,7 @@ vercel.json                            # cron */15
 
 1. **Den 1 — Supabase:** projekt, spustit `schema.sql` + `seed.sql`, ověřit
    triggery (zkusit vložit tip do „minulého" zápasu → musí selhat).
-2. **Den 1 — zdroje:** žádná registrace ke sportovnímu API není potřeba.
+2. **Den 1 — API:** registrace API-Football, najít league ID, vyplnit `.env`.
 3. **Den 2 — Sync:** `npm run dev`, ručně `GET /api/sync?key=...`, zkontrolovat
    naplněné `matches`. Nastavit Vercel Cron.
 4. **Den 2 — Frontend:** home + tipovat ověřit na telefonu (DevTools mobile).
@@ -162,7 +170,7 @@ vercel.json                            # cron */15
 
 ```bash
 npm install
-cp .env.example .env.local   # doplň Supabase a CRON_SECRET
+cp .env.example .env.local   # doplň Supabase + API-Football klíče
 # v Supabase SQL editoru spusť supabase/schema.sql a seed.sql
 npm run dev                  # http://localhost:3000
 curl "http://localhost:3000/api/sync?key=<CRON_SECRET>"   # první načtení dat
