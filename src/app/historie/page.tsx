@@ -18,7 +18,7 @@ export default async function HistoriePage() {
   const titleRows = [{ name: winner, val: '1×', n: 1 }];
 
   // Statistiky navíc, které dávají smysl jen u MS (shodné se Síní slávy)
-  const seasonId = await getActiveSeasonId();
+  const seasonId = await getActiveSeasonId('ms');
   const [stoppage, wizCont] = seasonId
     ? await Promise.all([getStoppageStats(seasonId), getWizardAndContinentStats(seasonId)])
     : [[], { wizard: [], spodina: [], continents: [] }];

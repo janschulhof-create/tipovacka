@@ -15,7 +15,7 @@ export default async function SinSlavyPage() {
 
   // ── MS 2026: probíhající sezóna z DB, stojí bokem ──
   const ms = await getMsSeason();
-  const seasonId = await getActiveSeasonId();
+  const seasonId = await getActiveSeasonId('ms');
   const [stoppage, wizCont] = seasonId
     ? await Promise.all([getStoppageStats(seasonId), getWizardAndContinentStats(seasonId)])
     : [[], { wizard: [], spodina: [], continents: [] }];

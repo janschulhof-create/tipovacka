@@ -16,7 +16,7 @@ export default async function HracPage({
   const playerId = Number(id);
   if (!Number.isFinite(playerId)) notFound();
 
-  const seasonId = await getActiveSeasonId();
+  const seasonId = await getActiveSeasonId('liga');
   if (!seasonId) return <p className="px-1 py-6 text-sm text-slate-100/50">Není aktivní sezóna.</p>;
 
   const profile = await getPlayerProfile(seasonId, playerId);

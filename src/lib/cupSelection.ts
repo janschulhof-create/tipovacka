@@ -1,50 +1,29 @@
 import { canonTeam } from './teamAliases';
 
-/**
- * Výběr zápasů z evropských pohárů.
- *
- * Nebereme všechny zápasy — jen:
- *   1) VŽDY zápasy s českým týmem (Sparta, Slavia, Plzeň, …),
- *   2) ručně vybrané zajímavé zápasy (velké značky, derby, šlágry) z allowlistu níže.
- *
- * Allowlist se udržuje tady — stačí dopsat dvojici týmů. Porovnává se
- * bez ohledu na pořadí (domácí/hosté) a přes kanonické názvy.
- */
-
-/** České týmy, které se mohou objevit v evropských pohárech. */
+/** České kluby, jejichž evropské zápasy se vybírají vždy. */
 const CZECH_TEAMS = new Set(
   [
-    'Sparta',
-    'Slavia',
-    'Plzeň',
-    'Baník',
-    'Slovácko',
-    'Jablonec',
-    'Olomouc',
-    'Boleslav',
-    'Liberec',
-    'Hradec',
-    'Dukla',
-    'Bohemians',
-    'Teplice',
-    'Karviná',
-    'Pardubice',
-    'Zlín',
+    'Sparta', 'Slavia', 'Plzeň', 'Baník', 'Slovácko', 'Jablonec', 'Olomouc',
+    'Boleslav', 'Liberec', 'Hradec Králové', 'Dukla', 'Bohemians', 'Teplice',
+    'Karviná', 'Pardubice', 'Zlín', 'Zbrojovka Brno',
   ].map((t) => canonTeam(t)),
 );
 
-/**
- * Ručně vybrané zajímavé zápasy (bez ohledu na pořadí týmů).
- * Klíč = dvojice kanonických názvů seřazená abecedně a spojená „|".
- * Sem dopisuj šlágry, které chceš do tipovačky pustit i bez českého týmu.
- */
+/** Kluby, jejichž vzájemné zápasy považujeme za automatický evropský šlágr. */
+const FEATURED_CLUBS = new Set(
+  [
+    'Real Madrid', 'Barcelona', 'Atlético Madrid', 'Manchester City', 'Liverpool',
+    'Arsenal', 'Chelsea', 'Manchester United', 'Bayern Mnichov', 'Dortmund',
+    'PSG', 'Inter Milán', 'AC Milán', 'Juventus', 'Neapol', 'Benfica', 'Porto',
+  ].map((t) => canonTeam(t)),
+);
+
+/** Ruční allowlist. Stačí doplnit dvojici přes `pairKey`. */
 const INTERESTING = new Set<string>([
-  // příklady – uprav podle chuti:
-  // pairKey('Real Madrid', 'Barcelona'),
-  // pairKey('Manchester City', 'Bayern Mnichov'),
+  // pairKey('Ajax', 'Feyenoord'),
 ]);
 
-function pairKey(a: string, b: string): string {
+export function pairKey(a: string, b: string): string {
   return [canonTeam(a), canonTeam(b)].sort((x, y) => x.localeCompare(y, 'cs')).join('|');
 }
 
@@ -52,18 +31,15 @@ export function isCzechTeam(name: string): boolean {
   return CZECH_TEAMS.has(canonTeam(name));
 }
 
-/**
- * Má se tenhle pohárový zápas vzít do tipovačky?
- * true = český tým na některé straně, nebo je dvojice na allowlistu.
- */
-export function selectCupMatch(home: string, away: string): boolean {
-  if (isCzechTeam(home) || isCzechTeam(away)) return true;
-  return INTERESTING.has(pairKey(home, away));
+export function selectionReason(home: string, away: string): 'czech' | 'featured' | 'manual' | null {
+  if (isCzechTeam(home) || isCzechTeam(away)) return 'czech';
+  const h = canonTeam(home);
+  const a = canonTeam(away);
+  if (FEATURED_CLUBS.has(h) && FEATURED_CLUBS.has(a)) return 'featured';
+  if (INTERESTING.has(pairKey(home, away))) return 'manual';
+  return null;
 }
 
-/** Důvod výběru (pro ladění / štítek v UI). */
-export function selectionReason(home: string, away: string): 'czech' | 'interesting' | null {
-  if (isCzechTeam(home) || isCzechTeam(away)) return 'czech';
-  if (INTERESTING.has(pairKey(home, away))) return 'interesting';
-  return null;
+export function selectCupMatch(home: string, away: string): boolean {
+  return selectionReason(home, away) !== null;
 }

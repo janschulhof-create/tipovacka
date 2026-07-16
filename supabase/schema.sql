@@ -20,13 +20,16 @@ exception when duplicate_object then null; end $$;
 create table if not exists seasons (
   id          bigint generated always as identity primary key,
   name        text not null,                 -- např. "2025/26"
-  api_season  int  not null,                 -- rok pro API-Football (např. 2025)
+  api_season  int  not null,                 -- rok soutěžního ročníku
+  competition_key text not null default 'liga' check (competition_key in ('liga', 'evropa', 'ms')),
   is_active   boolean not null default false,
   created_at  timestamptz not null default now()
 );
--- Jen jedna aktivní sezóna
-create unique index if not exists one_active_season
-  on seasons (is_active) where is_active;
+-- Jedna aktivní sezóna pro každou soutěž
+create unique index if not exists one_active_season_per_competition
+  on seasons (competition_key) where is_active;
+create unique index if not exists seasons_competition_name_unique
+  on seasons (competition_key, name);
 
 -- ----------------------------- PLAYERS -------------------------------
 create table if not exists players (
@@ -40,16 +43,25 @@ create table if not exists players (
 create table if not exists matches (
   id              bigint generated always as identity primary key,
   season_id       bigint not null references seasons(id) on delete cascade,
-  external_api_id bigint unique,             -- fixture.id z API-Football
-  round           int not null,              -- číslo kola
+  external_api_id bigint,                    -- ID události ve zdroji
+  source_league   text,                       -- ESPN slug (cze.1, uefa.champions, …)
+  round           int not null,              -- číslo kola / stabilní klíč týdne
+  round_label     text,
+  selection_reason text,
   kickoff         timestamptz not null,
   home_team       text not null,
   away_team       text not null,
   home_score      int,                       -- null dokud není znám
   away_score      int,
   status          match_status not null default 'scheduled',
+  minute          int,
+  clock           text,
+  duration        text not null default 'REGULAR',
   updated_at      timestamptz not null default now()
 );
+create unique index if not exists matches_source_event_unique
+  on matches (source_league, external_api_id)
+  where external_api_id is not null and source_league is not null;
 create index if not exists matches_round_idx  on matches (season_id, round);
 create index if not exists matches_status_idx on matches (status);
 

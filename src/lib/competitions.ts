@@ -1,79 +1,60 @@
 /**
- * Centrální konfigurace soutěží — jeden zdroj pravdy pro dashboard i budoucí sync.
+ * Centrální konfigurace soutěží — jeden zdroj pravdy pro dashboard i sync.
  *
- * `slug`      = ESPN league slug (ověřeno z ESPN seznamu lig).
- * `kind`      = jak se soutěž chová (poháry mají vyřazovací názvy kol, liga „N. kolo").
- * `selection` = které zápasy bereme:
- *                 'all'     → všechny (MS, Chance liga),
- *                 'curated' → jen vybrané (evropské poháry: české týmy vždy + ručně vybrané).
- * `active`    = jestli už reálně jede (má data v DB / zapnutý sync).
+ * Chance liga je hlavní dlouhodobá soutěž. „Evropa“ sdružuje vybrané zápasy
+ * Ligy mistrů, Evropské ligy a Konferenční ligy do jedné tipovací sekce.
  */
-export type CompetitionKey = 'ms' | 'liga' | 'lm' | 'el' | 'ekl';
+export type CompetitionKey = 'liga' | 'evropa' | 'ms';
 
 export interface Competition {
   key: CompetitionKey;
-  label: string; // plný název
-  short: string; // do přepínače
+  label: string;
+  short: string;
   icon: string;
-  slug: string; // ESPN slug
-  kind: 'cup-knockout' | 'league' | 'cup-mixed';
+  kind: 'cup-knockout' | 'league' | 'curated';
   selection: 'all' | 'curated';
   active: boolean;
+  espnSlugs: string[];
 }
 
+export const DEFAULT_COMPETITION_KEY: CompetitionKey = 'liga';
+
 export const COMPETITIONS: Competition[] = [
-  {
-    key: 'ms',
-    label: 'MS 2026',
-    short: 'MS 2026',
-    icon: '🌍',
-    slug: 'fifa.world',
-    kind: 'cup-knockout',
-    selection: 'all',
-    active: true, // právě dobíhá
-  },
   {
     key: 'liga',
     label: 'Chance liga',
     short: 'Chance liga',
-    icon: '🇨🇿',
-    slug: 'cze.1',
+    icon: 'CZ',
     kind: 'league',
     selection: 'all',
-    active: false, // startuje příští víkend – čeká na ověření cze.1
+    active: true,
+    espnSlugs: ['cze.1'],
   },
   {
-    key: 'lm',
-    label: 'Liga mistrů',
-    short: 'LM',
-    icon: '🏆',
-    slug: 'uefa.champions',
-    kind: 'cup-mixed',
-    selection: 'curated', // jen české týmy + vybrané zajímavé zápasy
-    active: false,
-  },
-  {
-    key: 'el',
-    label: 'Evropská liga',
-    short: 'EL',
-    icon: '🥈',
-    slug: 'uefa.europa',
-    kind: 'cup-mixed',
+    key: 'evropa',
+    label: 'Evropa',
+    short: 'Evropa',
+    icon: 'EU',
+    kind: 'curated',
     selection: 'curated',
-    active: false,
+    active: true,
+    espnSlugs: ['uefa.champions', 'uefa.europa', 'uefa.europa.conf'],
   },
   {
-    key: 'ekl',
-    label: 'Evropská konferenční liga',
-    short: 'EKL',
-    icon: '🥉',
-    slug: 'uefa.europa.conf',
-    kind: 'cup-mixed',
-    selection: 'curated',
-    active: false,
+    key: 'ms',
+    label: 'MS 2026',
+    short: 'MS 2026',
+    icon: 'MS',
+    kind: 'cup-knockout',
+    selection: 'all',
+    active: true,
+    espnSlugs: ['fifa.world'],
   },
 ];
 
 export function getCompetition(key: string | undefined): Competition {
-  return COMPETITIONS.find((c) => c.key === key) ?? COMPETITIONS[0];
+  return (
+    COMPETITIONS.find((c) => c.key === key) ??
+    COMPETITIONS.find((c) => c.key === DEFAULT_COMPETITION_KEY)!
+  );
 }

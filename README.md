@@ -6,6 +6,9 @@ Megatipovačky, automatické načítání rozpisu a výsledků.
 
 ---
 
+> **Migrace 2026/27:** Projekt nově podporuje souběžně Chance ligu, výběr evropských pohárů pod sekcí Evropa a archiv MS 2026. Postup nasazení je v [`MIGRACE_CHANCE_LIGA.md`](MIGRACE_CHANCE_LIGA.md).
+
+
 ## 1) Architektura
 
 ```

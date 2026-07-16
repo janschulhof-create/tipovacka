@@ -7,6 +7,7 @@ import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
 import { Baroko, H2HContent, PredictionContent, useInsight } from './MatchIntel';
+import { sourceLabel } from '@/lib/espnCompetition';
 
 type Scores = Record<number, { h: string; a: string }>;
 
@@ -426,6 +427,11 @@ function MatchRow({
   const StatusLine = (
     <div className="mb-2 flex items-start justify-between text-[11px] uppercase tracking-wide text-slate-100/45">
       <span className="flex items-center gap-1.5">
+        {m.source_league?.startsWith('uefa.') && (
+          <span className="rounded bg-terrain-800 px-1.5 py-0.5 text-[9px] font-semibold normal-case tracking-normal text-slate-200/70">
+            {sourceLabel(m.source_league)}
+          </span>
+        )}
         {live ? (
           <><span className="live-dot" /> <span className="text-flag">živě{m.clock ? ` ${m.clock}` : m.minute != null ? ` ${m.minute}\u2032` : ''}</span></>
         ) : done ? 'konec' : locked ? '🔒 uzavřeno' : '🟢 otevřeno'}

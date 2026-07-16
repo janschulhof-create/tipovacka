@@ -52,7 +52,7 @@ export default async function ProfilPage({
   const rawEmail = user?.email ?? '';
   const currentEmail = rawEmail.endsWith('@obtipovacka.local') ? '' : rawEmail;
 
-  const seasonId = await getActiveSeasonId();
+  const seasonId = await getActiveSeasonId('liga');
   if (!seasonId) return <p className="px-1 py-6 text-sm text-slate-100/50">Není aktivní sezóna.</p>;
 
   const profile = await getPlayerProfile(seasonId, player.id);

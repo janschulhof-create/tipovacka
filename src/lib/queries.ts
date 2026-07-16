@@ -2,21 +2,43 @@ import { createServerReadClient } from '@/lib/supabase/server';
 import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player } from '@/lib/types';
 import { calculatePoints } from './scoring';
 import { CONTINENTS, matchContinents, type ContinentKey } from './continents';
+import type { CompetitionKey } from './competitions';
 
-export async function getActiveSeasonId(): Promise<number | null> {
-  const sb = createServerReadClient();
-  const { data } = await sb.from('seasons').select('id').eq('is_active', true).single();
-  return data?.id ?? null;
+export interface ActiveSeason {
+  id: number;
+  name: string;
+  competition_key: CompetitionKey;
 }
 
-export async function getActiveSeason(): Promise<{ id: number; name: string } | null> {
+export async function getActiveSeasonId(competitionKey: CompetitionKey = 'liga'): Promise<number | null> {
+  const season = await getActiveSeason(competitionKey);
+  return season?.id ?? null;
+}
+
+export async function getActiveSeason(competitionKey: CompetitionKey = 'liga'): Promise<ActiveSeason | null> {
   const sb = createServerReadClient();
   const { data } = await sb
     .from('seasons')
-    .select('id, name')
+    .select('id, name, competition_key')
+    .eq('competition_key', competitionKey)
     .eq('is_active', true)
-    .single();
-  return (data as { id: number; name: string }) ?? null;
+    .maybeSingle();
+  return (data as ActiveSeason | null) ?? null;
+}
+
+/** Popisky kol uložené u zápasů (např. „Evropa · týden 31/2026"). */
+export async function getRoundLabels(seasonId: number): Promise<Record<number, string>> {
+  const sb = createServerReadClient();
+  const { data } = await sb
+    .from('matches')
+    .select('round, round_label')
+    .eq('season_id', seasonId)
+    .not('round_label', 'is', null);
+  const out: Record<number, string> = {};
+  for (const row of (data as { round: number; round_label: string | null }[]) ?? []) {
+    if (row.round_label && !out[row.round]) out[row.round] = row.round_label;
+  }
+  return out;
 }
 
 /** Aktuální kolo = nejbližší kolo s nejméně jedním nezačatým zápasem,

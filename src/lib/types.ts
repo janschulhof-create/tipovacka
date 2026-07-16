@@ -33,6 +33,9 @@ export interface Match {
   clock?: string | null; // živá minuta z ESPN ("90'+8'")
   roast?: string | null; // vtipné zhodnocení zápasu (LLM)
   detail?: import('./espn').MatchDetail | null;
+  source_league?: string | null;
+  round_label?: string | null;
+  selection_reason?: string | null;
 }
 
 export interface Prediction {

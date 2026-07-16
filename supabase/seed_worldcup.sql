@@ -4,9 +4,9 @@
 --  Časy výkopů jsou ORIENTAČNÍ – uprav v Supabase dle FIFA.
 -- ============================================================
 
-update seasons set is_active = false;
-insert into seasons (name, api_season, is_active)
-select 'MS 2026', 2026, true
+update seasons set is_active = false where competition_key = 'ms';
+insert into seasons (name, api_season, competition_key, is_active)
+select 'MS 2026', 2026, 'ms', true
 where not exists (select 1 from seasons where name = 'MS 2026');
 update seasons set is_active = true where name = 'MS 2026';
 

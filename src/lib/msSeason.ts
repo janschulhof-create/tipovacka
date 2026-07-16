@@ -8,7 +8,7 @@ import type { Historie } from '@/components/HistorieView';
  * úplně stejnými komponentami jako dokončené sezóny Chance ligy.
  */
 export async function getMsSeason(): Promise<{ data: Historie; rounds: SRound[] } | null> {
-  const season = await getActiveSeason();
+  const season = await getActiveSeason('ms');
   if (!season) return null;
 
   const rounds = (await getSeasonTipRounds(season.id)) as SRound[];

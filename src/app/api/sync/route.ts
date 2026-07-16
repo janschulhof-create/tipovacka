@@ -34,7 +34,7 @@ export async function GET(req: NextRequest) {
   const supabase = createAdminClient();
 
   const { data: season, error: seasonErr } = await supabase
-    .from('seasons').select('id').eq('is_active', true).single();
+    .from('seasons').select('id').eq('competition_key', 'ms').eq('is_active', true).single();
   if (seasonErr || !season) {
     return NextResponse.json({ error: 'no active season' }, { status: 500 });
   }

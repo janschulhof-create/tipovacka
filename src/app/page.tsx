@@ -9,10 +9,11 @@ import {
   getSeasonChartData,
   getLiveMatches,
   getLivePointsByPlayer,
+  getRoundLabels,
 } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
-import { isKnockoutSeason, roundLabel } from '@/lib/roundLabel';
+import { roundLabel } from '@/lib/roundLabel';
 import { CompetitionSwitcher } from '@/components/CompetitionSwitcher';
 import { ComingSoonPanel } from '@/components/ComingSoonPanel';
 import { getCompetition } from '@/lib/competitions';
@@ -32,21 +33,10 @@ export default async function Home({
 }: {
   searchParams: Promise<{ kolo?: string; soutez?: string }>;
 }) {
-  const season = await getActiveSeason();
-  if (!season) return <Empty msg="Není nastavená aktivní sezóna." />;
-  const seasonId = season.id;
-  const knockout = isKnockoutSeason(season.name);
-
-  const [rounds, currentRound] = await Promise.all([
-    getSeasonRounds(seasonId),
-    getCurrentRound(seasonId),
-  ]);
-
   const sp = await searchParams;
   const competition = getCompetition(sp?.soutez);
 
-  // Zatím je napojené jen MS; ostatní soutěže ukážou „připravuje se".
-  if (!competition.active || competition.key !== 'ms') {
+  if (!competition.active) {
     return (
       <main className="space-y-6">
         <CompetitionSwitcher current={competition.key} />
@@ -54,6 +44,24 @@ export default async function Home({
       </main>
     );
   }
+
+  const season = await getActiveSeason(competition.key);
+  if (!season) {
+    return (
+      <main className="space-y-6">
+        <CompetitionSwitcher current={competition.key} />
+        <ComingSoonPanel competition={competition} />
+      </main>
+    );
+  }
+
+  const seasonId = season.id;
+  const knockout = competition.kind === 'cup-knockout';
+  const [rounds, currentRound, roundLabels] = await Promise.all([
+    getSeasonRounds(seasonId),
+    getCurrentRound(seasonId),
+    getRoundLabels(seasonId),
+  ]);
 
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
   const selectedRound =
@@ -88,13 +96,13 @@ export default async function Home({
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}
       <header className="flex items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold tracking-wide text-white sm:text-3xl">
-          {selectedRound ? roundLabel(selectedRound, knockout) : 'Aktuální kolo'}
+          {selectedRound ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
           <span className="ml-2 hidden align-middle text-sm font-normal text-slate-300/50 sm:inline">
             {season.name}
           </span>
         </h1>
         {selectedRound != null && rounds.length > 0 && (
-          <RoundSelector rounds={rounds} current={selectedRound} knockout={knockout} />
+          <RoundSelector rounds={rounds} current={selectedRound} knockout={knockout} labels={roundLabels} />
         )}
       </header>
 
