@@ -13,6 +13,9 @@ import {
 import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
 import { isKnockoutSeason, roundLabel } from '@/lib/roundLabel';
+import { CompetitionSwitcher } from '@/components/CompetitionSwitcher';
+import { ComingSoonPanel } from '@/components/ComingSoonPanel';
+import { getCompetition } from '@/lib/competitions';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { Suspense } from 'react';
@@ -27,7 +30,7 @@ export const dynamic = 'force-dynamic';
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ kolo?: string }>;
+  searchParams: Promise<{ kolo?: string; soutez?: string }>;
 }) {
   const season = await getActiveSeason();
   if (!season) return <Empty msg="Není nastavená aktivní sezóna." />;
@@ -40,6 +43,18 @@ export default async function Home({
   ]);
 
   const sp = await searchParams;
+  const competition = getCompetition(sp?.soutez);
+
+  // Zatím je napojené jen MS; ostatní soutěže ukážou „připravuje se".
+  if (!competition.active || competition.key !== 'ms') {
+    return (
+      <main className="space-y-6">
+        <CompetitionSwitcher current={competition.key} />
+        <ComingSoonPanel competition={competition} />
+      </main>
+    );
+  }
+
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
   const selectedRound =
     !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : currentRound;
@@ -66,6 +81,7 @@ export default async function Home({
 
   return (
     <main className="space-y-6">
+      <CompetitionSwitcher current={competition.key} />
       <LiveRefresh hasLive={liveMatches.length > 0} />
       <LiveBanner matches={liveMatches} />
 
