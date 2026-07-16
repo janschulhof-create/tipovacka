@@ -36,21 +36,13 @@ export default async function Home({
   const sp = await searchParams;
   const competition = getCompetition(sp?.soutez);
 
-  if (!competition.active) {
-    return (
-      <main className="space-y-6">
-        <CompetitionSwitcher current={competition.key} />
-        <ComingSoonPanel competition={competition} />
-      </main>
-    );
-  }
-
-  const season = await getActiveSeason(competition.key);
+  const season = competition.active ? await getActiveSeason(competition.key) : null;
   if (!season) {
+    const players = await getPlayers();
     return (
       <main className="space-y-6">
         <CompetitionSwitcher current={competition.key} />
-        <ComingSoonPanel competition={competition} />
+        <ComingSoonPanel competition={competition} players={players} />
       </main>
     );
   }

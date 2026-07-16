@@ -1,8 +1,9 @@
 /**
  * Centrální konfigurace soutěží — jeden zdroj pravdy pro dashboard i sync.
  *
- * Chance liga je hlavní dlouhodobá soutěž. „Evropa“ sdružuje vybrané zápasy
- * Ligy mistrů, Evropské ligy a Konferenční ligy do jedné tipovací sekce.
+ * MS 2026 je výchozí soutěž. Chance liga je hlavní dlouhodobá soutěž a
+ * „Evropa“ sdružuje vybrané zápasy Ligy mistrů, Evropské ligy a
+ * Konferenční ligy do jedné tipovací sekce.
  */
 export type CompetitionKey = 'liga' | 'evropa' | 'ms';
 
@@ -17,9 +18,19 @@ export interface Competition {
   espnSlugs: string[];
 }
 
-export const DEFAULT_COMPETITION_KEY: CompetitionKey = 'liga';
+export const DEFAULT_COMPETITION_KEY: CompetitionKey = 'ms';
 
 export const COMPETITIONS: Competition[] = [
+  {
+    key: 'ms',
+    label: 'MS 2026',
+    short: 'MS 2026',
+    icon: 'MS',
+    kind: 'cup-knockout',
+    selection: 'all',
+    active: true,
+    espnSlugs: ['fifa.world'],
+  },
   {
     key: 'liga',
     label: 'Chance liga',
@@ -39,16 +50,6 @@ export const COMPETITIONS: Competition[] = [
     selection: 'curated',
     active: true,
     espnSlugs: ['uefa.champions', 'uefa.europa', 'uefa.europa.conf'],
-  },
-  {
-    key: 'ms',
-    label: 'MS 2026',
-    short: 'MS 2026',
-    icon: 'MS',
-    kind: 'cup-knockout',
-    selection: 'all',
-    active: true,
-    espnSlugs: ['fifa.world'],
   },
 ];
 

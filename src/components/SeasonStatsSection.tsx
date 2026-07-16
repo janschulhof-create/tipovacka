@@ -36,17 +36,15 @@ export async function SeasonStatsSection({
   return (
     <>
       <StatsCards standings={standings} goals={goals} />
-      {hasResults && (
-        <SeasonStats
-          rounds={tipRounds}
-          players={activeNames}
-          stoppage={stoppage}
-          wizard={wizCont.wizard}
-          spodina={wizCont.spodina}
-          misses={misses}
-          continents={wizCont.continents}
-        />
-      )}
+      <SeasonStats
+        rounds={tipRounds}
+        players={hasResults ? activeNames : []}
+        stoppage={hasResults ? stoppage : []}
+        wizard={hasResults ? wizCont.wizard : []}
+        spodina={hasResults ? wizCont.spodina : []}
+        misses={hasResults ? misses : []}
+        continents={hasResults ? wizCont.continents : []}
+      />
     </>
   );
 }

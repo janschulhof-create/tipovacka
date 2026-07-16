@@ -22,7 +22,32 @@ export function SeasonStats({
   continents?: { key: string; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
 }) {
   if (players.length === 0) {
-    return <p className="px-1 text-sm text-slate-100/45">Statistiky se objeví, jakmile padnou první výsledky.</p>;
+    const emptyCards = [
+      { icon: '🏅', label: 'Nejvíce vyhraných kol', accent: 'text-pitch-light' },
+      { icon: '💥', label: 'Rekord za 1 kolo', accent: 'text-flag' },
+      { icon: '💀', label: 'Král nuličky', accent: 'text-control' },
+      { icon: '🧠', label: 'Mr. Alzheimer', accent: 'text-control' },
+      { icon: '🧙', label: 'Černokněžník (bodoval jako jediný)', accent: 'text-purple-400' },
+      { icon: '🤡', label: 'Blamáž (jako jediný nebodoval)', accent: 'text-red-400' },
+      { icon: '🎓', label: 'Profesorský fotbal', accent: 'text-slate-300' },
+      { icon: '🍀', label: 'Faktor smůly (smolař)', accent: 'text-flag' },
+      { icon: '⏱️', label: 'Pán nastavení', accent: 'text-green-400' },
+      { icon: '🔁', label: 'Nejčastější tip', accent: 'text-pitch-light' },
+      { icon: '🟢', label: 'Čitelný tip (nejčastěji vyšel)', accent: 'text-green-400' },
+      { icon: '🔴', label: 'Nečitelný tip (nejčastěji 0 b)', accent: 'text-red-400' },
+      { icon: '🎯', label: 'Nejlíp čitelný tým', accent: 'text-pitch-light' },
+      { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control' },
+      { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control' },
+      { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light' },
+    ];
+
+    return (
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {emptyCards.map((card) => (
+          <StatCard key={card.label} {...card} rows={[]} />
+        ))}
+      </div>
+    );
   }
   const pp = computePerPlayer(rounds, players);
   const ff = funFacts(rounds, players);
@@ -56,7 +81,7 @@ export function SeasonStats({
     { icon: '🌀', label: 'Nejhůř čitelný tým', accent: 'text-control', scale: true, scaleInvert: true, rows: [...ff.teamRows].reverse() },
     { icon: '😱', label: 'Překvapení sezóny', accent: 'text-control', scale: true, scaleInvert: true, rows: ff.surpriseRows },
     { icon: '✅', label: 'Jistota sezóny', accent: 'text-pitch-light', scale: true, rows: ff.bankerRows },
-  ].filter((c) => c.rows.length > 0);
+  ];
 
   return (
     <div className="space-y-4">
