@@ -1,4 +1,4 @@
-/** Sjednocení názvů klubů ze SofaScore, ESPN, historie a ručních konfigurací. */
+/** Sjednocení názvů klubů z veřejných zdrojů, ESPN, historie a ručních konfigurací. */
 const ALIASES: Record<string, string> = {
   Sigma: 'Olomouc',
   'Sigma Olomouc': 'Olomouc',
@@ -46,8 +46,11 @@ const ALIASES: Record<string, string> = {
   'Bohemians Praha 1905': 'Bohemians',
   Slovacko: 'Slovácko',
   '1. FC Slovacko': 'Slovácko',
+  '1.FC Slovacko': 'Slovácko',
+  '1.FC Slovácko': 'Slovácko',
   '1. FC Slovácko': 'Slovácko',
   'FC Zbrojovka Brno': 'Zbrojovka Brno',
+  'SK Artis Brno': 'Artis Brno',
   'Zbrojovka Brno': 'Zbrojovka Brno',
   'Real Madrid CF': 'Real Madrid',
   'FC Barcelona': 'Barcelona',

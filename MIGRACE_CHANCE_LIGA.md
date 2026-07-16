@@ -1,110 +1,70 @@
-# Migrace na Chance ligu 2026/27 a sekci Evropa
+# Chance liga a Evropa – bezplatná synchronizace
 
-Projekt zachovává stávající Next.js, Supabase, přihlašování, bodování, profily,
-statistiky i mobilní layout. Migrace rozšiřuje původní model jedné aktivní
-soutěže na MS 2026, Chance ligu a společnou sekci Evropa.
+## Zdroje dat
 
-## Co je připravené
+Aplikace nepoužívá placené sportovní API ani žádný nový API klíč.
 
-- `MS 2026` je první a výchozí soutěž aplikace.
-- `Chance liga` funguje jako samostatná dlouhodobá soutěž.
-- `Evropa` sdružuje vybrané zápasy Ligy mistrů, Evropské ligy a Konferenční ligy.
-- Každá soutěž má vlastní sezonu, zápasy, pořadí, body a statistiky.
-- Automatické uzavření tipů a databázový přepočet bodů fungují pro všechny soutěže.
-- Automatické Anthropic hodnocení dohraných zápasů funguje pro všechny soutěže,
-  pokud je v projektu nastavený stávající `ANTHROPIC_API_KEY`.
+- **Chance liga:** oficiální rozpis a výsledky na `chanceliga.cz`
+- **Evropa:** veřejné datové endpointy UEFA pro Ligu mistrů, Evropskou ligu a Konferenční ligu
+- **MS 2026:** stávající synchronizace zůstává beze změny
 
-## Databázová migrace
+Ve Vercelu není potřeba nastavovat `API_FOOTBALL_KEY` ani jinou sportovní API proměnnou.
 
-V Supabase SQL Editoru spusť:
+## Stávající cron
+
+Cron ani jeho URL se nemění. Nadále volej stávající endpoint:
 
 ```text
-supabase/migrations/20260716_multi_competitions.sql
+/api/sync?key=TVUJ_CRON_SECRET
 ```
 
-Migrace zachová existující zápasy, tipy i body a založí aktivní sezony
-`Chance liga 2026/27` a `Evropa 2026/27`.
+Jeden běh zpracuje MS 2026, Chance ligu i Evropu.
 
-## Bezplatný zdroj zápasů
+## První načtení
 
-Chance liga a Evropa používají veřejný JSON feed SofaScore, který používá také
-web SofaScore. Nevyžaduje registraci, tarif ani API klíč. Ve Vercelu tedy není
-potřeba nastavovat `API_FOOTBALL_KEY` ani žádnou jinou proměnnou pro výsledky.
+Po nasazení otevři jednou stejnou synchronizační URL. Prázdná soutěž automaticky spustí načtení celé sezony.
 
-Používané soutěže:
+Úspěšný výstup obsahuje například:
+
+```json
+{
+  "additionalCompetitions": {
+    "body": {
+      "results": {
+        "liga": { "source": "chanceliga-official", "fetched": 240 },
+        "evropa": { "source": "uefa-official-public", "fetched": 100 }
+      }
+    }
+  }
+}
+```
+
+Čísla jsou orientační. U Evropy je `selected` menší než `fetched`, protože se ukládají české kluby a vybrané šlágry.
+
+## Diagnostika
+
+Bez zápisu do databáze lze otestovat jednotlivé zdroje:
 
 ```text
-Chance liga          SofaScore unique tournament 172
-Liga mistrů          SofaScore unique tournament 7
-Evropská liga        SofaScore unique tournament 679
-Konferenční liga     SofaScore unique tournament 17015
+/api/liga-check?key=TVUJ_CRON_SECRET&source=cze.1
+/api/liga-check?key=TVUJ_CRON_SECRET&source=uefa.champions
+/api/liga-check?key=TVUJ_CRON_SECRET&source=uefa.europa
+/api/liga-check?key=TVUJ_CRON_SECRET&source=uefa.europa.conf
 ```
 
-Jde o neoficiální a negarantované webové endpointy podobně jako u původního
-ESPN feedu. Proto synchronizace vrací srozumitelnou chybu, pokud SofaScore
-endpoint dočasně změní nebo zablokuje.
-
-## Synchronizace
-
-Stávající endpoint `/api/sync` jedním během zpracuje:
-
-1. MS 2026,
-2. Chance ligu,
-3. Evropu,
-4. přepočet bodů po zapsání výsledku,
-5. chybějící automatická hodnocení zápasů.
-
-Stávající cron, jeho interval i URL se nemění. Při první synchronizaci Chance
-ligy a Evropy se automaticky načte celá sezona. Další běhy jsou úsporné:
-
-- právě hrané zápasy se aktualizují nejvýše jednou za 10 minut,
-- rozpis se kontroluje přibližně jednou za 12 hodin,
-- evropské soutěže se filtrují až po stažení dat.
-
-Výchozí intervaly lze volitelně změnit pomocí:
+## Volitelné intervaly
 
 ```text
-SOFASCORE_LIVE_REFRESH_MINUTES=10
-SOFASCORE_SCHEDULE_REFRESH_HOURS=12
+PUBLIC_FEED_LIVE_REFRESH_MINUTES=10
+PUBLIC_FEED_SCHEDULE_REFRESH_HOURS=12
 ```
 
-Ruční plnou synchronizaci lze v případě potřeby spustit přes:
+Bez nastavení se použijí uvedené výchozí hodnoty.
 
-```text
-/api/sync-football?competition=liga&full=1&key=CRON_SECRET
-/api/sync-football?competition=evropa&full=1&key=CRON_SECRET
-```
+## Hodnocení tipů
 
-Pro běžný provoz stačí existující `/api/sync` cron.
+Po dokončení zápasu databázový trigger automaticky přepočítá body. Je-li nastaven `ANTHROPIC_API_KEY`, cron navíc vytvoří slovní hodnocení pro všechny aktivní soutěže. Selhání slovního hodnocení neblokuje synchronizaci výsledků.
 
-## Výběr zápasů pro Evropu
+## Omezení
 
-Pravidla jsou v:
-
-```text
-src/lib/cupSelection.ts
-```
-
-Aktuální logika:
-
-1. vždy vybere zápas českého klubu,
-2. vybere vzájemné zápasy klubů v seznamu `FEATURED_CLUBS`,
-3. umožňuje ručně doplnit konkrétní dvojice do `INTERESTING`.
-
-## Automatické hodnocení
-
-Předzápasové porovnání, forma a predikce pracují podle `season_id`, proto jsou
-automaticky dostupné i pro Chance ligu a Evropu.
-
-Po skončení zápasu databázový trigger přepočítá body. Stávající cron následně
-vygeneruje chybějící Anthropic hodnocení i pro příslušnou ligovou nebo evropskou
-sezonu. Ruční endpoint `/api/roast` standardně zpracuje všechny aktivní soutěže;
-lze použít i parametr `competition=ms|liga|evropa`.
-
-## Kontrola před nasazením
-
-```bash
-npm install
-npx tsc --noEmit
-npm run build
-```
+Zdroje jsou bezplatné a bez klíče, ale nejde o smluvně garantovanou datovou službu. Aplikace proto vrací konkrétní chyby v `sourceErrors` a má samostatný diagnostický endpoint.

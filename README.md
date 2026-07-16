@@ -33,9 +33,10 @@ Megatipovačky, automatické načítání rozpisu a výsledků.
         └───────────────────────┬──────────────────────┘
                                 │ service role (jen server)
                                 ▼
-                       ┌────────────────────┐
-                       │  SofaScore JSON    │  Chance liga + evropské poháry
-                       └────────────────────┘
+                       ┌──────────────────────────────┐
+                       │ ChanceLiga.cz + veřejná UEFA │
+                       │ data (bez klíče a bez tarifu)│
+                       └──────────────────────────────┘
 ```
 
 **Princip:**
@@ -79,28 +80,15 @@ a SQL `calculate_points` (kanonická, počítá produkčně).
 
 ---
 
-## 4) Zdroj dat — bezplatný SofaScore feed
+## 4) Zdroje fotbalových dat
 
-Chance liga a evropské poháry se načítají z veřejných JSON endpointů, které
-používá web SofaScore. Zdroj pokrývá českou nejvyšší soutěž, Ligu mistrů,
-Evropskou ligu i Konferenční ligu a nevyžaduje registraci ani API klíč.
+| Soutěž | Zdroj | Klíč / tarif |
+|---|---|---|
+| MS 2026 | stávající football-data + ESPN integrace | beze změny |
+| Chance liga | oficiální rozpis a výsledky `chanceliga.cz` | žádný |
+| Liga mistrů, Evropská liga, Konferenční liga | veřejné datové endpointy UEFA | žádný |
 
-Používaná SofaScore unique-tournament ID:
-
-| Soutěž | ID |
-|---|---:|
-| Chance liga | `172` |
-| Liga mistrů | `7` |
-| Evropská liga | `679` |
-| Konferenční liga | `17015` |
-
-Integrace je v [`src/lib/espnCompetition.ts`](src/lib/espnCompetition.ts) a
-synchronizace v [`src/app/api/sync-football/route.ts`](src/app/api/sync-football/route.ts).
-Stávající `/api/sync` cron se nemění a volá tuto synchronizaci automaticky.
-
-Jde o neoficiální webový feed bez SLA, obdobně jako původní ESPN řešení. Kód
-proto používá dvě SofaScore domény, timeout, rozumné dávkování a čitelné chybové
-hlášky. Pro fotbalová data není ve Vercelu potřeba žádná nová proměnná.
+Stávající cron volá pouze `/api/sync?key=...`. Tento endpoint obslouží MS 2026 a současně spustí synchronizaci Chance ligy a Evropy. Podrobnosti a diagnostické URL jsou v [`MIGRACE_CHANCE_LIGA.md`](MIGRACE_CHANCE_LIGA.md).
 
 ---
 
@@ -141,12 +129,12 @@ src/
     page.tsx            # HOME (server)
     tipovat/page.tsx    # výběr hráče + matches (server) → PredictionForm
     sin-slavy/page.tsx  # historické statistiky (server)
-    api/sync/route.ts   # společný sync MS + liga + Evropa (cron / ruční)
+    api/sync/route.ts   # společný cron: MS + další soutěže
   components/
     StandingsTable.tsx  StatsCards.tsx  MatchList.tsx  PredictionForm.tsx
   lib/
     scoring.ts  scoring.test.ts        # bodování + testy
-    espnCompetition.ts                 # bezplatný SofaScore feed pro ligu/ Evropu
+    apiFootball.ts                     # integrace zdroje dat
     queries.ts                         # SQL dotazy pro server komponenty
     types.ts
     supabase/{client,server}.ts        # anon + service role klienti
@@ -160,7 +148,7 @@ vercel.json                            # cron */15
 
 1. **Den 1 — Supabase:** projekt, spustit `schema.sql` + `seed.sql`, ověřit
    triggery (zkusit vložit tip do „minulého" zápasu → musí selhat).
-2. **Den 1 — data:** pro SofaScore není potřeba registrace ani API klíč.
+2. **Den 1 — zdroje:** žádná registrace ke sportovnímu API není potřeba.
 3. **Den 2 — Sync:** `npm run dev`, ručně `GET /api/sync?key=...`, zkontrolovat
    naplněné `matches`. Nastavit Vercel Cron.
 4. **Den 2 — Frontend:** home + tipovat ověřit na telefonu (DevTools mobile).

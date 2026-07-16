@@ -3,8 +3,8 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { getCompetition, type CompetitionKey } from '@/lib/competitions';
 import {
   apiDateWindow,
-  fetchSofascoreFixturesByIds,
-  fetchSofascoreLeagueFixtures,
+  fetchOfficialFixturesByIds,
+  fetchOfficialLeagueFixtures,
   type CompetitionFixture,
 } from '@/lib/espnCompetition';
 import { selectionReason } from '@/lib/cupSelection';
@@ -84,8 +84,8 @@ export async function GET(req: NextRequest) {
   const results: Record<string, unknown> = {};
   const now = new Date();
   const nowMs = now.getTime();
-  const liveRefreshMinutes = Math.max(5, Number(process.env.SOFASCORE_LIVE_REFRESH_MINUTES ?? process.env.API_FOOTBALL_LIVE_REFRESH_MINUTES ?? 10));
-  const scheduleRefreshHours = Math.max(6, Number(process.env.SOFASCORE_SCHEDULE_REFRESH_HOURS ?? process.env.API_FOOTBALL_SCHEDULE_REFRESH_HOURS ?? 12));
+  const liveRefreshMinutes = Math.max(5, Number(process.env.PUBLIC_FEED_LIVE_REFRESH_MINUTES ?? 10));
+  const scheduleRefreshHours = Math.max(6, Number(process.env.PUBLIC_FEED_SCHEDULE_REFRESH_HOURS ?? 12));
 
   for (const key of keys) {
     const competition = getCompetition(key);
@@ -167,23 +167,33 @@ export async function GET(req: NextRequest) {
 
     const fetched: CompetitionFixture[] = [];
     const sourceErrors: { source: string; error: string }[] = [];
+    const warnings: { source: string; error: string }[] = [];
     let requests = 0;
     let requestsRemaining: number | null = null;
 
     if (mode !== 'idle') {
       if (mode === 'live-ids') {
-        for (const part of chunks(liveCandidates.map((m) => m.external_api_id as number), 24)) {
-          try {
-            const fetchedPart = await fetchSofascoreFixturesByIds(part);
-            fetched.push(...fetchedPart.fixtures);
-            requests += fetchedPart.requests;
-          } catch (error) {
-            sourceErrors.push({ source: 'sofascore-live', error: String(error) });
+        const bySource = new Map<string, number[]>();
+        for (const candidate of liveCandidates) {
+          if (!candidate.source_league || candidate.external_api_id == null) continue;
+          const list = bySource.get(candidate.source_league) ?? [];
+          list.push(candidate.external_api_id);
+          bySource.set(candidate.source_league, list);
+        }
+        for (const [sourceLeague, ids] of bySource) {
+          for (const part of chunks(ids, 24)) {
+            try {
+              const fetchedPart = await fetchOfficialFixturesByIds(sourceLeague, part);
+              fetched.push(...fetchedPart.fixtures);
+              requests += fetchedPart.requests;
+            } catch (error) {
+              sourceErrors.push({ source: `official-live:${sourceLeague}`, error: String(error) });
+            }
           }
         }
       } else {
         const jobs = competition.espnSlugs.map(async (slug) => {
-          const result = await fetchSofascoreLeagueFixtures(
+          const result = await fetchOfficialLeagueFixtures(
             slug,
             Number(season.api_season ?? 2026),
             mode === 'schedule-window' ? range : undefined,
@@ -198,7 +208,7 @@ export async function GET(req: NextRequest) {
             fetched.push(...item.value.result.fixtures);
             requests += item.value.result.requests;
           } else {
-            sourceErrors.push({ source: `sofascore:${slug}`, error: String(item.reason) });
+            sourceErrors.push({ source: `official:${slug}`, error: String(item.reason) });
           }
         }
       }
@@ -288,8 +298,8 @@ export async function GET(req: NextRequest) {
     }
 
     // updated_at používáme zároveň jako levný throttle. I když se skóre nezměnilo,
-    // stejný live zápas nevoláme z API při každém běhu cronu, ale nejvýše jednou
-    // za SOFASCORE_LIVE_REFRESH_MINUTES (výchozí 10 minut).
+    // stejný live zápas nevoláme při každém běhu cronu, ale nejvýše jednou
+    // za PUBLIC_FEED_LIVE_REFRESH_MINUTES (výchozí 10 minut).
     if (mode === 'live-ids' && liveCandidates.length > 0 && requests > 0) {
       await supabase
         .from('matches')
@@ -308,21 +318,21 @@ export async function GET(req: NextRequest) {
       try {
         roasts = await runRoastBatch(supabase, season.id, 2);
       } catch (error) {
-        sourceErrors.push({ source: 'anthropic-roast', error: String(error) });
+        warnings.push({ source: 'anthropic-roast', error: String(error) });
       }
     }
 
     if (mode !== 'idle' && fetched.length === 0 && sourceErrors.length === 0) {
       sourceErrors.push({
-        source: 'sofascore',
-        error: 'SofaScore vrátil 0 zápasů. Zkontroluj dostupnost sezóny 2026/27; API klíč není potřeba.',
+        source: 'official-public-feeds',
+        error: 'Oficiální zdroje vrátily 0 zápasů. Podrobnost je uvedena v sourceErrors; žádný API klíč není potřeba.',
       });
     }
 
     results[key] = {
       ok: sourceErrors.length === 0,
       idle: mode === 'idle',
-      source: 'sofascore-public',
+      source: key === 'liga' ? 'chanceliga-official' : 'uefa-official-public',
       season: season.name,
       mode,
       range: mode === 'schedule-window' ? `${range.from}..${range.to}` : null,
@@ -337,6 +347,7 @@ export async function GET(req: NextRequest) {
       requestsRemaining,
       roasts,
       sourceErrors,
+      warnings,
     };
   }
 
