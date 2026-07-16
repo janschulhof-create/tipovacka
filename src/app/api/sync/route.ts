@@ -10,7 +10,7 @@ export const maxDuration = 60;
 type Row = { id: number; home_team: string; away_team: string; duration?: string | null };
 
 /**
- * Synchronizace rozpisu a výsledků z API-Football do aktivní sezóny.
+ * Synchronizace MS 2026 a spuštění navazujícího syncu Chance ligy a Evropy.
  * Volání:
  *   - Vercel Cron (Authorization: Bearer CRON_SECRET) — viz vercel.json,
  *   - ručně: GET /api/sync?key=CRON_SECRET

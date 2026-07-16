@@ -34,7 +34,7 @@ Megatipovačky, automatické načítání rozpisu a výsledků.
                                 │ service role (jen server)
                                 ▼
                        ┌────────────────────┐
-                       │  API-Football v3   │  rozpis + výsledky + stav
+                       │  SofaScore JSON    │  Chance liga + evropské poháry
                        └────────────────────┘
 ```
 
@@ -79,23 +79,28 @@ a SQL `calculate_points` (kanonická, počítá produkčně).
 
 ---
 
-## 4) Zdroj dat — proč API-Football
+## 4) Zdroj dat — bezplatný SofaScore feed
 
-| Zdroj | Chance Liga zdarma? | Oficiální API? | Verdikt |
-|---|---|---|---|
-| **API-Football** (api-sports.io) | ✅ (free 100 req/den) | ✅ | **Doporučeno** |
-| Football-data.org | ❌ (jen placený plán) | ✅ | Nevhodné pro CZ ligu |
-| SofaScore | — | ❌ (jen scraping, proti ToS) | Nepoužívat |
+Chance liga a evropské poháry se načítají z veřejných JSON endpointů, které
+používá web SofaScore. Zdroj pokrývá českou nejvyšší soutěž, Ligu mistrů,
+Evropskou ligu i Konferenční ligu a nevyžaduje registraci ani API klíč.
 
-API-Football pokrývá 1200+ soutěží včetně české 1. ligy, má stabilní league ID,
-rozpis + průběžné skóre + stav utkání. Free plán bohatě stačí (jeden sync = pár
-volání, cron běží à 15 min jen kolem zápasů).
+Používaná SofaScore unique-tournament ID:
 
-**Nastavení:** najdi league ID jednorázově přes
-`GET /leagues?country=Czech-Republic&season=2025`, ulož do `API_FOOTBALL_LEAGUE_ID`
-(očekávaná hodnota kolem `345`, ale ověř na dashboardu). Integrace:
-[`src/lib/apiFootball.ts`](src/lib/apiFootball.ts), sync:
-[`src/app/api/sync/route.ts`](src/app/api/sync/route.ts).
+| Soutěž | ID |
+|---|---:|
+| Chance liga | `172` |
+| Liga mistrů | `7` |
+| Evropská liga | `679` |
+| Konferenční liga | `17015` |
+
+Integrace je v [`src/lib/espnCompetition.ts`](src/lib/espnCompetition.ts) a
+synchronizace v [`src/app/api/sync-football/route.ts`](src/app/api/sync-football/route.ts).
+Stávající `/api/sync` cron se nemění a volá tuto synchronizaci automaticky.
+
+Jde o neoficiální webový feed bez SLA, obdobně jako původní ESPN řešení. Kód
+proto používá dvě SofaScore domény, timeout, rozumné dávkování a čitelné chybové
+hlášky. Pro fotbalová data není ve Vercelu potřeba žádná nová proměnná.
 
 ---
 
@@ -136,12 +141,12 @@ src/
     page.tsx            # HOME (server)
     tipovat/page.tsx    # výběr hráče + matches (server) → PredictionForm
     sin-slavy/page.tsx  # historické statistiky (server)
-    api/sync/route.ts   # sync z API-Football (cron / ruční)
+    api/sync/route.ts   # společný sync MS + liga + Evropa (cron / ruční)
   components/
     StandingsTable.tsx  StatsCards.tsx  MatchList.tsx  PredictionForm.tsx
   lib/
     scoring.ts  scoring.test.ts        # bodování + testy
-    apiFootball.ts                     # integrace zdroje dat
+    espnCompetition.ts                 # bezplatný SofaScore feed pro ligu/ Evropu
     queries.ts                         # SQL dotazy pro server komponenty
     types.ts
     supabase/{client,server}.ts        # anon + service role klienti
@@ -155,7 +160,7 @@ vercel.json                            # cron */15
 
 1. **Den 1 — Supabase:** projekt, spustit `schema.sql` + `seed.sql`, ověřit
    triggery (zkusit vložit tip do „minulého" zápasu → musí selhat).
-2. **Den 1 — API:** registrace API-Football, najít league ID, vyplnit `.env`.
+2. **Den 1 — data:** pro SofaScore není potřeba registrace ani API klíč.
 3. **Den 2 — Sync:** `npm run dev`, ručně `GET /api/sync?key=...`, zkontrolovat
    naplněné `matches`. Nastavit Vercel Cron.
 4. **Den 2 — Frontend:** home + tipovat ověřit na telefonu (DevTools mobile).
@@ -169,7 +174,7 @@ vercel.json                            # cron */15
 
 ```bash
 npm install
-cp .env.example .env.local   # doplň Supabase + API-Football klíče
+cp .env.example .env.local   # doplň Supabase a CRON_SECRET
 # v Supabase SQL editoru spusť supabase/schema.sql a seed.sql
 npm run dev                  # http://localhost:3000
 curl "http://localhost:3000/api/sync?key=<CRON_SECRET>"   # první načtení dat

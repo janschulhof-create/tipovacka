@@ -3,9 +3,8 @@ import { createAdminClient } from '@/lib/supabase/server';
 import { getCompetition, type CompetitionKey } from '@/lib/competitions';
 import {
   apiDateWindow,
-  apiFootballKey,
-  fetchApiFootballFixturesByIds,
-  fetchApiFootballLeagueFixtures,
+  fetchSofascoreFixturesByIds,
+  fetchSofascoreLeagueFixtures,
   type CompetitionFixture,
 } from '@/lib/espnCompetition';
 import { selectionReason } from '@/lib/cupSelection';
@@ -85,8 +84,8 @@ export async function GET(req: NextRequest) {
   const results: Record<string, unknown> = {};
   const now = new Date();
   const nowMs = now.getTime();
-  const liveRefreshMinutes = Math.max(5, Number(process.env.API_FOOTBALL_LIVE_REFRESH_MINUTES ?? 10));
-  const scheduleRefreshHours = Math.max(6, Number(process.env.API_FOOTBALL_SCHEDULE_REFRESH_HOURS ?? 12));
+  const liveRefreshMinutes = Math.max(5, Number(process.env.SOFASCORE_LIVE_REFRESH_MINUTES ?? process.env.API_FOOTBALL_LIVE_REFRESH_MINUTES ?? 10));
+  const scheduleRefreshHours = Math.max(6, Number(process.env.SOFASCORE_SCHEDULE_REFRESH_HOURS ?? process.env.API_FOOTBALL_SCHEDULE_REFRESH_HOURS ?? 12));
 
   for (const key of keys) {
     const competition = getCompetition(key);
@@ -172,25 +171,19 @@ export async function GET(req: NextRequest) {
     let requestsRemaining: number | null = null;
 
     if (mode !== 'idle') {
-      if (!apiFootballKey()) {
-        sourceErrors.push({
-          source: 'api-football',
-          error: 'Chybí API_FOOTBALL_KEY ve Vercelu. Cron ani jeho URL se nemění; doplň pouze Environment Variable a proveď redeploy.',
-        });
-      } else if (mode === 'live-ids') {
-        for (const part of chunks(liveCandidates.map((m) => m.external_api_id as number), 20)) {
+      if (mode === 'live-ids') {
+        for (const part of chunks(liveCandidates.map((m) => m.external_api_id as number), 24)) {
           try {
-            const fetchedPart = await fetchApiFootballFixturesByIds(part);
+            const fetchedPart = await fetchSofascoreFixturesByIds(part);
             fetched.push(...fetchedPart.fixtures);
             requests += fetchedPart.requests;
-            if (fetchedPart.remaining != null) requestsRemaining = fetchedPart.remaining;
           } catch (error) {
-            sourceErrors.push({ source: 'api-football-live', error: String(error) });
+            sourceErrors.push({ source: 'sofascore-live', error: String(error) });
           }
         }
       } else {
         const jobs = competition.espnSlugs.map(async (slug) => {
-          const result = await fetchApiFootballLeagueFixtures(
+          const result = await fetchSofascoreLeagueFixtures(
             slug,
             Number(season.api_season ?? 2026),
             mode === 'schedule-window' ? range : undefined,
@@ -204,9 +197,8 @@ export async function GET(req: NextRequest) {
           if (item.status === 'fulfilled') {
             fetched.push(...item.value.result.fixtures);
             requests += item.value.result.requests;
-            if (item.value.result.remaining != null) requestsRemaining = item.value.result.remaining;
           } else {
-            sourceErrors.push({ source: slug, error: String(item.reason) });
+            sourceErrors.push({ source: `sofascore:${slug}`, error: String(item.reason) });
           }
         }
       }
@@ -297,7 +289,7 @@ export async function GET(req: NextRequest) {
 
     // updated_at používáme zároveň jako levný throttle. I když se skóre nezměnilo,
     // stejný live zápas nevoláme z API při každém běhu cronu, ale nejvýše jednou
-    // za API_FOOTBALL_LIVE_REFRESH_MINUTES (výchozí 10 minut).
+    // za SOFASCORE_LIVE_REFRESH_MINUTES (výchozí 10 minut).
     if (mode === 'live-ids' && liveCandidates.length > 0 && requests > 0) {
       await supabase
         .from('matches')
@@ -322,15 +314,15 @@ export async function GET(req: NextRequest) {
 
     if (mode !== 'idle' && fetched.length === 0 && sourceErrors.length === 0) {
       sourceErrors.push({
-        source: 'api-football',
-        error: 'API vrátilo 0 zápasů. Zkontroluj API_FOOTBALL_KEY, dostupnost sezóny 2026 a případně ID soutěže.',
+        source: 'sofascore',
+        error: 'SofaScore vrátil 0 zápasů. Zkontroluj dostupnost sezóny 2026/27; API klíč není potřeba.',
       });
     }
 
     results[key] = {
       ok: sourceErrors.length === 0,
       idle: mode === 'idle',
-      source: 'api-football',
+      source: 'sofascore-public',
       season: season.name,
       mode,
       range: mode === 'schedule-window' ? `${range.from}..${range.to}` : null,

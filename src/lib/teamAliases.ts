@@ -1,4 +1,4 @@
-/** Sjednocení názvů klubů z API-Football, ESPN, historie a ručních konfigurací. */
+/** Sjednocení názvů klubů ze SofaScore, ESPN, historie a ručních konfigurací. */
 const ALIASES: Record<string, string> = {
   Sigma: 'Olomouc',
   'Sigma Olomouc': 'Olomouc',
@@ -11,6 +11,7 @@ const ALIASES: Record<string, string> = {
   'Baník Ostrava': 'Baník',
   'Banik Ostrava': 'Baník',
   'FC Baník Ostrava': 'Baník',
+  'FC Banik Ostrava': 'Baník',
   'Jabl*nec': 'Jablonec',
   'FK Jablonec': 'Jablonec',
   'Sparta Praha': 'Sparta',
@@ -24,6 +25,7 @@ const ALIASES: Record<string, string> = {
   'Viktoria Plzen': 'Plzeň',
   'Viktoria Plzeň': 'Plzeň',
   'FC Viktoria Plzeň': 'Plzeň',
+  'FC Viktoria Plzen': 'Plzeň',
   'FC Slovan Liberec': 'Liberec',
   'Slovan Liberec': 'Liberec',
   Karvina: 'Karviná',
@@ -33,6 +35,9 @@ const ALIASES: Record<string, string> = {
   'FC Hradec Kralove': 'Hradec Králové',
   'FC Hradec Králové': 'Hradec Králové',
   'FK Pardubice': 'Pardubice',
+  'FK Dukla Praha': 'Dukla',
+  'Dukla Praha': 'Dukla',
+  'Dukla Prague': 'Dukla',
   Zlin: 'Zlín',
   'FC Fastav Zlin': 'Zlín',
   'FC Zlín': 'Zlín',
@@ -49,14 +54,24 @@ const ALIASES: Record<string, string> = {
   'Paris Saint-Germain': 'PSG',
   'Paris Saint Germain': 'PSG',
   'FC Bayern Munich': 'Bayern Mnichov',
+  'Bayern München': 'Bayern Mnichov',
+  'FC Bayern München': 'Bayern Mnichov',
   'Bayern Munich': 'Bayern Mnichov',
   Internazionale: 'Inter Milán',
+  Inter: 'Inter Milán',
   'Inter Milan': 'Inter Milán',
   'AC Milan': 'AC Milán',
+  Milan: 'AC Milán',
   'Atletico Madrid': 'Atlético Madrid',
+  'Atlético de Madrid': 'Atlético Madrid',
   'Borussia Dortmund': 'Dortmund',
+  'Borussia Dortmund GmbH & Co. KGaA': 'Dortmund',
   'Manchester City': 'Manchester City',
   'Manchester United': 'Manchester United',
+  'SSC Napoli': 'Neapol',
+  Napoli: 'Neapol',
+  'SL Benfica': 'Benfica',
+  'FC Porto': 'Porto',
 };
 
 export function canonTeam(name: string): string {
