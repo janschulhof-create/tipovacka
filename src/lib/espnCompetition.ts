@@ -16,36 +16,19 @@ export interface CompetitionFixture {
   minute: number | null;
   clock: string | null;
   duration: 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT';
+  extra_home: number | null;
+  extra_away: number | null;
+  pen_home: number | null;
+  pen_away: number | null;
 }
 
-interface EspnTeam {
-  id?: string;
-  displayName?: string;
-  name?: string;
-  shortDisplayName?: string;
+export interface ApiFetchResult {
+  fixtures: CompetitionFixture[];
+  requests: number;
+  remaining: number | null;
 }
-interface EspnCompetitor {
-  homeAway?: 'home' | 'away';
-  score?: string;
-  team?: EspnTeam;
-}
-interface EspnEvent {
-  id?: string;
-  date?: string;
-  name?: string;
-  shortName?: string;
-  week?: { number?: number };
-  season?: { year?: number; slug?: string };
-  competitions?: {
-    notes?: { headline?: string }[];
-    type?: { text?: string };
-    status?: {
-      displayClock?: string;
-      type?: { state?: string; completed?: boolean; detail?: string; shortDetail?: string };
-    };
-    competitors?: EspnCompetitor[];
-  }[];
-}
+
+const API_BASE = 'https://v3.football.api-sports.io';
 
 const SOURCE_LABELS: Record<string, string> = {
   'cze.1': 'Chance liga',
@@ -54,34 +37,155 @@ const SOURCE_LABELS: Record<string, string> = {
   'uefa.europa.conf': 'Konferenční liga',
 };
 
+const DEFAULT_LEAGUE_IDS: Record<string, number> = {
+  'cze.1': 345,
+  'uefa.champions': 2,
+  'uefa.europa': 3,
+  'uefa.europa.conf': 848,
+};
+
+const ENV_LEAGUE_IDS: Record<string, string> = {
+  'cze.1': 'API_FOOTBALL_LIGA_ID',
+  'uefa.champions': 'API_FOOTBALL_CHAMPIONS_ID',
+  'uefa.europa': 'API_FOOTBALL_EUROPA_ID',
+  'uefa.europa.conf': 'API_FOOTBALL_CONFERENCE_ID',
+};
+
 export function sourceLabel(slug: string): string {
   return SOURCE_LABELS[slug] ?? slug;
 }
 
+export function apiFootballKey(): string | null {
+  return (
+    process.env.API_FOOTBALL_KEY ??
+    process.env.APISPORTS_KEY ??
+    process.env.API_SPORTS_KEY ??
+    null
+  );
+}
+
+export function sourceLeagueId(slug: string): number {
+  const envName = ENV_LEAGUE_IDS[slug];
+  const configured = envName ? Number(process.env[envName]) : Number.NaN;
+  return Number.isFinite(configured) && configured > 0
+    ? configured
+    : DEFAULT_LEAGUE_IDS[slug];
+}
+
+function sourceSlugByLeagueId(id: number): string | null {
+  for (const slug of Object.keys(DEFAULT_LEAGUE_IDS)) {
+    if (sourceLeagueId(slug) === id) return slug;
+  }
+  return null;
+}
+
 function ymd(d: Date): string {
-  return `${d.getUTCFullYear()}${String(d.getUTCMonth() + 1).padStart(2, '0')}${String(d.getUTCDate()).padStart(2, '0')}`;
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
-export function dateWindow(daysBack = 7, daysForward = 45): string {
+export function apiDateWindow(daysBack = 2, daysForward = 60): { from: string; to: string } {
   const now = new Date();
-  return `${ymd(new Date(now.getTime() - daysBack * 864e5))}-${ymd(new Date(now.getTime() + daysForward * 864e5))}`;
+  return {
+    from: ymd(new Date(now.getTime() - daysBack * 864e5)),
+    to: ymd(new Date(now.getTime() + daysForward * 864e5)),
+  };
 }
 
-function parseScore(value: string | undefined): number | null {
-  if (value == null || value === '') return null;
-  const n = Number(value);
-  return Number.isFinite(n) ? n : null;
+interface ApiTeam {
+  id?: number;
+  name?: string;
 }
 
-function parseMinute(clock: string | undefined): number | null {
-  const m = (clock ?? '').match(/\d+/);
-  return m ? Number(m[0]) : null;
+interface ApiFixtureItem {
+  fixture?: {
+    id?: number;
+    date?: string;
+    status?: {
+      long?: string;
+      short?: string;
+      elapsed?: number | null;
+      extra?: number | null;
+    };
+  };
+  league?: {
+    id?: number;
+    name?: string;
+    round?: string;
+  };
+  teams?: {
+    home?: ApiTeam;
+    away?: ApiTeam;
+  };
+  goals?: {
+    home?: number | null;
+    away?: number | null;
+  };
+  score?: {
+    halftime?: { home?: number | null; away?: number | null } | null;
+    fulltime?: { home?: number | null; away?: number | null } | null;
+    extratime?: { home?: number | null; away?: number | null } | null;
+    penalty?: { home?: number | null; away?: number | null } | null;
+  };
 }
 
-function mapStatus(state: string | undefined, completed: boolean | undefined): MatchStatus {
-  if (completed || state === 'post') return 'finished';
-  if (state === 'in') return 'live';
+interface ApiEnvelope {
+  errors?: unknown;
+  results?: number;
+  response?: ApiFixtureItem[];
+}
+
+function errorText(errors: unknown): string | null {
+  if (!errors) return null;
+  if (Array.isArray(errors)) return errors.length ? errors.map(String).join('; ') : null;
+  if (typeof errors === 'object') {
+    const entries = Object.entries(errors as Record<string, unknown>);
+    return entries.length ? entries.map(([k, v]) => `${k}: ${String(v)}`).join('; ') : null;
+  }
+  return String(errors);
+}
+
+async function apiGet(path: string): Promise<{ data: ApiEnvelope; remaining: number | null }> {
+  const key = apiFootballKey();
+  if (!key) {
+    throw new Error(
+      'Chybí API_FOOTBALL_KEY ve Vercelu. Stávající cron zůstává beze změny; je nutné pouze doplnit klíč API-Football do Environment Variables a udělat redeploy.',
+    );
+  }
+
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: { 'x-apisports-key': key },
+    cache: 'no-store',
+  });
+  const data = (await res.json().catch(() => ({}))) as ApiEnvelope;
+  const apiError = errorText(data.errors);
+  if (!res.ok || apiError) {
+    throw new Error(
+      `API-Football HTTP ${res.status}${apiError ? `: ${apiError}` : ''}`,
+    );
+  }
+
+  const remainingRaw = res.headers.get('x-ratelimit-requests-remaining');
+  const remaining = remainingRaw == null ? null : Number(remainingRaw);
+  return { data, remaining: Number.isFinite(remaining) ? remaining : null };
+}
+
+function mapStatus(code: string | undefined): MatchStatus {
+  if (['1H', 'HT', '2H', 'ET', 'BT', 'P', 'LIVE', 'INT'].includes(code ?? '')) return 'live';
+  if (['FT', 'AET', 'PEN', 'AWD', 'WO'].includes(code ?? '')) return 'finished';
+  if (code === 'PST') return 'postponed';
+  if (['CANC', 'ABD', 'SUSP'].includes(code ?? '')) return 'cancelled';
   return 'scheduled';
+}
+
+function durationOf(item: ApiFixtureItem): CompetitionFixture['duration'] {
+  const code = item.fixture?.status?.short;
+  if (code === 'PEN' || item.score?.penalty?.home != null || item.score?.penalty?.away != null) {
+    return 'PENALTY_SHOOTOUT';
+  }
+  if (code === 'AET' || item.score?.extratime?.home != null || item.score?.extratime?.away != null) {
+    return 'EXTRA_TIME';
+  }
+  return 'REGULAR';
 }
 
 function isoWeek(iso: string): { year: number; week: number } {
@@ -95,101 +199,125 @@ function isoWeek(iso: string): { year: number; week: number } {
   return { year, week };
 }
 
-function roundNumberFromText(text: string): number | null {
-  const patterns = [
-    /(?:matchday|week|round|kolo)\s*(\d{1,2})/i,
-    /(\d{1,2})\.\s*(?:kolo)/i,
-  ];
-  for (const p of patterns) {
-    const m = text.match(p);
-    if (m) return Number(m[1]);
-  }
-  return null;
+function trailingNumber(text: string): number | null {
+  const m = text.match(/(?:^|\D)(\d{1,2})\s*$/);
+  return m ? Number(m[1]) : null;
 }
 
-function leagueRound(ev: EspnEvent): { round: number; label: string } {
-  const comp = ev.competitions?.[0];
-  const text = [
-    ev.name,
-    ev.shortName,
-    comp?.type?.text,
-    ...(comp?.notes?.map((n) => n.headline) ?? []),
-  ].filter(Boolean).join(' ');
-  const n = ev.week?.number ?? roundNumberFromText(text);
-  if (n && n > 0) {
-    if (n >= 31 && n <= 35) return { round: n, label: `Nadstavba · ${n - 30}. kolo` };
-    if (n > 35) return { round: n, label: `Baráž · ${n - 35}. kolo` };
-    return { round: n, label: `${n}. kolo` };
+function leagueRound(text: string, kickoff: string): { round: number; label: string } {
+  const n = trailingNumber(text);
+  if (/regular season/i.test(text) && n) return { round: n, label: `${n}. kolo` };
+  if (/(championship|relegation|group|nadstav)/i.test(text) && n) {
+    return { round: 30 + n, label: `Nadstavba · ${n}. kolo` };
   }
-  const wk = isoWeek(ev.date ?? new Date().toISOString());
-  return { round: wk.week, label: `Týden ${wk.week}/${wk.year}` };
+  if (/(play.?off|relegation play)/i.test(text) && n) {
+    return { round: 40 + n, label: `Play-off · ${n}. zápas` };
+  }
+  if (n) return { round: n, label: text || `${n}. kolo` };
+  const wk = isoWeek(kickoff);
+  return { round: wk.week, label: text || `Týden ${wk.week}/${wk.year}` };
 }
 
-function europeRound(ev: EspnEvent): { round: number; label: string } {
-  const wk = isoWeek(ev.date ?? new Date().toISOString());
-  // Stabilní číselný klíč i přes přelom roku; sezóna 2026/27 tak nekoliduje.
+function europeRound(sourceLeague: string, text: string, kickoff: string): { round: number; label: string } {
+  const wk = isoWeek(kickoff);
   return {
     round: wk.year * 100 + wk.week,
-    label: `Evropa · týden ${wk.week}/${wk.year}`,
+    label: `${sourceLabel(sourceLeague)} · ${text || `týden ${wk.week}/${wk.year}`}`,
   };
 }
 
-/**
- * Načte rozpis a aktuální výsledky jedné soutěže z ESPN scoreboardu.
- * ESPN je zde best-effort zdroj bez SLA; route vrací chybu čitelně a nic nemaže.
- */
-export async function fetchCompetitionFixtures(
-  slug: string,
-  dates: string,
-  mode: 'league' | 'europe',
-): Promise<CompetitionFixture[]> {
-  const url = `https://site.api.espn.com/apis/site/v2/sports/soccer/${slug}/scoreboard?dates=${dates}&limit=500`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`ESPN ${slug} HTTP ${res.status}`);
-  const data = (await res.json()) as { events?: EspnEvent[] };
-  const out: CompetitionFixture[] = [];
+function normalizeFixture(item: ApiFixtureItem, forcedSource?: string): CompetitionFixture | null {
+  const eventId = item.fixture?.id;
+  const kickoff = item.fixture?.date;
+  const leagueId = item.league?.id;
+  const sourceLeague = forcedSource ?? (leagueId != null ? sourceSlugByLeagueId(leagueId) : null);
+  if (!eventId || !kickoff || !sourceLeague) return null;
 
-  for (const ev of data.events ?? []) {
-    const comp = ev.competitions?.[0];
-    if (!ev.id || !ev.date || !comp) continue;
-    const home = comp.competitors?.find((c) => c.homeAway === 'home');
-    const away = comp.competitors?.find((c) => c.homeAway === 'away');
-    const h = canonTeam(home?.team?.displayName ?? home?.team?.name ?? home?.team?.shortDisplayName ?? '');
-    const a = canonTeam(away?.team?.displayName ?? away?.team?.name ?? away?.team?.shortDisplayName ?? '');
-    if (!h || !a || /\bTBD\b|to be determined/i.test(`${h} ${a}`)) continue;
+  const home = canonTeam(item.teams?.home?.name ?? '');
+  const away = canonTeam(item.teams?.away?.name ?? '');
+  if (!home || !away || /\bTBD\b|to be determined/i.test(`${home} ${away}`)) return null;
 
-    const state = comp.status?.type?.state;
-    const completed = comp.status?.type?.completed;
-    const r = mode === 'league' ? leagueRound(ev) : europeRound(ev);
-    const clock = comp.status?.displayClock ?? comp.status?.type?.shortDetail ?? null;
-    const statusText = `${comp.status?.type?.detail ?? ''} ${comp.status?.type?.shortDetail ?? ''}`;
-    const duration: CompetitionFixture['duration'] = /penalt/i.test(statusText)
-      ? 'PENALTY_SHOOTOUT'
-      : /extra time|aet|prodlou/i.test(statusText)
-        ? 'EXTRA_TIME'
-        : 'REGULAR';
-    const rawHomeScore = parseScore(home?.score);
-    const rawAwayScore = parseScore(away?.score);
+  const statusCode = item.fixture?.status?.short;
+  const status = mapStatus(statusCode);
+  const duration = durationOf(item);
+  const roundText = item.league?.round ?? '';
+  const r = sourceLeague === 'cze.1'
+    ? leagueRound(roundText, kickoff)
+    : europeRound(sourceLeague, roundText, kickoff);
 
-    out.push({
-      external_api_id: Number(ev.id),
-      source_league: slug,
-      source_label: sourceLabel(slug),
-      round: r.round,
-      round_label: r.label,
-      kickoff: ev.date,
-      home_team: h,
-      away_team: a,
-      // U zápasu po prodloužení/penaltách scoreboard neposkytuje spolehlivě stav po 90'.
-      // Raději body nepřepočítáme, než abychom je spočítali z nesprávného výsledku.
-      home_score: completed && duration !== 'REGULAR' ? null : rawHomeScore,
-      away_score: completed && duration !== 'REGULAR' ? null : rawAwayScore,
-      status: mapStatus(state, completed),
-      minute: state === 'in' ? parseMinute(clock ?? undefined) : null,
-      clock: state === 'in' ? clock : null,
-      duration,
-    });
+  const finished = status === 'finished';
+  const fullHome = item.score?.fulltime?.home ?? null;
+  const fullAway = item.score?.fulltime?.away ?? null;
+  const goalsHome = item.goals?.home ?? null;
+  const goalsAway = item.goals?.away ?? null;
+
+  // Pro AET/PEN je score.fulltime stav po 90 minutách. Pro běžný zápas je
+  // bezpečná záloha goals, pokud fulltime ještě ve feedu chybí.
+  const homeScore = finished
+    ? (fullHome ?? (duration === 'REGULAR' ? goalsHome : null))
+    : goalsHome;
+  const awayScore = finished
+    ? (fullAway ?? (duration === 'REGULAR' ? goalsAway : null))
+    : goalsAway;
+
+  const elapsed = item.fixture?.status?.elapsed ?? null;
+  const extraMinute = item.fixture?.status?.extra ?? null;
+  const clock = status === 'live' && elapsed != null
+    ? `${elapsed}${extraMinute ? `+${extraMinute}` : ''}'`
+    : null;
+
+  return {
+    external_api_id: eventId,
+    source_league: sourceLeague,
+    source_label: sourceLabel(sourceLeague),
+    round: r.round,
+    round_label: r.label,
+    kickoff,
+    home_team: home,
+    away_team: away,
+    home_score: homeScore,
+    away_score: awayScore,
+    status,
+    minute: status === 'live' ? elapsed : null,
+    clock,
+    duration,
+    extra_home: duration !== 'REGULAR' ? goalsHome : null,
+    extra_away: duration !== 'REGULAR' ? goalsAway : null,
+    pen_home: item.score?.penalty?.home ?? null,
+    pen_away: item.score?.penalty?.away ?? null,
+  };
+}
+
+/** Celá sezóna nebo omezené datumové okno jedné soutěže. */
+export async function fetchApiFootballLeagueFixtures(
+  sourceLeague: string,
+  season: number,
+  range?: { from: string; to: string },
+): Promise<ApiFetchResult> {
+  const leagueId = sourceLeagueId(sourceLeague);
+  const params = new URLSearchParams({
+    league: String(leagueId),
+    season: String(season),
+    timezone: 'UTC',
+  });
+  if (range) {
+    params.set('from', range.from);
+    params.set('to', range.to);
   }
+  const { data, remaining } = await apiGet(`/fixtures?${params.toString()}`);
+  const fixtures = (data.response ?? [])
+    .map((item) => normalizeFixture(item, sourceLeague))
+    .filter((item): item is CompetitionFixture => item !== null);
+  return { fixtures, requests: 1, remaining };
+}
 
-  return out;
+/** Aktualizace konkrétních právě hraných zápasů jedním API voláním (max. 20 ID). */
+export async function fetchApiFootballFixturesByIds(ids: number[]): Promise<ApiFetchResult> {
+  const unique = Array.from(new Set(ids.filter((id) => Number.isFinite(id) && id > 0))).slice(0, 20);
+  if (unique.length === 0) return { fixtures: [], requests: 0, remaining: null };
+  const { data, remaining } = await apiGet(`/fixtures?ids=${unique.join('-')}&timezone=UTC`);
+  const fixtures = (data.response ?? [])
+    .map((item) => normalizeFixture(item))
+    .filter((item): item is CompetitionFixture => item !== null);
+  return { fixtures, requests: 1, remaining };
 }

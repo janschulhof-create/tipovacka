@@ -1,13 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getCompetition, type CompetitionKey } from '@/lib/competitions';
-import { dateWindow, fetchCompetitionFixtures, type CompetitionFixture } from '@/lib/espnCompetition';
+import {
+  apiDateWindow,
+  apiFootballKey,
+  fetchApiFootballFixturesByIds,
+  fetchApiFootballLeagueFixtures,
+  type CompetitionFixture,
+} from '@/lib/espnCompetition';
 import { selectionReason } from '@/lib/cupSelection';
+import { runRoastBatch } from '@/lib/roastBatch';
 
 export const dynamic = 'force-dynamic';
-export const maxDuration = 45;
+export const maxDuration = 60;
 
 type SyncKey = Extract<CompetitionKey, 'liga' | 'evropa'>;
+
+type ExistingMatch = {
+  id: number;
+  external_api_id: number | null;
+  source_league: string | null;
+  round: number;
+  round_label: string | null;
+  kickoff: string;
+  home_team: string;
+  away_team: string;
+  home_score: number | null;
+  away_score: number | null;
+  status: string;
+  minute: number | null;
+  clock: string | null;
+  duration: string | null;
+  extra_home: number | null;
+  extra_away: number | null;
+  pen_home: number | null;
+  pen_away: number | null;
+  selection_reason: string | null;
+  updated_at: string;
+};
 
 function authorized(req: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -22,26 +52,51 @@ function parseKeys(value: string | null): SyncKey[] {
   return ['liga', 'evropa'];
 }
 
+function ymdFromCompact(value: string): string {
+  return `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}`;
+}
+
+function parseRequestedRange(value: string | null): { from: string; to: string } | null {
+  if (!value) return null;
+  const compact = value.match(/^(\d{8})-(\d{8})$/);
+  if (compact) return { from: ymdFromCompact(compact[1]), to: ymdFromCompact(compact[2]) };
+  const iso = value.match(/^(\d{4}-\d{2}-\d{2})\.\.(\d{4}-\d{2}-\d{2})$/);
+  return iso ? { from: iso[1], to: iso[2] } : null;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  if (a == null && b == null) return true;
+  return String(a) === String(b);
+}
+
+function chunks<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
+
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const keys = parseKeys(req.nextUrl.searchParams.get('competition'));
   const full = req.nextUrl.searchParams.get('full') === '1';
-  const requestedDates = req.nextUrl.searchParams.get('dates');
+  const requestedRange = parseRequestedRange(req.nextUrl.searchParams.get('dates'));
   const supabase = createAdminClient();
   const results: Record<string, unknown> = {};
+  const now = new Date();
+  const nowMs = now.getTime();
+  const liveRefreshMinutes = Math.max(5, Number(process.env.API_FOOTBALL_LIVE_REFRESH_MINUTES ?? 10));
+  const scheduleRefreshHours = Math.max(6, Number(process.env.API_FOOTBALL_SCHEDULE_REFRESH_HOURS ?? 12));
 
   for (const key of keys) {
     const competition = getCompetition(key);
     let { data: season, error: seasonError } = await supabase
       .from('seasons')
-      .select('id, name')
+      .select('id, name, api_season')
       .eq('competition_key', key)
       .eq('is_active', true)
       .maybeSingle();
 
-    // Pokud byla SQL migrace spuštěná, ale řádek sezony chybí, založí ho
-    // první běh automaticky. Není tedy potřeba ručně zakládat sezonu.
     if (!season && !seasonError) {
       const seasonName = key === 'liga' ? 'Chance liga 2026/27' : 'Evropa 2026/27';
       const { data: savedSeason, error: saveError } = await supabase
@@ -50,7 +105,7 @@ export async function GET(req: NextRequest) {
           { name: seasonName, api_season: 2026, competition_key: key, is_active: true },
           { onConflict: 'competition_key,name' },
         )
-        .select('id, name')
+        .select('id, name, api_season')
         .single();
       season = savedSeason;
       seasonError = saveError;
@@ -65,24 +120,95 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    // Při úplně prvním běhu načti automaticky celou sezonu. Další běhy
-    // používají kratší průběžné okno, takže stávající častý cron zůstává levný.
-    const { count: existingCount, error: countError } = await supabase
+    const { data: existingData, error: existingError } = await supabase
       .from('matches')
-      .select('id', { count: 'exact', head: true })
+      .select(
+        'id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, status, minute, clock, duration, extra_home, extra_away, pen_home, pen_away, selection_reason, updated_at',
+      )
       .eq('season_id', season.id);
-    const bootstrap = !countError && (existingCount ?? 0) === 0;
-    const dates = requestedDates ?? ((full || bootstrap) ? '20260701-20270615' : dateWindow(7, 45));
+
+    if (existingError) {
+      results[key] = { ok: false, error: existingError.message };
+      continue;
+    }
+
+    const existingRows = ((existingData as ExistingMatch[]) ?? []);
+    const bootstrap = existingRows.length === 0;
+    const futureRows = existingRows
+      .filter((m) => new Date(m.kickoff).getTime() > nowMs && m.status !== 'cancelled')
+      .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime());
+    const scheduleMarker = futureRows[0] ?? null;
+    const scheduleDue = !!scheduleMarker && (
+      nowMs - new Date(scheduleMarker.updated_at).getTime() >= scheduleRefreshHours * 3600_000
+    );
+
+    const liveLo = nowMs - 4 * 3600_000;
+    const liveHi = nowMs + 30 * 60_000;
+    const staleBefore = nowMs - liveRefreshMinutes * 60_000;
+    const liveCandidates = existingRows.filter((m) => {
+      const kickoff = new Date(m.kickoff).getTime();
+      const lastTouch = new Date(m.updated_at).getTime();
+      return m.status !== 'finished'
+        && m.status !== 'cancelled'
+        && m.external_api_id != null
+        && kickoff >= liveLo
+        && kickoff <= liveHi
+        && lastTouch <= staleBefore;
+    });
+
+    const range = requestedRange ?? apiDateWindow(2, 60);
+    const mode: 'full-season' | 'schedule-window' | 'live-ids' | 'idle' =
+      full || bootstrap
+        ? 'full-season'
+        : requestedRange || scheduleDue
+          ? 'schedule-window'
+          : liveCandidates.length > 0
+            ? 'live-ids'
+            : 'idle';
 
     const fetched: CompetitionFixture[] = [];
-    const sourceErrors: { slug: string; error: string }[] = [];
-    for (const slug of competition.espnSlugs) {
-      try {
-        fetched.push(
-          ...(await fetchCompetitionFixtures(slug, dates, key === 'liga' ? 'league' : 'europe')),
-        );
-      } catch (error) {
-        sourceErrors.push({ slug, error: String(error) });
+    const sourceErrors: { source: string; error: string }[] = [];
+    let requests = 0;
+    let requestsRemaining: number | null = null;
+
+    if (mode !== 'idle') {
+      if (!apiFootballKey()) {
+        sourceErrors.push({
+          source: 'api-football',
+          error: 'Chybí API_FOOTBALL_KEY ve Vercelu. Cron ani jeho URL se nemění; doplň pouze Environment Variable a proveď redeploy.',
+        });
+      } else if (mode === 'live-ids') {
+        for (const part of chunks(liveCandidates.map((m) => m.external_api_id as number), 20)) {
+          try {
+            const fetchedPart = await fetchApiFootballFixturesByIds(part);
+            fetched.push(...fetchedPart.fixtures);
+            requests += fetchedPart.requests;
+            if (fetchedPart.remaining != null) requestsRemaining = fetchedPart.remaining;
+          } catch (error) {
+            sourceErrors.push({ source: 'api-football-live', error: String(error) });
+          }
+        }
+      } else {
+        const jobs = competition.espnSlugs.map(async (slug) => {
+          const result = await fetchApiFootballLeagueFixtures(
+            slug,
+            Number(season.api_season ?? 2026),
+            mode === 'schedule-window' ? range : undefined,
+          );
+          return { slug, result };
+        });
+        const settled = await Promise.allSettled(jobs);
+        for (let i = 0; i < settled.length; i++) {
+          const item = settled[i];
+          const slug = competition.espnSlugs[i];
+          if (item.status === 'fulfilled') {
+            fetched.push(...item.value.result.fixtures);
+            requests += item.value.result.requests;
+            if (item.value.result.remaining != null) requestsRemaining = item.value.result.remaining;
+          } else {
+            sourceErrors.push({ source: slug, error: String(item.reason) });
+          }
+        }
       }
     }
 
@@ -95,40 +221,9 @@ export async function GET(req: NextRequest) {
     let inserted = 0;
     let updated = 0;
     let unchanged = 0;
-    let skippedOvertime = 0;
-
-    type ExistingMatch = {
-      id: number;
-      external_api_id: number | null;
-      source_league: string | null;
-      round: number;
-      round_label: string | null;
-      kickoff: string;
-      home_team: string;
-      away_team: string;
-      home_score: number | null;
-      away_score: number | null;
-      status: string;
-      minute: number | null;
-      clock: string | null;
-      duration: string | null;
-      selection_reason: string | null;
-    };
-
-    const { data: existingRows, error: existingError } = await supabase
-      .from('matches')
-      .select(
-        'id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, status, minute, clock, duration, selection_reason',
-      )
-      .eq('season_id', season.id);
-
-    if (existingError) {
-      results[key] = { ok: false, error: existingError.message };
-      continue;
-    }
 
     const existingBySourceId = new Map<string, ExistingMatch>();
-    for (const row of (existingRows as ExistingMatch[]) ?? []) {
+    for (const row of existingRows) {
       if (row.source_league && row.external_api_id != null) {
         existingBySourceId.set(`${row.source_league}|${row.external_api_id}`, row);
       }
@@ -136,14 +231,8 @@ export async function GET(req: NextRequest) {
 
     const inserts: Record<string, unknown>[] = [];
     const updates: { id: number; payload: Record<string, unknown> }[] = [];
-    const sameValue = (a: unknown, b: unknown): boolean => {
-      if (a == null && b == null) return true;
-      return String(a) === String(b);
-    };
 
     for (const m of selected) {
-      if (m.status === 'finished' && m.duration !== 'REGULAR') skippedOvertime++;
-
       const payload = {
         season_id: season.id,
         external_api_id: m.external_api_id,
@@ -159,6 +248,10 @@ export async function GET(req: NextRequest) {
         minute: m.minute,
         clock: m.clock,
         duration: m.duration,
+        extra_home: m.extra_home,
+        extra_away: m.extra_away,
+        pen_home: m.pen_home,
+        pen_away: m.pen_away,
         selection_reason: m.selection_reason,
       };
 
@@ -180,6 +273,10 @@ export async function GET(req: NextRequest) {
         !sameValue(existing.minute, payload.minute) ||
         !sameValue(existing.clock, payload.clock) ||
         !sameValue(existing.duration, payload.duration) ||
+        !sameValue(existing.extra_home, payload.extra_home) ||
+        !sameValue(existing.extra_away, payload.extra_away) ||
+        !sameValue(existing.pen_home, payload.pen_home) ||
+        !sameValue(existing.pen_away, payload.pen_away) ||
         !sameValue(existing.selection_reason, payload.selection_reason);
 
       if (changed) updates.push({ id: existing.id, payload });
@@ -188,31 +285,69 @@ export async function GET(req: NextRequest) {
 
     if (inserts.length > 0) {
       const { error } = await supabase.from('matches').insert(inserts);
-      if (error) sourceErrors.push({ slug: 'database-insert', error: error.message });
+      if (error) sourceErrors.push({ source: 'database-insert', error: error.message });
       else inserted = inserts.length;
     }
 
-    // Aktualizujeme jen skutečně změněné zápasy. Běžný častý cron tak
-    // nezapisuje znovu celý rozpis, ale typicky jen právě hrané zápasy.
     for (const item of updates) {
       const { error } = await supabase.from('matches').update(item.payload).eq('id', item.id);
-      if (!error) updated++;
+      if (error) sourceErrors.push({ source: `database-update:${item.id}`, error: error.message });
+      else updated++;
+    }
+
+    // updated_at používáme zároveň jako levný throttle. I když se skóre nezměnilo,
+    // stejný live zápas nevoláme z API při každém běhu cronu, ale nejvýše jednou
+    // za API_FOOTBALL_LIVE_REFRESH_MINUTES (výchozí 10 minut).
+    if (mode === 'live-ids' && liveCandidates.length > 0 && requests > 0) {
+      await supabase
+        .from('matches')
+        .update({ updated_at: now.toISOString() })
+        .in('id', liveCandidates.map((m) => m.id));
+    }
+    if ((mode === 'schedule-window' || mode === 'full-season') && scheduleMarker && requests > 0) {
+      await supabase
+        .from('matches')
+        .update({ updated_at: now.toISOString() })
+        .eq('id', scheduleMarker.id);
+    }
+
+    let roasts = { done: 0, remaining: 0 };
+    if (process.env.ANTHROPIC_API_KEY) {
+      try {
+        roasts = await runRoastBatch(supabase, season.id, 2);
+      } catch (error) {
+        sourceErrors.push({ source: 'anthropic-roast', error: String(error) });
+      }
+    }
+
+    if (mode !== 'idle' && fetched.length === 0 && sourceErrors.length === 0) {
+      sourceErrors.push({
+        source: 'api-football',
+        error: 'API vrátilo 0 zápasů. Zkontroluj API_FOOTBALL_KEY, dostupnost sezóny 2026 a případně ID soutěže.',
+      });
     }
 
     results[key] = {
-      ok: sourceErrors.length < competition.espnSlugs.length,
+      ok: sourceErrors.length === 0,
+      idle: mode === 'idle',
+      source: 'api-football',
       season: season.name,
-      dates,
+      mode,
+      range: mode === 'schedule-window' ? `${range.from}..${range.to}` : null,
       bootstrap,
       fetched: fetched.length,
       selected: selected.length,
       inserted,
       updated,
       unchanged,
-      skippedOvertime,
+      liveCandidates: liveCandidates.length,
+      requests,
+      requestsRemaining,
+      roasts,
       sourceErrors,
     };
   }
 
-  return NextResponse.json({ ok: true, results, at: new Date().toISOString() });
+  const overallOk = keys.every((key) => (results[key] as { ok?: boolean } | undefined)?.ok !== false);
+  return NextResponse.json({ ok: overallOk, results, at: new Date().toISOString() });
 }

@@ -1,18 +1,17 @@
 # Migrace na Chance ligu 2026/27 a sekci Evropa
 
 Projekt zachovává stávající Next.js, Supabase, přihlašování, bodování, profily,
-statistiky i mobilní layout. Migrace pouze rozšiřuje původní model jedné aktivní
-sezóny na více samostatných soutěží.
+statistiky i mobilní layout. Migrace rozšiřuje původní model jedné aktivní
+soutěže na MS 2026, Chance ligu a společnou sekci Evropa.
 
-## Co je nově připravené
+## Co je připravené
 
-- `Chance liga` je výchozí soutěž aplikace.
+- `MS 2026` je první a výchozí soutěž aplikace.
+- `Chance liga` funguje jako samostatná dlouhodobá soutěž.
 - `Evropa` sdružuje vybrané zápasy Ligy mistrů, Evropské ligy a Konferenční ligy.
-- `MS 2026` zůstává dostupné samostatně a jeho body se nemíchají s ligou.
-- Každá soutěž má vlastní aktivní sezónu, zápasy, pořadí a statistiky.
-- Přepínač kol zachovává zvolenou soutěž.
-- Evropský zápas v přehledu zobrazuje, ze kterého poháru pochází.
-- Synchronizace Chance ligy a Evropy je v `/api/sync-football`.
+- Každá soutěž má vlastní sezonu, zápasy, pořadí, body a statistiky.
+- Automatické uzavření tipů a databázový přepočet bodů fungují pro všechny soutěže.
+- Automatické Anthropic hodnocení dohraných zápasů funguje pro všechny soutěže.
 
 ## Databázová migrace
 
@@ -22,38 +21,61 @@ V Supabase SQL Editoru spusť:
 supabase/migrations/20260716_multi_competitions.sql
 ```
 
-Migrace:
+Migrace zachová existující zápasy, tipy i body a založí aktivní sezony
+`Chance liga 2026/27` a `Evropa 2026/27`.
 
-1. přidá `competition_key` do `seasons`,
-2. povolí jednu aktivní sezónu pro každou soutěž,
-3. přidá ke `matches` zdrojovou soutěž, popisek kola a důvod výběru,
-4. zachová existující zápasy, tipy i body,
-5. založí aktivní sezóny `Chance liga 2026/27` a `Evropa 2026/27`.
+## Zdroj zápasů
 
-Před spuštěním je vhodné vytvořit zálohu databáze.
+Chance liga a Evropa používají API-Football. Ve Vercelu musí existovat:
 
-## První synchronizace
-
-Po nasazení aplikace spusť jednorázově celou sezónu:
-
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  "https://TVA-DOMENA/api/sync-football?competition=liga&full=1"
-
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  "https://TVA-DOMENA/api/sync-football?competition=evropa&full=1"
+```text
+API_FOOTBALL_KEY
 ```
 
-Běžná průběžná synchronizace:
+Volitelně lze přepsat výchozí ID soutěží:
 
-```bash
-curl -H "Authorization: Bearer $CRON_SECRET" \
-  "https://TVA-DOMENA/api/sync-football"
+```text
+API_FOOTBALL_LIGA_ID=345
+API_FOOTBALL_CHAMPIONS_ID=2
+API_FOOTBALL_EUROPA_ID=3
+API_FOOTBALL_CONFERENCE_ID=848
 ```
 
-Route standardně načítá obě soutěže v časovém okně kolem aktuálního data. Pro
-ruční diagnostiku lze použít také parametry `dates=YYYYMMDD-YYYYMMDD` a
-`competition=liga|evropa`.
+Po přidání nebo změně proměnné proveď nový produkční deployment. Stávající cron,
+jeho interval i URL se nemění.
+
+## Synchronizace
+
+Stávající endpoint `/api/sync` jedním během zpracuje:
+
+1. MS 2026,
+2. Chance ligu,
+3. Evropu,
+4. přepočet bodů po zapsání výsledku,
+5. chybějící automatická hodnocení zápasů.
+
+Při první synchronizaci Chance ligy a Evropy se automaticky načte celá sezona.
+Další běhy jsou úsporné:
+
+- právě hrané zápasy se aktualizují nejvýše jednou za 10 minut,
+- rozpis se kontroluje přibližně jednou za 12 hodin,
+- evropské soutěže se filtrují až po stažení dat.
+
+Výchozí intervaly lze změnit pomocí:
+
+```text
+API_FOOTBALL_LIVE_REFRESH_MINUTES=10
+API_FOOTBALL_SCHEDULE_REFRESH_HOURS=12
+```
+
+Ruční plnou synchronizaci lze v případě potřeby spustit přes:
+
+```text
+/api/sync-football?competition=liga&full=1&key=CRON_SECRET
+/api/sync-football?competition=evropa&full=1&key=CRON_SECRET
+```
+
+Pro běžný provoz ale stačí existující `/api/sync` cron.
 
 ## Výběr zápasů pro Evropu
 
@@ -69,33 +91,15 @@ Aktuální logika:
 2. vybere vzájemné zápasy klubů v seznamu `FEATURED_CLUBS`,
 3. umožňuje ručně doplnit konkrétní dvojice do `INTERESTING`.
 
-Díky tomu se neimportují celé evropské poháry a sekce zůstává přehledná.
+## Automatické hodnocení
 
-## Formát Chance ligy 2026/27
+Předzápasové porovnání, forma a predikce pracují podle `season_id`, proto jsou
+automaticky dostupné i pro Chance ligu a Evropu.
 
-Aplikace je připravená na:
-
-- 16 klubů,
-- 30 kol základní části systémem doma–venku,
-- následnou pěti termínovou finálovou část,
-- skupinu o titul pro 1.–6. místo,
-- play-off o umístění pro 7.–10. místo,
-- skupinu o záchranu pro 11.–16. místo,
-- případnou baráž po skončení finálové části.
-
-Datový model neomezuje počet zápasů v jednom kole, proto zvládne souběžně
-skupiny i dvojzápasy play-off.
-
-## Důležité omezení zdroje dat
-
-Nová synchronizace používá stejný veřejný ESPN scoreboard, se kterým projekt už
-pracoval pro MS. Zdroj nevyžaduje API klíč, ale není smluvně garantovaný.
-Doporučení pro ostrý dlouhodobý provoz je ponechat provider vrstvu a později
-případně vyměnit ESPN za placený oficiální datový feed.
-
-U zápasů rozhodnutých v prodloužení nebo na penalty se body z generického feedu
-záměrně nepřepočítají, dokud není dostupný spolehlivý stav po 90 minutách. Je to
-bezpečnější než přidělit body podle konečného výsledku po prodloužení.
+Po skončení zápasu databázový trigger přepočítá body. Stávající cron následně
+vygeneruje chybějící Anthropic hodnocení i pro příslušnou ligovou nebo evropskou
+sezonu. Ruční endpoint `/api/roast` nyní standardně zpracuje všechny aktivní
+soutěže; lze použít i parametr `competition=ms|liga|evropa`.
 
 ## Kontrola před nasazením
 
@@ -104,7 +108,3 @@ npm install
 npx tsc --noEmit
 npm run build
 ```
-
-TypeScript kontrola v dodaném balíčku prochází. Produkční build v offline
-prostředí může selhat pouze při stahování Google fontů přes `next/font`; při
-běžném Vercel buildu s přístupem k internetu se fonty načtou.
