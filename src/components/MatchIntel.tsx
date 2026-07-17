@@ -4,22 +4,32 @@ import { useEffect, useState } from 'react';
 import { pointsBadgeClass } from '@/lib/points';
 import { Flag } from './Flag';
 
-interface H2HMatch { date: string; home: string; away: string; hs: number; as: number; comp?: string }
-interface HistoricalTipRow { round: number; home: string; away: string; hs: number | null; as: number | null; ph: number; pa: number; points: number | null }
-interface FormRow { matchId: number; home: string; away: string; hs: number; as: number; ph: number; pa: number; points: number }
+interface MutualMatchRow {
+  round: number | null;
+  date: string | null;
+  home: string;
+  away: string;
+  hs: number;
+  as: number;
+  ph: number | null;
+  pa: number | null;
+  points: number | null;
+  season: string | null;
+}
 interface Prediction {
   lambdaHome: number; lambdaAway: number;
   pHome: number; pDraw: number; pAway: number;
   topScores: { h: number; a: number; p: number }[];
   bestTip: { h: number; a: number; ev: number };
   sample: number;
+  formSample: number;
+  h2hSample: number;
+  basis: 'form+h2h' | 'form' | 'h2h';
 }
 interface Form5Row { opponent: string; gf: number; ga: number; res: 'W' | 'D' | 'L' }
 export interface InsightData {
   teams: { home: string; away: string };
-  h2h: H2HMatch[];
-  previousSeasonTips: HistoricalTipRow[];
-  form: FormRow[];
+  mutualMatches: MutualMatchRow[];
   form5: { home: Form5Row[]; away: Form5Row[] };
   prediction: Prediction | null;
   loggedIn: boolean;
@@ -88,7 +98,7 @@ export function TeamFormContent({ data }: { data: InsightData }) {
   return (
     <div className="space-y-2">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-        Forma na turnaji (poslední zápasy)
+        Současná forma (posledních 5 zápasů)
       </div>
       {(['home', 'away'] as const).map((side) => (
         <div key={side} className="flex flex-wrap items-center gap-2 rounded-xl border border-terrain-700 bg-terrain-900/40 px-3 py-2">
@@ -243,7 +253,7 @@ export function Baroko({
   );
 }
 
-/** Záložka H2H: vzájemné zápasy + tvoje forma na oba týmy. */
+/** Záložka H2H: současná forma + maximálně šest vzájemných zápasů. */
 export function H2HContent({ data, loading }: { data: InsightData | null; loading: boolean }) {
   if (loading) return <p className="text-xs text-slate-300/45">Načítám…</p>;
   if (!data) return <Empty text="Data se nepodařilo načíst." />;
@@ -254,88 +264,42 @@ export function H2HContent({ data, loading }: { data: InsightData | null; loadin
 
       <div>
         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-          Minulá sezona 2025/26 · jak jsi tipoval
-        </div>
-        {!data.loggedIn ? (
-          <Empty text="Přihlas se a uvidíš svůj loňský tip, výsledek a body." />
-        ) : data.previousSeasonTips.length === 0 ? (
-          <Empty text="V minulé sezoně jsi tento vzájemný zápas netipoval." />
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-terrain-700 bg-terrain-900/40">
-            {data.previousSeasonTips.map((r, i) => (
-              <div key={`${r.round}-${i}`} className="border-b border-terrain-800/60 px-3 py-2.5 last:border-0">
-                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-300/45">
-                  <span>{r.round}. kolo</span>
-                  <span className={`rounded px-1.5 py-0.5 font-bold tabular-nums ${pointsBadgeClass(r.points ?? 0)}`}>
-                    {r.points == null ? '—' : `${r.points} b`}
-                  </span>
-                </div>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
-                  <span className="min-w-0 flex-1 text-slate-100/80">{r.home} – {r.away}</span>
-                  <span className="text-slate-300/55">tvůj tip <strong className="text-white">{r.ph}:{r.pa}</strong></span>
-                  <span className="text-slate-300/55">výsledek <strong className="text-white">{r.hs ?? '—'}:{r.as ?? '—'}</strong></span>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      <div>
-        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
           Vzájemné zápasy
         </div>
-        {data.h2h.length === 0 ? (
-          <Empty text="Tyhle dva spolu ještě nehrály (aspoň ne v našich datech)." />
+        {data.mutualMatches.length === 0 ? (
+          <Empty text="Pro tyto týmy zatím nemáme vzájemný zápas." />
         ) : (
           <div className="overflow-hidden rounded-xl border border-terrain-700 bg-terrain-900/40">
-            {data.h2h.map((m, i) => (
-              <div key={i} className="flex items-center gap-2 border-b border-terrain-800/60 px-3 py-2.5 last:border-0">
-                <span className="w-14 shrink-0 text-[11px] text-slate-300/45">{fmtDate(m.date)}</span>
-                <span className="flex flex-1 items-center gap-1.5 truncate text-[13px] text-slate-100/80">
-                  <Flag team={m.home} /> {m.home}
-                </span>
-                <Score hs={m.hs} as={m.as} />
-                <span className="flex flex-1 items-center justify-end gap-1.5 truncate text-right text-[13px] text-slate-100/80">
-                  {m.away} <Flag team={m.away} />
-                </span>
-              </div>
-            ))}
+            {data.mutualMatches.slice(0, 6).map((r, i) => {
+              const hasTip = r.ph != null && r.pa != null;
+              const meta = r.round != null
+                ? `${r.round}. kolo${r.season ? ` · ${r.season}` : ''}`
+                : r.date
+                  ? fmtDate(r.date)
+                  : r.season ?? '';
+              return (
+                <div key={`${r.round ?? r.date ?? i}-${i}`} className="border-b border-terrain-800/60 px-3 py-2.5 last:border-0">
+                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-300/45">
+                    <span>{meta}</span>
+                    {hasTip && (
+                      <span className={`rounded px-1.5 py-0.5 font-bold tabular-nums ${pointsBadgeClass(r.points ?? 0)}`}>
+                        {r.points == null ? '—' : `${r.points} b`}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+                    <span className="min-w-0 flex-1 text-slate-100/80">{r.home} – {r.away}</span>
+                    {hasTip && (
+                      <span className="text-slate-300/55">tvůj tip <strong className="text-white">{r.ph}:{r.pa}</strong></span>
+                    )}
+                    <span className="text-slate-300/55">výsledek <strong className="text-white">{r.hs}:{r.as}</strong></span>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>
-
-      {(['home', 'away'] as const).map((side) => {
-        const team = data.teams[side];
-        const rows = data.form.filter((r) => r.home === team || r.away === team);
-        return (
-          <div key={side}>
-            <div className="mb-1.5 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-              <Flag team={team} /> Jak ti sedí {team}
-            </div>
-            {!data.loggedIn ? (
-              <Empty text="Přihlas se a uvidíš, jak ti tenhle tým vycházel." />
-            ) : rows.length === 0 ? (
-              <Empty text={`Na ${team} jsi zatím netipoval.`} />
-            ) : (
-              <div className="overflow-hidden rounded-xl border border-terrain-700 bg-terrain-900/40">
-                {rows.map((r) => (
-                  <div key={r.matchId} className="flex items-center gap-2 border-b border-terrain-800/60 px-3 py-2 last:border-0">
-                    <span className="min-w-0 flex-1 truncate text-[12.5px] text-slate-100/70">
-                      {r.home} – {r.away}
-                    </span>
-                    <span className="shrink-0 text-[11px] text-slate-300/45">tip {r.ph}:{r.pa}</span>
-                    <Score hs={r.hs} as={r.as} />
-                    <span className={`shrink-0 rounded px-1.5 py-0.5 text-[11px] font-bold tabular-nums ${pointsBadgeClass(r.points)}`}>
-                      {r.points}b
-                    </span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        );
-      })}
     </div>
   );
 }
@@ -354,7 +318,7 @@ export function PredictionContent({
 }) {
   if (loading) return <p className="text-xs text-slate-300/45">Počítám…</p>;
   const p = data?.prediction;
-  if (!p) return <Empty text="Na predikci zatím není dost odehraných zápasů." />;
+  if (!p) return <Empty text="Na predikci zatím nejsou dostupná data o formě ani vzájemných zápasech." />;
 
   const pct = (x: number) => `${Math.round(x * 100)} %`;
   const bars: { label: string; val: number; cls: string }[] = [
@@ -424,8 +388,12 @@ export function PredictionContent({
       </div>
 
       <p className="text-[11px] leading-snug text-slate-300/40">
-        Model počítá se silou útoku a obrany obou týmů z {p.sample} odehraných zápasů turnaje
-        {p.sample < 6 ? ' — zatím málo dat, ber to s rezervou.' : '.'} Fotbal si stejně udělá, co chce. ⚽
+        {p.basis === 'form+h2h'
+          ? `Model kombinuje ${p.formSample} zápasů současné formy a ${p.h2hSample} vzájemných zápasů.`
+          : p.basis === 'h2h'
+            ? `Současná forma ještě není k dispozici. Model proto vychází pouze z ${p.h2hSample} vzájemných zápasů.`
+            : `Vzájemná historie není k dispozici. Model vychází z ${p.formSample} zápasů současné formy.`}
+        {p.sample < 6 ? ' Zatím jde o malý vzorek, ber predikci s rezervou.' : ''} Fotbal si stejně udělá, co chce. ⚽
       </p>
     </div>
   );
