@@ -163,7 +163,7 @@ function bestChanceLeague(items: { id: number; name: string }[]): { id: number; 
   const scored = items.map((league) => {
     const name = league.name.toLowerCase();
     let score = 0;
-    if (/chance liga/.test(name)) score += 100;
+    if (/chance liga|czech liga/.test(name)) score += 100;
     if (/first league|1\.? liga|czech first/.test(name)) score += 50;
     if (/national|fnl|2\.? liga|women|youth|u\d+/.test(name)) score -= 100;
     return { ...league, score };
@@ -215,85 +215,86 @@ async function syncHighlightlyLiga(args: {
   };
   const canSpend = (needed = 1) => report.remaining == null || report.remaining - needed >= reserve;
 
-  // Jednorázový import přípravy. Neprobíhá při každém cronu, pouze s
-  // ?highlightly_bootstrap=1, aby osm dní rozpisu nespotřebovávalo denní limit.
+  // Jednorázový import přípravy. Highlightly může přátelské zápasy vést
+  // pod různými názvy soutěží. Proto se každý den načte jedním dotazem
+  // a až lokálně se vyberou zápasy ligových klubů v přátelské soutěži.
   if (args.bootstrapPrep) {
     try {
-      let friendlyLeague: { id: number; name: string } | null = null;
-      const configuredId = Number(process.env.HIGHLIGHTLY_FRIENDLY_LEAGUE_ID ?? 0);
-      if (configuredId > 0) {
-        friendlyLeague = { id: configuredId, name: process.env.HIGHLIGHTLY_FRIENDLY_LEAGUE_NAME ?? 'Club Friendlies' };
-      } else {
-        const candidates = [
-          process.env.HIGHLIGHTLY_FRIENDLY_LEAGUE_NAME ?? 'Club Friendlies',
-          'Club Friendly Games',
-          'Friendlies Clubs',
-        ];
-        for (const name of [...new Set(candidates)]) {
-          if (!canSpend()) break;
-          const leagues = await fetchHighlightlyLeagues({ leagueName: name, limit: 100 });
-          absorb(leagues);
-          const found = leagues.data.find((league) => /friend/i.test(league.name) && !/women|youth|u\d+/i.test(league.name));
-          if (found) { friendlyLeague = { id: found.id, name: found.name }; break; }
+      const configuredLeagueId = Number(process.env.HIGHLIGHTLY_FRIENDLY_LEAGUE_ID ?? 0);
+      const matches: HighlightlyMatch[] = [];
+      for (const date of dateSeries(HIGHLIGHTLY_PREP_FROM, HIGHLIGHTLY_PREP_TO)) {
+        if (!canSpend()) {
+          report.warnings.push('Import přípravy skončil předčasně kvůli bezpečné rezervě požadavků.');
+          break;
+        }
+        const page = await fetchHighlightlyMatches({
+          date,
+          leagueId: configuredLeagueId > 0 ? configuredLeagueId : undefined,
+          limit: 100,
+        });
+        absorb(page);
+        matches.push(...page.data);
+        if (page.totalCount > page.data.length && canSpend()) {
+          const second = await fetchHighlightlyMatches({
+            date,
+            leagueId: configuredLeagueId > 0 ? configuredLeagueId : undefined,
+            limit: 100,
+            offset: 100,
+          });
+          absorb(second);
+          matches.push(...second.data);
         }
       }
-      report.prep.league = friendlyLeague?.name ?? null;
-      if (!friendlyLeague) {
-        report.warnings.push('Highlightly: nepodařilo se najít soutěž klubových přípravných zápasů. Použij /api/liga-check?source=highlightly&mode=leagues.');
-      } else {
-        const matches: HighlightlyMatch[] = [];
-        for (const date of dateSeries(HIGHLIGHTLY_PREP_FROM, HIGHLIGHTLY_PREP_TO)) {
-          if (!canSpend()) { report.warnings.push('Import přípravy skončil předčasně kvůli bezpečné rezervě požadavků.'); break; }
-          const page = await fetchHighlightlyMatches({ date, leagueId: friendlyLeague.id, limit: 100 });
-          absorb(page);
-          matches.push(...page.data);
-          if (page.totalCount > page.data.length && canSpend()) {
-            const second = await fetchHighlightlyMatches({ date, leagueId: friendlyLeague.id, limit: 100, offset: 100 });
-            absorb(second);
-            matches.push(...second.data);
-          }
-        }
-        report.prep.fetched = matches.length;
-        const selected = Array.from(new Map(matches
-          .filter((match) => isChanceTeam(match.home.name) || isChanceTeam(match.away.name))
-          .map((match) => [match.id, match])).values());
-        report.prep.selected = selected.length;
-        const { data: existingPrep } = await args.supabase
-          .from('matches')
-          .select('id, external_api_id, detail')
-          .eq('season_id', args.seasonId)
-          .eq('source_league', 'highlightly.friendlies');
-        const byId = new Map(((existingPrep as { id: number; external_api_id: number | null; detail: MatchDetail | null }[]) ?? [])
-          .filter((row) => row.external_api_id != null)
-          .map((row) => [row.external_api_id as number, row]));
-        for (const match of selected) {
-          const fixture = highlightlyToFixture(match, 'highlightly.friendlies', 0, 'Příprava');
-          const existing = byId.get(match.id);
-          const detail = mergeDetail(existing?.detail, {
-            _highlightly: {
-              id: match.id, leagueId: match.league.id || friendlyLeague.id,
-              homeLogo: match.home.logo, awayLogo: match.away.logo,
-              listFetchedAt: args.now.toISOString(),
-            },
-          });
-          const payload = {
-            season_id: args.seasonId, external_api_id: fixture.external_api_id,
-            source_league: fixture.source_league, round: 0, round_label: 'Příprava',
-            kickoff: fixture.kickoff, home_team: fixture.home_team, away_team: fixture.away_team,
-            home_score: fixture.home_score, away_score: fixture.away_score, status: fixture.status,
-            minute: fixture.minute, clock: fixture.clock, duration: fixture.duration,
-            extra_home: null, extra_away: null, pen_home: fixture.pen_home, pen_away: fixture.pen_away,
-            selection_reason: 'preparation', detail,
-          };
-          if (existing) {
-            const { error } = await args.supabase.from('matches').update(payload).eq('id', existing.id);
-            if (error) report.warnings.push(`Příprava update ${existing.id}: ${error.message}`);
-            else report.prep.updated++;
-          } else {
-            const { error } = await args.supabase.from('matches').insert(payload);
-            if (error) report.warnings.push(`Příprava insert ${match.id}: ${error.message}`);
-            else report.prep.inserted++;
-          }
+      report.prep.fetched = matches.length;
+      const selected = Array.from(new Map(matches
+        .filter((match) => (configuredLeagueId > 0 || /friend/i.test(match.league.name))
+          && (isChanceTeam(match.home.name) || isChanceTeam(match.away.name)))
+        .map((match) => [match.id, match])).values());
+      report.prep.selected = selected.length;
+      const friendlyNames = [...new Set(selected.map((match) => match.league.name).filter(Boolean))];
+      report.prep.league = friendlyNames.join(', ') || null;
+      if (selected.length === 0) {
+        report.warnings.push(
+          `Highlightly: v období ${HIGHLIGHTLY_PREP_FROM} až ${HIGHLIGHTLY_PREP_TO} nebyl nalezen žádný přátelský zápas ligového klubu. `
+          + `Celkem bylo načteno ${matches.length} zápasů.`,
+        );
+      }
+
+      const { data: existingPrep } = await args.supabase
+        .from('matches')
+        .select('id, external_api_id, detail')
+        .eq('season_id', args.seasonId)
+        .eq('source_league', 'highlightly.friendlies');
+      const byId = new Map(((existingPrep as { id: number; external_api_id: number | null; detail: MatchDetail | null }[]) ?? [])
+        .filter((row) => row.external_api_id != null)
+        .map((row) => [row.external_api_id as number, row]));
+      for (const match of selected) {
+        const fixture = highlightlyToFixture(match, 'highlightly.friendlies', 0, 'Příprava');
+        const existing = byId.get(match.id);
+        const detail = mergeDetail(existing?.detail, {
+          _highlightly: {
+            id: match.id, leagueId: match.league.id,
+            homeLogo: match.home.logo, awayLogo: match.away.logo,
+            listFetchedAt: args.now.toISOString(),
+          },
+        });
+        const payload = {
+          season_id: args.seasonId, external_api_id: fixture.external_api_id,
+          source_league: fixture.source_league, round: 0, round_label: 'Příprava',
+          kickoff: fixture.kickoff, home_team: fixture.home_team, away_team: fixture.away_team,
+          home_score: fixture.home_score, away_score: fixture.away_score, status: fixture.status,
+          minute: fixture.minute, clock: fixture.clock, duration: fixture.duration,
+          extra_home: null, extra_away: null, pen_home: fixture.pen_home, pen_away: fixture.pen_away,
+          selection_reason: 'preparation', detail,
+        };
+        if (existing) {
+          const { error } = await args.supabase.from('matches').update(payload).eq('id', existing.id);
+          if (error) report.warnings.push(`Příprava update ${existing.id}: ${error.message}`);
+          else report.prep.updated++;
+        } else {
+          const { error } = await args.supabase.from('matches').insert(payload);
+          if (error) report.warnings.push(`Příprava insert ${match.id}: ${error.message}`);
+          else report.prep.inserted++;
         }
       }
     } catch (error) {

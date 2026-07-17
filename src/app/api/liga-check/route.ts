@@ -5,8 +5,19 @@ import {
   fetchOfficialLeagueFixtures,
   highlightlyConfigured,
 } from '@/lib/espnCompetition';
+import { canonTeam } from '@/lib/teamAliases';
 
 export const dynamic = 'force-dynamic';
+
+const CHANCE_TEAMS = new Set([
+  'Sparta', 'Slavia', 'Baník', 'Plzeň', 'Liberec', 'Zlín', 'Teplice', 'Bohemians',
+  'Zbrojovka Brno', 'Slovácko', 'Jablonec', 'Olomouc', 'Hradec Králové', 'Pardubice',
+  'Artis Brno', 'Boleslav',
+]);
+
+function isChanceTeam(name: string): boolean {
+  return CHANCE_TEAMS.has(canonTeam(name));
+}
 
 /** Read-only diagnostika oficiálního rozpisu, ESPN Evropy a Highlightly. */
 export async function GET(req: NextRequest) {
@@ -26,8 +37,9 @@ export async function GET(req: NextRequest) {
     const mode = req.nextUrl.searchParams.get('mode') ?? 'leagues';
     try {
       if (mode === 'leagues') {
+        const country = req.nextUrl.searchParams.get('country');
         const result = await fetchHighlightlyLeagues({
-          countryCode: req.nextUrl.searchParams.get('country') ?? 'CZ',
+          countryCode: country == null ? 'CZ' : country || undefined,
           leagueName: req.nextUrl.searchParams.get('name') ?? undefined,
           season: Number(req.nextUrl.searchParams.get('season') ?? 2026),
           limit: 100,
@@ -47,28 +59,61 @@ export async function GET(req: NextRequest) {
       const date = req.nextUrl.searchParams.get('date') ?? new Date().toISOString().slice(0, 10);
       const leagueId = Number(req.nextUrl.searchParams.get('leagueId') ?? 0);
       const friendly = mode === 'friendlies';
-      const result = await fetchHighlightlyMatches({
+      const first = await fetchHighlightlyMatches({
         date,
         leagueId: leagueId > 0 ? leagueId : undefined,
-        leagueName: leagueId > 0
+        leagueName: friendly || leagueId > 0
           ? undefined
           : req.nextUrl.searchParams.get('name')
-            ?? (friendly ? process.env.HIGHLIGHTLY_FRIENDLY_LEAGUE_NAME ?? 'Club Friendlies' : process.env.HIGHLIGHTLY_CHANCE_LEAGUE_NAME ?? 'Chance Liga'),
-        countryCode: friendly ? undefined : 'CZ',
+            ?? process.env.HIGHLIGHTLY_CHANCE_LEAGUE_NAME
+            ?? 'Czech Liga',
+        countryCode: friendly || leagueId > 0 ? undefined : 'CZ',
         season: friendly ? undefined : 2026,
         limit: 100,
       });
+      const all = [...first.data];
+      let requests = first.requests;
+      let remaining = first.remaining;
+      let limit = first.limit;
+      if (first.totalCount > all.length) {
+        const second = await fetchHighlightlyMatches({
+          date,
+          leagueId: leagueId > 0 ? leagueId : undefined,
+          leagueName: friendly || leagueId > 0
+            ? undefined
+            : req.nextUrl.searchParams.get('name')
+              ?? process.env.HIGHLIGHTLY_CHANCE_LEAGUE_NAME
+              ?? 'Czech Liga',
+          countryCode: friendly || leagueId > 0 ? undefined : 'CZ',
+          season: friendly ? undefined : 2026,
+          limit: 100,
+          offset: 100,
+        });
+        all.push(...second.data);
+        requests += second.requests;
+        remaining = second.remaining;
+        limit = second.limit;
+      }
+
+      const selected = friendly
+        ? all.filter((match) => /friend/i.test(match.league.name)
+          && (isChanceTeam(match.home.name) || isChanceTeam(match.away.name)))
+        : all;
       return NextResponse.json({
         ok: true,
         source,
         mode,
         date,
-        requests: result.requests,
-        requestsRemaining: result.remaining,
-        requestsLimit: result.limit,
-        totalCount: result.totalCount,
-        fetched: result.data.length,
-        sample: result.data.slice(0, 20),
+        requests,
+        requestsRemaining: remaining,
+        requestsLimit: limit,
+        totalCount: first.totalCount,
+        rawFetched: all.length,
+        fetched: selected.length,
+        friendlyLeagues: friendly
+          ? [...new Set(selected.map((match) => `${match.league.name} (${match.league.id})`))]
+          : undefined,
+        sample: selected.slice(0, 20),
       });
     } catch (error) {
       return NextResponse.json({ ok: false, source, mode, error: String(error) });
