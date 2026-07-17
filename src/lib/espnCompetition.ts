@@ -1058,13 +1058,17 @@ export async function fetchHighlightlyEvents(
   matchId: number,
   homeTeam: string,
   awayTeam: string,
-): Promise<Pick<MatchDetail, 'goals' | 'cards' | 'substitutions'> & HighlightlyBudget> {
+): Promise<Pick<MatchDetail, 'goals' | 'cards' | 'substitutions'> & HighlightlyBudget & {
+  scoreFromEvents: { home: number; away: number } | null;
+}> {
   const response = await highlightlyGet(`/events/${matchId}`, {});
   const root = asMap(response.json);
   const data = asArray(Array.isArray(response.json) ? response.json : root.data ?? root.response ?? []);
   const goals: NonNullable<MatchDetail['goals']> = [];
   const cards: NonNullable<MatchDetail['cards']> = [];
   const substitutions: NonNullable<MatchDetail['substitutions']> = [];
+  let eventHomeScore = 0;
+  let eventAwayScore = 0;
   for (const eventValue of data) {
     const event = asMap(eventValue);
     const type = firstString(event.type, event.eventType, event.description).toLowerCase();
@@ -1072,13 +1076,17 @@ export async function fetchHighlightlyEvents(
     if (!side) continue;
     const minRaw = firstString(event.time, event.minute, event.clock);
     const min = minRaw ? (minRaw.includes("'") ? minRaw : `${minRaw}'`) : '?';
-    if (/goal/.test(type)) {
+    const isCancelledGoal = /cancel|disallow|no goal|missed penalty/.test(type);
+    const isScoredGoal = /goal|penalty/.test(type) && !isCancelledGoal && !/var/.test(type);
+    if (isScoredGoal) {
       goals.push({
         min,
         side,
         player: playerName(event.player ?? event.scorer) || 'Neznámý střelec',
         kind: /own/.test(type) ? 'own' : /penalt/.test(type) ? 'penalty' : 'goal',
       });
+      if (side === 'home') eventHomeScore++;
+      else eventAwayScore++;
     } else if (/yellow|red|card/.test(type)) {
       cards.push({
         min,
@@ -1099,6 +1107,7 @@ export async function fetchHighlightlyEvents(
     goals,
     cards,
     substitutions,
+    scoreFromEvents: goals.length > 0 ? { home: eventHomeScore, away: eventAwayScore } : null,
     requests: response.requests,
     remaining: response.remaining,
     limit: response.limit,

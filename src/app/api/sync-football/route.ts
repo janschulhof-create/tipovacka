@@ -120,7 +120,16 @@ type HighlightlyReport = {
   pollMinutes: number;
   reserve: number;
   prep: { requested: boolean; fetched: number; selected: number; inserted: number; updated: number; league: string | null };
-  live: { due: boolean; date: string | null; fetched: number; matched: number; updated: number; details: number; league: string | null };
+  live: {
+    due: boolean;
+    date: string | null;
+    fetched: number;
+    matched: number;
+    updated: number;
+    details: number;
+    scoreCorrections: number;
+    league: string | null;
+  };
   warnings: string[];
 };
 
@@ -149,6 +158,38 @@ function hlMeta(detail: MatchDetail | null | undefined): HighlightlySyncMeta | n
 
 function mergeDetail(base: MatchDetail | null | undefined, patch: Partial<MatchDetail>): MatchDetail {
   return { ...(base ?? {}), ...patch };
+}
+
+function scoreFromStoredGoals(detail: MatchDetail | null | undefined): { home: number; away: number } | null {
+  if (!detail?.goals?.length) return null;
+  let home = 0;
+  let away = 0;
+  for (const goal of detail.goals) {
+    if (goal.side === 'home') home++;
+    else if (goal.side === 'away') away++;
+  }
+  return home + away > 0 ? { home, away } : null;
+}
+
+function reconcileHighlightlyScore(
+  match: HighlightlyMatch,
+  detail: MatchDetail | null | undefined,
+): { home: number | null; away: number | null; corrected: boolean } {
+  const api = { home: match.homeScore, away: match.awayScore };
+  const events = scoreFromStoredGoals(detail);
+  if (!events) return { ...api, corrected: false };
+
+  // Highlightly u některých přátelských zápasů vrací týmy v jiném pořadí než
+  // události zápasu. Skóre z gólových událostí je navázané přímo na název týmu,
+  // proto ho použijeme, pokud jeho celkový počet gólů souhlasí s hlavním skóre.
+  if (api.home != null && api.away != null) {
+    const totalsAgree = api.home + api.away === events.home + events.away;
+    const differs = api.home !== events.home || api.away !== events.away;
+    if (totalsAgree && differs) return { ...events, corrected: true };
+    return { ...api, corrected: false };
+  }
+
+  return { ...events, corrected: true };
 }
 
 function hlPair(home: string, away: string): string {
@@ -200,7 +241,16 @@ async function syncHighlightlyLiga(args: {
     configured: highlightlyConfigured(), requests: 0, remaining: null, limit: null,
     pollMinutes, reserve,
     prep: { requested: args.bootstrapPrep, fetched: 0, selected: 0, inserted: 0, updated: 0, league: null },
-    live: { due: false, date: null, fetched: 0, matched: 0, updated: 0, details: 0, league: null },
+    live: {
+      due: false,
+      date: null,
+      fetched: 0,
+      matched: 0,
+      updated: 0,
+      details: 0,
+      scoreCorrections: 0,
+      league: null,
+    },
     warnings: [],
   };
   if (!report.configured) {
@@ -481,9 +531,18 @@ async function syncHighlightlyLiga(args: {
       }
 
       const stableStatus = row.status === 'finished' && match.status !== 'finished' ? 'finished' : match.status;
+      const reconciledScore = reconcileHighlightlyScore(match, detail);
+      if (reconciledScore.corrected) {
+        report.live.scoreCorrections++;
+        report.warnings.push(
+          `Highlightly: opraveno přiřazení skóre ${row.home_team}–${row.away_team} `
+          + `${match.homeScore ?? '?'}:${match.awayScore ?? '?'} → `
+          + `${reconciledScore.home ?? '?'}:${reconciledScore.away ?? '?'} podle gólových událostí.`,
+        );
+      }
       const payload = {
-        home_score: match.homeScore ?? row.home_score,
-        away_score: match.awayScore ?? row.away_score,
+        home_score: reconciledScore.home ?? row.home_score,
+        away_score: reconciledScore.away ?? row.away_score,
         status: stableStatus,
         minute: stableStatus === 'live' ? match.minute : null,
         clock: stableStatus === 'live' ? match.clock : null,
