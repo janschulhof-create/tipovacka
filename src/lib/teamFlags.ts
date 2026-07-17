@@ -1,14 +1,90 @@
 /**
- * Mapa českých názvů týmů → ISO kód pro vlajku (flagcdn.com).
- * Domácí země UK mají speciální kódy (gb-eng, gb-sct). Čistě frontend, bez API.
+ * Ikony týmů používané v UI.
+ *
+ * - reprezentační týmy používají vlajky ze sprite souboru /flags.svg
+ * - kluby Chance ligy používají loga vložená ve stejném sprite souboru
+ *
+ * Názvy klubů jsou mapované přes přesné aliasy, aby se například Slavia Praha
+ * nezaměnila se Slavií Sofia nebo Sparta Praha se Spartou Rotterdam.
  */
 const norm = (s: string) =>
   s
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[^a-z ]/g, '')
+    .replace(/[^a-z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
+
+const CLUB_LOGOS: Record<string, string> = {
+  'artis brno': 'artis-brno',
+  'sk artis brno': 'artis-brno',
+
+  banik: 'banik',
+  'banik ostrava': 'banik',
+  'fc banik ostrava': 'banik',
+
+  bohemians: 'bohemians',
+  'bohemians 1905': 'bohemians',
+  'bohemians praha 1905': 'bohemians',
+
+  'hradec kralove': 'hradec-kralove',
+  'fc hradec kralove': 'hradec-kralove',
+
+  jablonec: 'jablonec',
+  'fk jablonec': 'jablonec',
+
+  boleslav: 'boleslav',
+  'mlada boleslav': 'boleslav',
+  'fk mlada boleslav': 'boleslav',
+
+  pardubice: 'pardubice',
+  'fk pardubice': 'pardubice',
+
+  olomouc: 'olomouc',
+  sigma: 'olomouc',
+  'sigma olomouc': 'olomouc',
+  'sk sigma olomouc': 'olomouc',
+
+  slavia: 'slavia',
+  'slavia praha': 'slavia',
+  'slavia prague': 'slavia',
+  'sk slavia praha': 'slavia',
+  'sk slavia prague': 'slavia',
+
+  slovacko: 'slovacko',
+  '1 fc slovacko': 'slovacko',
+
+  liberec: 'liberec',
+  'slovan liberec': 'liberec',
+  'fc slovan liberec': 'liberec',
+
+  sparta: 'sparta',
+  'sparta praha': 'sparta',
+  'sparta prague': 'sparta',
+  'ac sparta praha': 'sparta',
+  'ac sparta prague': 'sparta',
+
+  teplice: 'teplice',
+  'fk teplice': 'teplice',
+
+  plzen: 'plzen',
+  'viktoria plzen': 'plzen',
+  'fc viktoria plzen': 'plzen',
+
+  'zbrojovka brno': 'zbrojovka-brno',
+  'fc zbrojovka brno': 'zbrojovka-brno',
+
+  zlin: 'zlin',
+  'fc zlin': 'zlin',
+  'fastav zlin': 'zlin',
+  'fc fastav zlin': 'zlin',
+};
+
+export function clubLogoId(name: string): string | null {
+  if (!name) return null;
+  return CLUB_LOGOS[norm(name)] ?? null;
+}
 
 const CODES: Record<string, string> = {
   mexiko: 'mx', 'jizni afrika': 'za', 'jizni korea': 'kr', cesko: 'cz', kanada: 'ca',
@@ -26,7 +102,7 @@ export function flagCode(name: string): string | null {
   if (!name) return null;
   const k = norm(name);
   if (CODES[k]) return CODES[k];
-  // robustní fallback pro problematické/odlišně psané názvy
+  // robustní fallback pro problematické/odlišně psané názvy reprezentací
   if (k.includes('bosn')) return 'ba';
   if (k.includes('verde') || k.includes('kapverd')) return 'cv';
   return null;
