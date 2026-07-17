@@ -62,7 +62,7 @@ export default async function Home({
   // Vše paralelně; dřív se 5 dotazů volalo za sebou a latence se sčítaly.
   const [matches, standings, players, chart, liveMatches, liveInc, sessionPlayer] =
     await Promise.all([
-      selectedRound ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
+      selectedRound != null ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
       getStandings(seasonId),
       getPlayers(),
       getSeasonChartData(seasonId),
@@ -105,7 +105,7 @@ export default async function Home({
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}
       <header className="flex items-center justify-between gap-3">
         <h1 className="font-display text-2xl font-bold tracking-wide text-white sm:text-3xl">
-          {selectedRound ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
+          {selectedRound != null ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
           <span className="ml-2 hidden align-middle text-sm font-normal text-slate-300/50 sm:inline">
             {season.name}
           </span>
