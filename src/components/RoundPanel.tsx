@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { Fragment, useEffect, useState, useCallback, useRef } from 'react';
 import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
 import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
@@ -10,6 +10,15 @@ import { Baroko, H2HContent, PredictionContent, useInsight } from './MatchIntel'
 import { sourceLabel } from '@/lib/espnCompetition';
 
 type Scores = Record<number, { h: string; a: string }>;
+
+function europeanCompetitionKey(source: string | null | undefined): string {
+  return String(source ?? '').replace(/_qual$/, '');
+}
+
+function europeanCompetitionLabel(source: string | null | undefined): string {
+  const key = europeanCompetitionKey(source);
+  return sourceLabel(key);
+}
 
 function dt(iso: string) {
   // pevná TZ → shodný výstup na serveru i v prohlížeči (jinak hydration mismatch)
@@ -27,6 +36,7 @@ export function RoundPanel({
   playerId: playerIdProp,
   onPlayerChange,
   showSelector = true,
+  groupBySource = false,
 }: {
   matches: Match[];
   players: Player[];
@@ -36,6 +46,8 @@ export function RoundPanel({
   playerId?: number | '';
   onPlayerChange?: (v: number | '') => void;
   showSelector?: boolean;
+  /** U evropského týdenního kola vloží výrazné předěly mezi poháry. */
+  groupBySource?: boolean;
 }) {
   // Supabase klient (~200 kB JS) se stáhne až ve chvíli, kdy je fakt potřeba
   // (načtení/uložení tipů) – ne při startu stránky. Výrazně zrychlí první vykreslení.
@@ -274,21 +286,36 @@ export function RoundPanel({
 
       {/* zápasy */}
       <ul className="divide-y divide-terrain-700">
-        {matches.map((m) => (
-          <MatchRow
-            key={m.id}
-            now={now}
-            m={m}
-            locked={isLocked(m)}
-            canTip={editable && playerId !== ''}
-            tipping={tipping}
-            selectedName={selectedName}
-            preds={predictions.filter((p) => p.match_id === m.id)}
-            score={scores[m.id] ?? { h: '', a: '' }}
-            onBump={bump}
-            onChange={setVal}
-          />
-        ))}
+        {matches.map((m, index) => {
+          const previous = matches[index - 1];
+          const showGroup = groupBySource && (!previous || europeanCompetitionKey(previous.source_league) !== europeanCompetitionKey(m.source_league));
+          return (
+            <Fragment key={m.id}>
+              {showGroup && (
+                <li className="border-y border-terrain-600 bg-terrain-950/75 px-4 py-2.5 first:border-t-0">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-blue-500/15 text-xs">🏆</span>
+                    <span className="text-[11px] font-bold uppercase tracking-[0.13em] text-blue-200/90">
+                      {europeanCompetitionLabel(m.source_league)}
+                    </span>
+                  </div>
+                </li>
+              )}
+              <MatchRow
+                now={now}
+                m={m}
+                locked={isLocked(m)}
+                canTip={editable && playerId !== ''}
+                tipping={tipping}
+                selectedName={selectedName}
+                preds={predictions.filter((p) => p.match_id === m.id)}
+                score={scores[m.id] ?? { h: '', a: '' }}
+                onBump={bump}
+                onChange={setVal}
+              />
+            </Fragment>
+          );
+        })}
       </ul>
 
       {/* bodování za kolo */}

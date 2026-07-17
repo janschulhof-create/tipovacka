@@ -79,24 +79,23 @@ a SQL `calculate_points` (kanonická, počítá produkčně).
 
 ---
 
-## 4) Zdroj dat
+## 4) Zdroj dat — proč API-Football
 
-| Soutěž | Zdroj | Klíč / tarif | Použití |
+| Zdroj | Chance Liga zdarma? | Oficiální API? | Verdikt |
 |---|---|---|---|
-| **Chance liga** | oficiální web LFA / Chance Ligy | žádný | rozpis, termíny a výsledky; parser kontroluje 30 kol × 8 zápasů |
-| **Evropské poháry** | veřejný ESPN scoreboard | žádný | kvalifikace i hlavní fáze, průběžné skóre a stav utkání |
-| **MS 2026** | stávající synchronizace projektu | beze změny | zachovaný původní provoz |
+| **API-Football** (api-sports.io) | ✅ (free 100 req/den) | ✅ | **Doporučeno** |
+| Football-data.org | ❌ (jen placený plán) | ✅ | Nevhodné pro CZ ligu |
+| SofaScore | — | ❌ (jen scraping, proti ToS) | Nepoužívat |
 
-Pro českou ligu není použitý náhodný bezplatný agregátor. Zdrojem je oficiální
-rozpis soutěže. Synchronizace přijímá pouze skutečný řádek ve formátu
-`domácí klub – skóre – hostující klub`; duplicitní odkazy z postranního programu
-ignoruje. Při plné synchronizaci navíc ověří přesně 240 zápasů základní části,
-osm utkání v každém kole a šestnáct různých týmů na kolo. Neúplná nebo
-strukturálně chybná data se do databáze nezapíšou.
+API-Football pokrývá 1200+ soutěží včetně české 1. ligy, má stabilní league ID,
+rozpis + průběžné skóre + stav utkání. Free plán bohatě stačí (jeden sync = pár
+volání, cron běží à 15 min jen kolem zápasů).
 
-Evropa používá ESPN slugs pro kvalifikaci i hlavní soutěže Ligy mistrů,
-Evropské ligy a Konferenční ligy. Data se načítají v kratších datumových oknech,
-aby se do sezony 2026/27 nepřimíchala předchozí sezona.
+**Nastavení:** najdi league ID jednorázově přes
+`GET /leagues?country=Czech-Republic&season=2025`, ulož do `API_FOOTBALL_LEAGUE_ID`
+(očekávaná hodnota kolem `345`, ale ověř na dashboardu). Integrace:
+[`src/lib/apiFootball.ts`](src/lib/apiFootball.ts), sync:
+[`src/app/api/sync/route.ts`](src/app/api/sync/route.ts).
 
 ---
 

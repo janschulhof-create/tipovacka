@@ -3,6 +3,8 @@ import { createServerAuthClient } from '@/lib/supabase/server';
 import { getSessionPlayer } from '@/lib/auth';
 import { calculatePoints } from '@/lib/scoring';
 import h2hData from '@/data/h2h.json';
+import historie from '@/data/historie.json';
+import { canonTeam } from '@/lib/teamAliases';
 import { predictMatch } from '@/lib/predict';
 
 export const dynamic = 'force-dynamic';
@@ -14,6 +16,17 @@ interface H2HMatch {
   hs: number;
   as: number;
   comp?: string;
+}
+
+interface HistoricalTipRow {
+  round: number;
+  home: string;
+  away: string;
+  hs: number | null;
+  as: number | null;
+  ph: number;
+  pa: number;
+  points: number | null;
 }
 
 interface FormRow {
@@ -45,9 +58,37 @@ export async function GET(req: Request) {
   const pairKey = [teams.home, teams.away].sort().join('|');
   const h2h: H2HMatch[] = ((h2hData as unknown as Record<string, H2HMatch[]>)[pairKey] ?? []).slice(0, 5);
 
+  const player = await getSessionPlayer();
+
+  // ---------- Minulá sezona Chance ligy: tvůj tip, výsledek a body ----------
+  let previousSeasonTips: HistoricalTipRow[] = [];
+  if (player) {
+    const archive = historie as unknown as {
+      season: string;
+      rounds: {
+        round: number;
+        matches: {
+          home: string; away: string; hs: number | null; as: number | null;
+          tips: Record<string, { h: number; a: number; pts: number | null }>;
+        }[];
+      }[];
+    };
+    const currentPair = [canonTeam(teams.home), canonTeam(teams.away)].sort().join('|');
+    previousSeasonTips = archive.rounds.flatMap((round) =>
+      round.matches.flatMap((m) => {
+        const archivedPair = [canonTeam(m.home), canonTeam(m.away)].sort().join('|');
+        const tip = m.tips[player.name];
+        if (archivedPair !== currentPair || !tip) return [];
+        return [{
+          round: round.round, home: m.home, away: m.away, hs: m.hs, as: m.as,
+          ph: tip.h, pa: tip.a, points: tip.pts,
+        }];
+      }),
+    );
+  }
+
   // ---------- Tvoje forma: VŠECHNY tvé tipnuté zápasy KAŽDÉHO z obou týmů na tomto MS ----------
   let form: FormRow[] = [];
-  const player = await getSessionPlayer();
   if (player) {
     const { data: finished } = await sb
       .from('matches')
@@ -150,5 +191,5 @@ export async function GET(req: Request) {
 
   const form5 = { home: teamForm(teams.home), away: teamForm(teams.away) };
 
-  return NextResponse.json({ teams, h2h, form, form5, prediction, loggedIn: !!player });
+  return NextResponse.json({ teams, h2h, previousSeasonTips, form, form5, prediction, loggedIn: !!player });
 }

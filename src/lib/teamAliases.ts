@@ -75,6 +75,22 @@ const ALIASES: Record<string, string> = {
   Napoli: 'Neapol',
   'SL Benfica': 'Benfica',
   'FC Porto': 'Porto',
+  'Sporting Lisbon': 'Sporting CP',
+  'Sporting Clube de Portugal': 'Sporting CP',
+  'RC Celta de Vigo': 'Celta Vigo',
+  Celta: 'Celta Vigo',
+  'SC Freiburg': 'Freiburg',
+  'Nottingham Forest FC': 'Nottingham Forest',
+  'AEK Athens': 'AEK Athény',
+  'AEK Athens FC': 'AEK Athény',
+  Strasbourg: 'Štrasburk',
+  'RC Strasbourg Alsace': 'Štrasburk',
+  'Shakhtar Donetsk': 'Šachtar Doněck',
+  'FC Shakhtar Donetsk': 'Šachtar Doněck',
+  '1. FSV Mainz 05': 'Mainz',
+  'FSV Mainz 05': 'Mainz',
+  'AZ Alkmaar': 'AZ Alkmaar',
+  'Rayo Vallecano de Madrid': 'Rayo Vallecano',
 };
 
 export function canonTeam(name: string): string {

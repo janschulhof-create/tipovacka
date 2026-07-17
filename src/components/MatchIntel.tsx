@@ -5,6 +5,7 @@ import { pointsBadgeClass } from '@/lib/points';
 import { Flag } from './Flag';
 
 interface H2HMatch { date: string; home: string; away: string; hs: number; as: number; comp?: string }
+interface HistoricalTipRow { round: number; home: string; away: string; hs: number | null; as: number | null; ph: number; pa: number; points: number | null }
 interface FormRow { matchId: number; home: string; away: string; hs: number; as: number; ph: number; pa: number; points: number }
 interface Prediction {
   lambdaHome: number; lambdaAway: number;
@@ -17,6 +18,7 @@ interface Form5Row { opponent: string; gf: number; ga: number; res: 'W' | 'D' | 
 export interface InsightData {
   teams: { home: string; away: string };
   h2h: H2HMatch[];
+  previousSeasonTips: HistoricalTipRow[];
   form: FormRow[];
   form5: { home: Form5Row[]; away: Form5Row[] };
   prediction: Prediction | null;
@@ -249,6 +251,35 @@ export function H2HContent({ data, loading }: { data: InsightData | null; loadin
   return (
     <div className="space-y-4">
       <TeamFormContent data={data} />
+
+      <div>
+        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
+          Minulá sezona 2025/26 · jak jsi tipoval
+        </div>
+        {!data.loggedIn ? (
+          <Empty text="Přihlas se a uvidíš svůj loňský tip, výsledek a body." />
+        ) : data.previousSeasonTips.length === 0 ? (
+          <Empty text="V minulé sezoně jsi tento vzájemný zápas netipoval." />
+        ) : (
+          <div className="overflow-hidden rounded-xl border border-terrain-700 bg-terrain-900/40">
+            {data.previousSeasonTips.map((r, i) => (
+              <div key={`${r.round}-${i}`} className="border-b border-terrain-800/60 px-3 py-2.5 last:border-0">
+                <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-300/45">
+                  <span>{r.round}. kolo</span>
+                  <span className={`rounded px-1.5 py-0.5 font-bold tabular-nums ${pointsBadgeClass(r.points ?? 0)}`}>
+                    {r.points == null ? '—' : `${r.points} b`}
+                  </span>
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
+                  <span className="min-w-0 flex-1 text-slate-100/80">{r.home} – {r.away}</span>
+                  <span className="text-slate-300/55">tvůj tip <strong className="text-white">{r.ph}:{r.pa}</strong></span>
+                  <span className="text-slate-300/55">výsledek <strong className="text-white">{r.hs ?? '—'}:{r.as ?? '—'}</strong></span>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div>
         <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">

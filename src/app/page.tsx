@@ -71,6 +71,23 @@ export default async function Home({
       getSessionPlayer(),
     ]);
 
+  if (competition.key === 'evropa') {
+    const sourceOrder = [
+      'uefa.champions_qual', 'uefa.champions',
+      'uefa.europa_qual', 'uefa.europa',
+      'uefa.europa.conf_qual', 'uefa.europa.conf',
+    ];
+    const groupIndex = (source: string | null | undefined) => {
+      const normalized = String(source ?? '').replace(/_qual$/, '');
+      const first = sourceOrder.findIndex((item) => item.replace(/_qual$/, '') === normalized);
+      return first < 0 ? 999 : first;
+    };
+    matches.sort((a, b) => {
+      const sourceDiff = groupIndex(a.source_league) - groupIndex(b.source_league);
+      return sourceDiff || new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime();
+    });
+  }
+
   // závisí na zápasech, proto až teď
   const predictions = await getRoundPredictions(matches.map((m) => m.id));
 
@@ -115,6 +132,7 @@ export default async function Home({
                 editable={!!sessionPlayer}
                 playerId={sessionPlayer?.id ?? ''}
                 showSelector={false}
+                groupBySource={competition.key === 'evropa'}
               />
             ) : (
               <div className="panel">

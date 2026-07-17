@@ -74,6 +74,23 @@ function chunks<T>(items: T[], size: number): T[][] {
   return out;
 }
 
+function europeanWeek(fixture: CompetitionFixture, seasonYear: number): CompetitionFixture {
+  const kickoff = new Date(fixture.kickoff);
+  const utcDay = kickoff.getUTCDay() || 7;
+  const monday = new Date(Date.UTC(
+    kickoff.getUTCFullYear(), kickoff.getUTCMonth(), kickoff.getUTCDate() - utcDay + 1,
+  ));
+  const sunday = new Date(monday.getTime() + 6 * 864e5);
+  const seasonMonday = new Date(Date.UTC(seasonYear, 5, 29));
+  const round = Math.floor((monday.getTime() - seasonMonday.getTime()) / (7 * 864e5)) + 1;
+  const fmt = (date: Date) => `${date.getUTCDate()}. ${date.getUTCMonth() + 1}.`;
+  return {
+    ...fixture,
+    round: Math.max(1, round),
+    round_label: `Evropský týden ${fmt(monday)}–${fmt(sunday)}`,
+  };
+}
+
 export async function GET(req: NextRequest) {
   if (!authorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
@@ -144,7 +161,8 @@ export async function GET(req: NextRequest) {
         || firstRoundTeams.size !== 16
       ))
       || (key === 'evropa' && existingRows.some(
-        (match) => new Date(match.kickoff).getTime() < seasonStartMs,
+        (match) => new Date(match.kickoff).getTime() < seasonStartMs
+          || !String(match.round_label ?? '').startsWith('Evropský týden '),
       ));
     const futureRows = existingRows
       .filter((m) => new Date(m.kickoff).getTime() > nowMs && m.status !== 'cancelled')
@@ -229,12 +247,15 @@ export async function GET(req: NextRequest) {
 
     // ESPN může výjimečně vrátit stejný event zároveň pod hlavní soutěží
     // i kvalifikačním slugem. Event ID je globální, proto jej uložíme jen jednou.
-    const uniqueFetched = Array.from(
+    const uniqueFetchedRaw = Array.from(
       new Map(fetched.map((match) => [match.external_api_id, match])).values(),
     );
+    const uniqueFetched = key === 'evropa'
+      ? uniqueFetchedRaw.map((match) => europeanWeek(match, Number(season.api_season ?? 2026)))
+      : uniqueFetchedRaw;
     const selected = key === 'evropa'
       ? uniqueFetched
-          .map((m) => ({ ...m, selection_reason: selectionReason(m.home_team, m.away_team) }))
+          .map((m) => ({ ...m, selection_reason: selectionReason(m.home_team, m.away_team, m.source_league) }))
           .filter((m) => m.selection_reason !== null)
       : uniqueFetched.map((m) => ({ ...m, selection_reason: 'all' as const }));
 
@@ -260,8 +281,13 @@ export async function GET(req: NextRequest) {
       );
       const staleRows = existingRows.filter((match) => {
         if (key === 'evropa') {
+          const sourceKey = match.source_league && match.external_api_id != null
+            ? `${match.source_league}|${match.external_api_id}`
+            : '';
           return new Date(match.kickoff).getTime() < seasonStartMs
-            || !competition.espnSlugs.includes(match.source_league ?? '');
+            || !competition.espnSlugs.includes(match.source_league ?? '')
+            || !sourceKey
+            || !selectedKeys.has(sourceKey);
         }
         return match.source_league === 'cze.1'
           && match.external_api_id != null

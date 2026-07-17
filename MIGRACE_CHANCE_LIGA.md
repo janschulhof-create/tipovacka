@@ -1,118 +1,118 @@
-# Chance liga 2026/27 a Evropa – spolehlivá bezplatná synchronizace
+# Migrace na Chance ligu 2026/27 a sekci Evropa
 
-Projekt zachovává stávající `/api/sync` endpoint, stávající cron, Supabase,
-bodování, profily, statistiky i MS 2026.
+Projekt zachovává stávající Next.js, Supabase, přihlašování, bodování, profily,
+statistiky i mobilní layout. Migrace rozšiřuje původní model jedné aktivní
+soutěže na MS 2026, Chance ligu a společnou sekci Evropa.
 
-## Datové zdroje
+## Co je připravené
 
-### Chance liga
+- `MS 2026` je první a výchozí soutěž aplikace.
+- `Chance liga` funguje jako samostatná dlouhodobá soutěž.
+- `Evropa` sdružuje vybrané zápasy Ligy mistrů, Evropské ligy a Konferenční ligy.
+- Každá soutěž má vlastní sezonu, zápasy, pořadí, body a statistiky.
+- Automatické uzavření tipů a databázový přepočet bodů fungují pro všechny soutěže.
+- Automatické Anthropic hodnocení dohraných zápasů funguje pro všechny soutěže.
 
-Používá se oficiální web LFA / Chance Ligy bez API klíče. Parser načítá pouze
-hlavní řádky zápasů ve struktuře:
+## Databázová migrace
 
-```text
-domácí klub → skóre → hostující klub
-```
-
-Odkazy v postranním programu mají jako text čas a jsou ignorované. Při plném
-načtení synchronizace před zápisem ověří:
-
-- 30 kol základní části,
-- 8 zápasů v každém kole,
-- 16 různých týmů v každém kole,
-- celkem 240 unikátních zápasů,
-- žádný tým proti sobě a žádné duplicitní ID.
-
-Když kontrola selže, data se do databáze nezapíšou.
-
-### Evropa
-
-Liga mistrů, Evropská liga a Konferenční liga používají veřejný ESPN scoreboard.
-Zahrnuté jsou kvalifikační i hlavní slugs:
+V Supabase SQL Editoru spusť:
 
 ```text
-uefa.champions_qual
-uefa.champions
-uefa.europa_qual
-uefa.europa
-uefa.europa.conf_qual
-uefa.europa.conf
+supabase/migrations/20260716_multi_competitions.sql
 ```
 
-ESPN se dotazuje po kratších datumových oknech a výchozí synchronizace nikdy
-nejde před 1. červenec začátku sezony. Tím se zabrání importu jarních zápasů
-předchozího ročníku.
+Migrace zachová existující zápasy, tipy i body a založí aktivní sezony
+`Chance liga 2026/27` a `Evropa 2026/27`.
 
-## Jednorázová oprava chybných importů
+## Zdroj zápasů
 
-Po nasazení nové verze stačí jednou otevřít stávající adresu `/api/sync?key=...`.
-Synchronizace sama pozná:
-
-- nekompletní nebo špatně spárovanou Chance ligu,
-- evropské zápasy s datem před 1. 7. 2026.
-
-Potom:
-
-1. načte validovaný oficiální rozpis Chance ligy,
-2. opraví existující řádky podle oficiálního ID zápasu,
-3. doplní chybějící zápasy,
-4. odstraní chybně importovanou starou sezonu Evropy,
-5. načte aktuální evropské zápasy z ESPN.
-
-Tipy navázané na zápas, u kterého se měnila dvojice týmů, se odstraní, protože
-by se po opravě vztahovaly k jinému utkání. Výstup synchronizace uvádí počet v
-poli `invalidatedPredictions`.
-
-## Běžný provoz
-
-Stávající cron a jeho URL se nemění. Jeden běh `/api/sync` zpracuje MS 2026,
-Chance ligu, Evropu, výsledky, body a chybějící hodnocení.
-
-Výchozí intervaly lze upravit:
+Chance liga a Evropa používají API-Football. Ve Vercelu musí existovat:
 
 ```text
-PUBLIC_FEED_LIVE_REFRESH_MINUTES=10
-PUBLIC_FEED_SCHEDULE_REFRESH_HOURS=12
+API_FOOTBALL_KEY
 ```
 
-## Ruční diagnostika
+Volitelně lze přepsat výchozí ID soutěží:
 
 ```text
-/api/liga-check?source=cze.1&key=CRON_SECRET
-/api/liga-check?source=uefa.champions_qual&key=CRON_SECRET
-/api/liga-check?source=uefa.europa_qual&key=CRON_SECRET
-/api/liga-check?source=uefa.europa.conf_qual&key=CRON_SECRET
+API_FOOTBALL_LIGA_ID=345
+API_FOOTBALL_CHAMPIONS_ID=2
+API_FOOTBALL_EUROPA_ID=3
+API_FOOTBALL_CONFERENCE_ID=848
 ```
 
-Diagnostika nic nezapisuje do databáze.
+Po přidání nebo změně proměnné proveď nový produkční deployment. Stávající cron,
+jeho interval i URL se nemění.
 
-## Očekávaný výstup po opravě
+## Synchronizace
 
-Chance liga:
+Stávající endpoint `/api/sync` jedním během zpracuje:
 
-```json
-{
-  "source": "chanceliga-official-validated",
-  "fetched": 240,
-  "updated": 237,
-  "inserted": 3,
-  "sourceErrors": []
-}
+1. MS 2026,
+2. Chance ligu,
+3. Evropu,
+4. přepočet bodů po zapsání výsledku,
+5. chybějící automatická hodnocení zápasů.
+
+Při první synchronizaci Chance ligy a Evropy se automaticky načte celá sezona.
+Další běhy jsou úsporné:
+
+- právě hrané zápasy se aktualizují nejvýše jednou za 10 minut,
+- rozpis se kontroluje přibližně jednou za 12 hodin,
+- evropské soutěže se filtrují až po stažení dat.
+
+Výchozí intervaly lze změnit pomocí:
+
+```text
+API_FOOTBALL_LIVE_REFRESH_MINUTES=10
+API_FOOTBALL_SCHEDULE_REFRESH_HOURS=12
 ```
 
-Čísla `updated` a `inserted` se mohou lišit. Důležité je `fetched: 240` a prázdné
-`sourceErrors`.
+Ruční plnou synchronizaci lze v případě potřeby spustit přes:
 
-Evropa:
-
-```json
-{
-  "source": "espn-public",
-  "removed": 70,
-  "fetched": 1,
-  "sourceErrors": []
-}
+```text
+/api/sync-football?competition=liga&full=1&key=CRON_SECRET
+/api/sync-football?competition=evropa&full=1&key=CRON_SECRET
 ```
 
-Počet evropských zápasů závisí na aktuálně zveřejněném losu a pravidlech výběru
-v `src/lib/cupSelection.ts`.
+Pro běžný provoz ale stačí existující `/api/sync` cron.
+
+## Výběr zápasů pro Evropu
+
+Pravidla jsou v:
+
+```text
+src/lib/cupSelection.ts
+```
+
+Aktuální logika:
+
+1. vždy vybere zápas českého klubu,
+2. vybere vzájemné zápasy klubů v seznamu `FEATURED_CLUBS`,
+3. umožňuje ručně doplnit konkrétní dvojice do `INTERESTING`.
+
+## Automatické hodnocení
+
+Předzápasové porovnání, forma a predikce pracují podle `season_id`, proto jsou
+automaticky dostupné i pro Chance ligu a Evropu.
+
+Po skončení zápasu databázový trigger přepočítá body. Stávající cron následně
+vygeneruje chybějící Anthropic hodnocení i pro příslušnou ligovou nebo evropskou
+sezonu. Ruční endpoint `/api/roast` nyní standardně zpracuje všechny aktivní
+soutěže; lze použít i parametr `competition=ms|liga|evropa`.
+
+## Kontrola před nasazením
+
+```bash
+npm install
+npx tsc --noEmit
+npm run build
+```
+
+## H2H Chance ligy a týdenní Evropa
+
+- H2H u zápasu Chance ligy zobrazuje přihlášenému hráči jeho tip, výsledek a body ze stejného vzájemného zápasu v sezoně 2025/26.
+- Evropské zápasy jsou seskupené do jednoho kola podle kalendářního týdne.
+- V rámci kola jsou vizuálně rozdělené na Ligu mistrů, Evropskou ligu a Konferenční ligu.
+- Výběr obsahuje české kluby a zápasy týmů, které hrály čtvrtfinále příslušného poháru v sezoně 2025/26.
+- Po nasazení spusť jednou stávající `/api/sync?key=...`; synchronizace sama přepíše staré evropské členění a odstraní zápasy mimo nový výběr.
