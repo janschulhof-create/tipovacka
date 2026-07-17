@@ -21,7 +21,6 @@ import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { Suspense } from 'react';
 import { SeasonStatsSection, SeasonStatsSkeleton } from '@/components/SeasonStatsSection';
-import { LiveBanner } from '@/components/LiveBanner';
 import { LiveRefresh } from '@/components/LiveRefresh';
 import Link from 'next/link';
 import { getSessionPlayer } from '@/lib/auth';
@@ -100,7 +99,6 @@ export default async function Home({
     <main className="space-y-6">
       <CompetitionSwitcher current={competition.key} />
       <LiveRefresh hasLive={liveMatches.length > 0} />
-      <LiveBanner matches={liveMatches} />
 
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}
       <header className="flex items-center justify-between gap-3">
