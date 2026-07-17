@@ -509,11 +509,17 @@ async function syncHighlightlyLiga(args: {
             ...(detailMilestone === 'final' ? { finalDetailsAt: args.now.toISOString() } : { halftimeDetailsAt: args.now.toISOString() }),
           },
         });
-      } else if (match.status === 'live' && activeCount <= 4 && canSpend() && (report.remaining == null || report.remaining > 60)) {
+      } else if (
+        match.status === 'live'
+        && activeCount <= 4
+        && canSpend()
+        && (args.force || report.remaining == null || report.remaining > 60)
+      ) {
         // Při nejvýše čtyřech současných zápasech doplníme průběh i mezi poločasy,
-        // nejvýše jednou za 40 minut. U plného ligového kola šetříme kvótu.
+        // nejvýše jednou za 40 minut. Explicitní highlightly_force=1 tento interval
+        // obejde, aby šlo okamžitě ověřit a opravit nesoulad hlavního skóre s góly.
         const lastEvents = currentMeta.eventsFetchedAt ? new Date(currentMeta.eventsFetchedAt).getTime() : 0;
-        if (nowMs - lastEvents >= 40 * 60_000) {
+        if (args.force || nowMs - lastEvents >= 40 * 60_000) {
           try {
             const events = await fetchHighlightlyEvents(match.id, row.home_team, row.away_team);
             absorb(events); detailRequests += events.requests;
