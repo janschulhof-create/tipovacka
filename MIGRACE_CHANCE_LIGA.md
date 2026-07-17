@@ -24,58 +24,76 @@ supabase/migrations/20260716_multi_competitions.sql
 Migrace zachová existující zápasy, tipy i body a založí aktivní sezony
 `Chance liga 2026/27` a `Evropa 2026/27`.
 
-## Zdroj zápasů
+## Zdroj zápasů a live data
 
-Chance liga a Evropa používají API-Football. Ve Vercelu musí existovat:
+Chance liga používá dvě vrstvy:
+
+1. oficiální web Chance ligy pro úplný a validovaný rozpis,
+2. Highlightly pro live minutu, skóre, průběh, sestavy a statistiky.
+
+Evropa zůstává na veřejném ESPN scoreboardu. Stávající `/api/sync` i cron se
+nemění.
+
+Ve Vercelu přidej:
 
 ```text
-API_FOOTBALL_KEY
+HIGHLIGHTLY_API_KEY
 ```
 
-Volitelně lze přepsat výchozí ID soutěží:
+Doporučené výchozí limity bezplatného tarifu:
 
 ```text
-API_FOOTBALL_LIGA_ID=345
-API_FOOTBALL_CHAMPIONS_ID=2
-API_FOOTBALL_EUROPA_ID=3
-API_FOOTBALL_CONFERENCE_ID=848
+HIGHLIGHTLY_LIVE_POLL_MINUTES=20
+HIGHLIGHTLY_RESERVE_REQUESTS=12
 ```
 
-Po přidání nebo změně proměnné proveď nový produkční deployment. Stávající cron,
-jeho interval i URL se nemění.
+Volitelně lze po diagnostice natvrdo uložit ID soutěží:
+
+```text
+HIGHLIGHTLY_CHANCE_LEAGUE_ID
+HIGHLIGHTLY_FRIENDLY_LEAGUE_ID
+```
+
+### Bezpečný denní rozpočet
+
+- jeden dotaz na seznam všech zápasů dne každých 20 minut,
+- sestavy nejvýše jednou na zápas,
+- události a statistiky standardně o poločase a po konci,
+- při nejvýše čtyřech současných zápasech průběh navíc jednou za 40 minut,
+- při dosažení rezervy 12 požadavků se detailní dotazy zastaví.
+
+I při dlouhém dni s osmi zápasy hranými postupně je návrh cílený pod limit
+100 požadavků. Skutečný zůstatek se čte z hlavičky
+`x-ratelimit-requests-remaining` a vrací se v JSON synchronizace.
+
+### Kolo Příprava
+
+Jednorázově spusť:
+
+```text
+/api/sync?key=CRON_SECRET&competition=liga&highlightly_bootstrap=1
+```
+
+Tím se vytvoří kolo `Příprava` (`round = 0`) se zápasy klubů Chance ligy od
+17. 7. 2026 do 24. 7. 2026. Import se při běžném cronu neopakuje.
+
+Diagnostika bez zápisu do databáze:
+
+```text
+/api/liga-check?key=CRON_SECRET&source=highlightly&mode=leagues
+/api/liga-check?key=CRON_SECRET&source=highlightly&mode=matches&date=2026-07-25
+/api/liga-check?key=CRON_SECRET&source=highlightly&mode=friendlies&date=2026-07-17
+```
+
+Highlightly je doplňková vrstva. Pokud konkrétní utkání neposkytne nebo API
+selže, oficiální rozpis ligy zůstane zachovaný a sync pouze vypíše upozornění.
 
 ## Synchronizace
 
-Stávající endpoint `/api/sync` jedním během zpracuje:
-
-1. MS 2026,
-2. Chance ligu,
-3. Evropu,
-4. přepočet bodů po zapsání výsledku,
-5. chybějící automatická hodnocení zápasů.
-
-Při první synchronizaci Chance ligy a Evropy se automaticky načte celá sezona.
-Další běhy jsou úsporné:
-
-- právě hrané zápasy se aktualizují nejvýše jednou za 10 minut,
-- rozpis se kontroluje přibližně jednou za 12 hodin,
-- evropské soutěže se filtrují až po stažení dat.
-
-Výchozí intervaly lze změnit pomocí:
-
-```text
-API_FOOTBALL_LIVE_REFRESH_MINUTES=10
-API_FOOTBALL_SCHEDULE_REFRESH_HOURS=12
-```
-
-Ruční plnou synchronizaci lze v případě potřeby spustit přes:
-
-```text
-/api/sync-football?competition=liga&full=1&key=CRON_SECRET
-/api/sync-football?competition=evropa&full=1&key=CRON_SECRET
-```
-
-Pro běžný provoz ale stačí existující `/api/sync` cron.
+Stávající endpoint `/api/sync` jedním během zpracuje MS 2026, Chance ligu a
+Evropu. Pro Chance ligu se oficiální rozpis kontroluje přibližně po 12 hodinách;
+Highlightly se aktivuje jen v hracím okně od 45 minut před prvním výkopem do
+čtyř hodin po posledním výkopu daného dne.
 
 ## Výběr zápasů pro Evropu
 

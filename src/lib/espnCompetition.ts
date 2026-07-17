@@ -1,4 +1,5 @@
 import type { MatchStatus } from './types';
+import type { MatchDetail, MatchLineups, LineupPlayer, TeamStats } from './espn';
 import { canonTeam } from './teamAliases';
 
 export interface CompetitionFixture {
@@ -10,6 +11,8 @@ export interface CompetitionFixture {
   kickoff: string;
   home_team: string;
   away_team: string;
+  home_source_name?: string;
+  away_source_name?: string;
   home_score: number | null;
   away_score: number | null;
   status: MatchStatus;
@@ -337,6 +340,8 @@ export function parseChanceLigaHtml(
       kickoff,
       home_team: home,
       away_team: away,
+      home_source_name: home,
+      away_source_name: away,
       home_score: status === 'scheduled' ? null : score.home,
       away_score: status === 'scheduled' ? null : score.away,
       status,
@@ -518,8 +523,10 @@ function normalizeEspnEvent(event: EspnEvent, slug: string): CompetitionFixture 
 
   const home = competition.competitors?.find((item) => item.homeAway === 'home');
   const away = competition.competitors?.find((item) => item.homeAway === 'away');
-  const homeTeam = canonTeam(home?.team?.displayName ?? home?.team?.name ?? home?.team?.shortDisplayName ?? '');
-  const awayTeam = canonTeam(away?.team?.displayName ?? away?.team?.name ?? away?.team?.shortDisplayName ?? '');
+  const homeSourceName = home?.team?.displayName ?? home?.team?.name ?? home?.team?.shortDisplayName ?? '';
+  const awaySourceName = away?.team?.displayName ?? away?.team?.name ?? away?.team?.shortDisplayName ?? '';
+  const homeTeam = canonTeam(homeSourceName);
+  const awayTeam = canonTeam(awaySourceName);
   if (!homeTeam || !awayTeam || /\bTBD\b|to be determined/i.test(`${homeTeam} ${awayTeam}`)) return null;
 
   const status = mapEspnStatus(event);
@@ -543,6 +550,8 @@ function normalizeEspnEvent(event: EspnEvent, slug: string): CompetitionFixture 
     kickoff: event.date,
     home_team: homeTeam,
     away_team: awayTeam,
+    home_source_name: homeSourceName,
+    away_source_name: awaySourceName,
     // Bodování je založené na výsledku po základní hrací době. ESPN u zápasů
     // po prodloužení/penaltách ne vždy rozlišuje 90minutový stav, proto jej
     // raději necháme prázdný než spočítat body chybně.
@@ -624,6 +633,501 @@ async function fetchEspnFixturesByIds(slug: string, ids: number[]): Promise<ApiF
   if (wanted.size === 0) return { fixtures: [], requests: 0, remaining: null };
   const result = await fetchEspnWindow(slug, apiDateWindow(2, 2));
   return { ...result, fixtures: result.fixtures.filter((fixture) => wanted.has(fixture.external_api_id)) };
+}
+
+
+/* -------------------------------------------------------------------------- */
+/* Highlightly – volitelná live vrstva Chance ligy a přípravy                  */
+/* -------------------------------------------------------------------------- */
+
+const HIGHLIGHTLY_BASE = 'https://soccer.highlightly.net';
+
+export interface HighlightlyBudget {
+  requests: number;
+  remaining: number | null;
+  limit: number | null;
+}
+
+export interface HighlightlyLeague {
+  id: number;
+  name: string;
+  season?: number | string | null;
+  countryCode?: string | null;
+  countryName?: string | null;
+}
+
+export interface HighlightlyMatch {
+  id: number;
+  date: string;
+  round: number | null;
+  league: HighlightlyLeague;
+  home: { id: number | null; name: string; logo: string | null };
+  away: { id: number | null; name: string; logo: string | null };
+  status: MatchStatus;
+  stateDescription: string;
+  minute: number | null;
+  clock: string | null;
+  homeScore: number | null;
+  awayScore: number | null;
+  penHome: number | null;
+  penAway: number | null;
+  duration: 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT';
+}
+
+export interface HighlightlyPage<T> extends HighlightlyBudget {
+  data: T[];
+  totalCount: number;
+}
+
+type JsonMap = Record<string, unknown>;
+
+function asMap(value: unknown): JsonMap {
+  return value != null && typeof value === 'object' && !Array.isArray(value) ? value as JsonMap : {};
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
+}
+
+function numberValue(value: unknown): number | null {
+  const n = typeof value === 'number' ? value : Number.parseFloat(stringValue(value).replace(',', '.'));
+  return Number.isFinite(n) ? n : null;
+}
+
+function intValue(value: unknown): number | null {
+  const n = numberValue(value);
+  return n == null ? null : Math.trunc(n);
+}
+
+function firstString(...values: unknown[]): string {
+  for (const value of values) {
+    const text = stringValue(value);
+    if (text) return text;
+  }
+  return '';
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const n = numberValue(value);
+    if (n != null) return n;
+  }
+  return null;
+}
+
+function parseScoreText(value: unknown): { home: number | null; away: number | null } {
+  const map = asMap(value);
+  const home = firstNumber(map.home, map.homeScore, map.homeTeam, map.local, map.scoreHome);
+  const away = firstNumber(map.away, map.awayScore, map.awayTeam, map.visitor, map.scoreAway);
+  if (home != null || away != null) return { home, away };
+  const text = stringValue(value);
+  const m = text.match(/(-?\d+(?:\.\d+)?)\s*[-:]\s*(-?\d+(?:\.\d+)?)/);
+  return m ? { home: Number(m[1]), away: Number(m[2]) } : { home: null, away: null };
+}
+
+function highlightlyStatus(description: string): MatchStatus {
+  const text = description.toLowerCase();
+  if (/cancel|abandon/.test(text)) return 'cancelled';
+  if (/postpon|suspend|interrupt/.test(text)) return 'postponed';
+  if (/finish|full time|after penalties|after extra|awarded|ended/.test(text)) return 'finished';
+  if (/first half|second half|half.?time|extra time|penalt|break|in progress|live|playing/.test(text)) return 'live';
+  return 'scheduled';
+}
+
+function highlightlyDuration(description: string): 'REGULAR' | 'EXTRA_TIME' | 'PENALTY_SHOOTOUT' {
+  const text = description.toLowerCase();
+  if (/penalt/.test(text)) return 'PENALTY_SHOOTOUT';
+  if (/extra time|after extra/.test(text)) return 'EXTRA_TIME';
+  return 'REGULAR';
+}
+
+function parseHighlightlyClock(state: JsonMap): { minute: number | null; clock: string | null } {
+  const raw = firstString(state.clock, state.minute, state.time, state.elapsed);
+  if (!raw) return { minute: null, clock: null };
+  const m = raw.match(/(\d{1,3})/);
+  return { minute: m ? Number(m[1]) : null, clock: raw.includes("'") ? raw : `${raw}'` };
+}
+
+function normalizeHighlightlyLeague(value: unknown): HighlightlyLeague {
+  const league = asMap(value);
+  const country = asMap(league.country);
+  return {
+    id: intValue(league.id) ?? 0,
+    name: firstString(league.name, league.leagueName, league.title),
+    season: league.season as number | string | null | undefined,
+    countryCode: firstString(country.code, league.countryCode) || null,
+    countryName: firstString(country.name, league.countryName) || null,
+  };
+}
+
+function normalizeHighlightlyTeam(value: unknown): { id: number | null; name: string; logo: string | null } {
+  const team = asMap(value);
+  return {
+    id: intValue(team.id),
+    name: firstString(team.name, team.displayName, team.teamName),
+    logo: firstString(team.logo, team.image, team.badge) || null,
+  };
+}
+
+function normalizeHighlightlyMatch(value: unknown): HighlightlyMatch | null {
+  const raw = asMap(value);
+  const id = intValue(raw.id);
+  const date = firstString(raw.date, raw.startDate, raw.kickoff, raw.startTime);
+  const home = normalizeHighlightlyTeam(raw.homeTeam ?? raw.home);
+  const away = normalizeHighlightlyTeam(raw.awayTeam ?? raw.away);
+  if (id == null || !date || !home.name || !away.name) return null;
+  const state = asMap(raw.state ?? raw.status);
+  const description = firstString(state.description, state.name, state.status, raw.status);
+  const scoreMap = asMap(state.score ?? raw.score);
+  const current = parseScoreText(scoreMap.current ?? scoreMap.fullTime ?? scoreMap);
+  const penalties = parseScoreText(scoreMap.penalties ?? raw.penalties);
+  const status = highlightlyStatus(description);
+  const duration = highlightlyDuration(description);
+  const clock = parseHighlightlyClock(state);
+  return {
+    id,
+    date: new Date(date).toString() === 'Invalid Date' ? date : new Date(date).toISOString(),
+    round: intValue(raw.round),
+    league: normalizeHighlightlyLeague(raw.league),
+    home,
+    away,
+    status,
+    stateDescription: description,
+    minute: status === 'live' ? clock.minute : null,
+    clock: status === 'live' ? clock.clock : null,
+    homeScore: current.home,
+    awayScore: current.away,
+    penHome: penalties.home,
+    penAway: penalties.away,
+    duration,
+  };
+}
+
+function highlightlyKey(): string {
+  return process.env.HIGHLIGHTLY_API_KEY?.trim() ?? '';
+}
+
+export function highlightlyConfigured(): boolean {
+  return highlightlyKey().length > 0;
+}
+
+async function highlightlyGet(path: string, params: Record<string, string | number | undefined>): Promise<{
+  json: unknown;
+  requests: number;
+  remaining: number | null;
+  limit: number | null;
+}> {
+  const key = highlightlyKey();
+  if (!key) throw new Error('Chybí HIGHLIGHTLY_API_KEY ve Vercelu.');
+  const url = new URL(path, HIGHLIGHTLY_BASE);
+  for (const [name, value] of Object.entries(params)) {
+    if (value != null && String(value) !== '') url.searchParams.set(name, String(value));
+  }
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(url, {
+      cache: 'no-store',
+      signal: controller.signal,
+      headers: {
+        Accept: 'application/json',
+        'x-rapidapi-key': key,
+      },
+    });
+    const bodyText = await response.text();
+    let json: unknown = {};
+    try { json = bodyText ? JSON.parse(bodyText) : {}; } catch { json = { raw: bodyText.slice(0, 1000) }; }
+    const remaining = intValue(response.headers.get('x-ratelimit-requests-remaining'));
+    const limit = intValue(response.headers.get('x-ratelimit-requests-limit'));
+    if (!response.ok) {
+      throw new Error(`Highlightly HTTP ${response.status}: ${bodyText.slice(0, 500)}`);
+    }
+    return { json, requests: 1, remaining, limit };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function pageData(json: unknown): { data: unknown[]; totalCount: number } {
+  const root = asMap(json);
+  const pagination = asMap(root.pagination);
+  const data = asArray(root.data ?? root.results ?? root.response);
+  return { data, totalCount: intValue(pagination.totalCount ?? pagination.total ?? root.totalCount) ?? data.length };
+}
+
+export async function fetchHighlightlyLeagues(params: {
+  countryCode?: string;
+  countryName?: string;
+  leagueName?: string;
+  season?: number;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<HighlightlyPage<HighlightlyLeague>> {
+  const response = await highlightlyGet('/leagues', {
+    countryCode: params.countryCode,
+    countryName: params.countryName,
+    leagueName: params.leagueName,
+    season: params.season,
+    limit: params.limit ?? 100,
+    offset: params.offset ?? 0,
+  });
+  const page = pageData(response.json);
+  return {
+    data: page.data.map(normalizeHighlightlyLeague).filter((league) => league.id > 0 && !!league.name),
+    totalCount: page.totalCount,
+    requests: response.requests,
+    remaining: response.remaining,
+    limit: response.limit,
+  };
+}
+
+export async function fetchHighlightlyMatches(params: {
+  date?: string;
+  leagueId?: number;
+  leagueName?: string;
+  season?: number;
+  countryCode?: string;
+  homeTeamName?: string;
+  awayTeamName?: string;
+  limit?: number;
+  offset?: number;
+  timezone?: string;
+}): Promise<HighlightlyPage<HighlightlyMatch>> {
+  const response = await highlightlyGet('/matches', {
+    date: params.date,
+    leagueId: params.leagueId,
+    leagueName: params.leagueName,
+    season: params.season,
+    countryCode: params.countryCode,
+    homeTeamName: params.homeTeamName,
+    awayTeamName: params.awayTeamName,
+    limit: params.limit ?? 100,
+    offset: params.offset ?? 0,
+    timezone: params.timezone ?? 'Europe/Prague',
+  });
+  const page = pageData(response.json);
+  return {
+    data: page.data.map(normalizeHighlightlyMatch).filter((match): match is HighlightlyMatch => match != null),
+    totalCount: page.totalCount,
+    requests: response.requests,
+    remaining: response.remaining,
+    limit: response.limit,
+  };
+}
+
+function teamSide(rawTeam: unknown, homeTeam: string, awayTeam: string): 'home' | 'away' | null {
+  const name = canonTeam(firstString(asMap(rawTeam).name, rawTeam));
+  if (name === canonTeam(homeTeam)) return 'home';
+  if (name === canonTeam(awayTeam)) return 'away';
+  return null;
+}
+
+function playerName(value: unknown): string {
+  const map = asMap(value);
+  return firstString(map.name, map.displayName, map.shortName, map.fullName, value);
+}
+
+function playerRow(position: string): LineupPlayer['row'] {
+  const p = position.toLowerCase();
+  if (/goal|^gk?$/.test(p)) return 'gk';
+  if (/back|def|^d$|cb|lb|rb/.test(p)) return 'def';
+  if (/wing|attacking mid|am/.test(p)) return 'am';
+  if (/forward|striker|^f$|st|cf/.test(p)) return 'fwd';
+  return 'mid';
+}
+
+function lineupPlayers(value: unknown, starter: boolean): LineupPlayer[] {
+  const flat = asArray(value).flatMap((item) => Array.isArray(item) ? item : [item]);
+  return flat.map((item) => {
+    const row = asMap(item);
+    const player = asMap(row.player ?? item);
+    const name = playerName(row.player ?? item);
+    const pos = firstString(row.position, player.position, row.pos, player.pos);
+    return {
+      name,
+      jersey: firstString(row.shirtNumber, row.jerseyNumber, row.number, player.shirtNumber, player.number) || undefined,
+      pos: pos || undefined,
+      row: playerRow(pos),
+      starter,
+    };
+  }).filter((player) => !!player.name);
+}
+
+function normalizeTeamLineup(value: unknown) {
+  const team = asMap(value);
+  const startersRaw = team.initialLineup ?? team.startingLineup ?? team.starters ?? team.lineup;
+  const subsRaw = team.substitutes ?? team.subs ?? team.bench;
+  return {
+    formation: firstString(team.formation) || undefined,
+    starters: lineupPlayers(startersRaw, true),
+    subs: lineupPlayers(subsRaw, false),
+  };
+}
+
+export async function fetchHighlightlyLineups(
+  matchId: number,
+  homeTeam: string,
+  awayTeam: string,
+): Promise<{ lineups: MatchLineups | null } & HighlightlyBudget> {
+  const response = await highlightlyGet(`/lineups/${matchId}`, {});
+  const root = asMap(response.json);
+  const data = Array.isArray(response.json) ? response.json : root.data ?? root.response ?? root;
+  const map = asMap(data);
+  const homeRaw = map.homeTeam ?? map.home;
+  const awayRaw = map.awayTeam ?? map.away;
+  let home = normalizeTeamLineup(homeRaw);
+  let away = normalizeTeamLineup(awayRaw);
+  // Některé varianty API vracejí pole týmů místo homeTeam/awayTeam.
+  if (home.starters.length === 0 && away.starters.length === 0) {
+    for (const item of asArray(data)) {
+      const side = teamSide(asMap(item).team, homeTeam, awayTeam);
+      if (side === 'home') home = normalizeTeamLineup(item);
+      if (side === 'away') away = normalizeTeamLineup(item);
+    }
+  }
+  const lineups = home.starters.length || away.starters.length || home.subs.length || away.subs.length
+    ? { home, away }
+    : null;
+  return { lineups, requests: response.requests, remaining: response.remaining, limit: response.limit };
+}
+
+function statKey(name: string): keyof TeamStats | null {
+  const n = name.toLowerCase().replace(/[^a-z0-9]+/g, ' ');
+  if (/expected goals|\bxg\b/.test(n)) return 'xg';
+  if (/shots on target|shots on goal/.test(n)) return 'sot';
+  if (/total shots|shots total|^shots$/.test(n)) return 'shots';
+  if (/corner/.test(n)) return 'corners';
+  if (/possession/.test(n)) return 'possession';
+  if (/accurate passes|completed passes|passes completed/.test(n)) return 'passes';
+  if (/fouls?/.test(n)) return 'fouls';
+  if (/cards?/.test(n)) return 'cards';
+  return null;
+}
+
+function normalizeStats(value: unknown): TeamStats {
+  const out: TeamStats = {};
+  const map = asMap(value);
+  const rows = asArray(map.statistics ?? map.stats ?? value);
+  for (const rowValue of rows) {
+    const row = asMap(rowValue);
+    const name = firstString(row.displayName, row.name, row.type, row.key);
+    const key = statKey(name);
+    if (!key) continue;
+    let valueText = firstString(row.displayValue, row.value, row.stat);
+    if (!valueText) continue;
+    if (key === 'possession') {
+      const numeric = numberValue(valueText.replace('%', ''));
+      if (numeric != null && numeric >= 0 && numeric <= 1) valueText = String(Math.round(numeric * 1000) / 10);
+    }
+    if (key === 'cards' && out.cards != null) {
+      const previous = numberValue(out.cards) ?? 0;
+      const next = numberValue(valueText) ?? 0;
+      out.cards = String(previous + next);
+    } else {
+      out[key] = valueText;
+    }
+  }
+  return out;
+}
+
+export async function fetchHighlightlyStatistics(
+  matchId: number,
+  homeTeam: string,
+  awayTeam: string,
+): Promise<{ stats: MatchDetail['stats'] | null } & HighlightlyBudget> {
+  const response = await highlightlyGet(`/statistics/${matchId}`, {});
+  const root = asMap(response.json);
+  const data = Array.isArray(response.json) ? response.json : root.data ?? root.response ?? [];
+  let home: TeamStats = {};
+  let away: TeamStats = {};
+  for (const item of asArray(data)) {
+    const row = asMap(item);
+    const side = teamSide(row.team, homeTeam, awayTeam);
+    if (side === 'home') home = normalizeStats(item);
+    if (side === 'away') away = normalizeStats(item);
+  }
+  const has = Object.keys(home).length > 0 || Object.keys(away).length > 0;
+  return { stats: has ? { home, away } : null, requests: response.requests, remaining: response.remaining, limit: response.limit };
+}
+
+export async function fetchHighlightlyEvents(
+  matchId: number,
+  homeTeam: string,
+  awayTeam: string,
+): Promise<Pick<MatchDetail, 'goals' | 'cards' | 'substitutions'> & HighlightlyBudget> {
+  const response = await highlightlyGet(`/events/${matchId}`, {});
+  const root = asMap(response.json);
+  const data = asArray(Array.isArray(response.json) ? response.json : root.data ?? root.response ?? []);
+  const goals: NonNullable<MatchDetail['goals']> = [];
+  const cards: NonNullable<MatchDetail['cards']> = [];
+  const substitutions: NonNullable<MatchDetail['substitutions']> = [];
+  for (const eventValue of data) {
+    const event = asMap(eventValue);
+    const type = firstString(event.type, event.eventType, event.description).toLowerCase();
+    const side = teamSide(event.team, homeTeam, awayTeam);
+    if (!side) continue;
+    const minRaw = firstString(event.time, event.minute, event.clock);
+    const min = minRaw ? (minRaw.includes("'") ? minRaw : `${minRaw}'`) : '?';
+    if (/goal/.test(type)) {
+      goals.push({
+        min,
+        side,
+        player: playerName(event.player ?? event.scorer) || 'Neznámý střelec',
+        kind: /own/.test(type) ? 'own' : /penalt/.test(type) ? 'penalty' : 'goal',
+      });
+    } else if (/yellow|red|card/.test(type)) {
+      cards.push({
+        min,
+        side,
+        player: playerName(event.player) || 'Neznámý hráč',
+        color: /red/.test(type) ? 'red' : 'yellow',
+      });
+    } else if (/substitut|change/.test(type)) {
+      substitutions.push({
+        min,
+        side,
+        playerIn: playerName(event.playerIn ?? event.inPlayer ?? event.player),
+        playerOut: playerName(event.playerOut ?? event.outPlayer ?? event.substituted ?? event.assistingPlayer),
+      });
+    }
+  }
+  return {
+    goals,
+    cards,
+    substitutions,
+    requests: response.requests,
+    remaining: response.remaining,
+    limit: response.limit,
+  };
+}
+
+export function highlightlyToFixture(match: HighlightlyMatch, sourceLeague: string, round = 0, roundLabel = 'Příprava'): CompetitionFixture {
+  return {
+    external_api_id: match.id,
+    source_league: sourceLeague,
+    source_label: sourceLeague === 'highlightly.friendlies' ? 'Příprava' : 'Chance liga · Highlightly',
+    round,
+    round_label: roundLabel,
+    kickoff: match.date,
+    home_team: canonTeam(match.home.name),
+    away_team: canonTeam(match.away.name),
+    home_source_name: match.home.name,
+    away_source_name: match.away.name,
+    home_score: match.homeScore,
+    away_score: match.awayScore,
+    status: match.status,
+    minute: match.minute,
+    clock: match.clock,
+    duration: match.duration,
+    extra_home: null,
+    extra_away: null,
+    pen_home: match.penHome,
+    pen_away: match.penAway,
+  };
 }
 
 /* -------------------------------------------------------------------------- */

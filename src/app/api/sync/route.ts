@@ -36,9 +36,16 @@ export async function GET(req: NextRequest) {
   // Stávající cron zůstává na /api/sync. Jedním během současně spustíme
   // synchronizaci Chance ligy a Evropy přes již připravený endpoint.
   // Volání běží paralelně s MS, takže není nutné zakládat další cron.
+  const additionalUrl = new URL('/api/sync-football', req.nextUrl.origin);
+  // Ruční diagnostické/bootstrapping parametry přepošleme i přes stávající
+  // /api/sync, aby uživatel nemusel měnit uloženou adresu cronu.
+  for (const name of ['competition', 'full', 'repair', 'dates', 'highlightly_bootstrap', 'highlightly_force']) {
+    const value = req.nextUrl.searchParams.get(name);
+    if (value != null) additionalUrl.searchParams.set(name, value);
+  }
   const additionalCompetitionsPromise = req.nextUrl.searchParams.get('debug')
     ? Promise.resolve(null)
-    : fetch(new URL('/api/sync-football', req.nextUrl.origin), {
+    : fetch(additionalUrl, {
         method: 'GET',
         headers: { Authorization: `Bearer ${secret}` },
         cache: 'no-store',

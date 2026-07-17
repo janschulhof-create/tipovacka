@@ -948,6 +948,7 @@ function ProgressContent({ d }: { d: MatchDetail }) {
   const feed = [
     ...(d.goals ?? []).map((g) => ({ min: g.min, sort: clockNum(g.min), side: g.side, type: 'goal' as const, player: g.player, gkind: g.kind })),
     ...(d.cards ?? []).map((c) => ({ min: c.min, sort: clockNum(c.min), side: c.side, type: 'card' as const, player: c.player, color: c.color })),
+    ...(d.substitutions ?? []).map((sub) => ({ min: sub.min, sort: clockNum(sub.min), side: sub.side, type: 'sub' as const, player: sub.playerIn, playerOut: sub.playerOut })),
   ].sort((a, b) => a.sort - b.sort);
 
   if (feed.length === 0) return <p className="text-xs text-slate-300/40">Zatím žádné události.</p>;
@@ -958,11 +959,15 @@ function ProgressContent({ d }: { d: MatchDetail }) {
         const icon =
           e.type === 'goal' ? (
             <span>⚽</span>
+          ) : e.type === 'sub' ? (
+            <span className="text-emerald-300">↔</span>
           ) : (
             <span className={e.color === 'red' ? 'text-red-400' : 'text-yellow-400'}>▮</span>
           );
         const suffix =
-          e.type === 'goal' && e.gkind === 'penalty' ? ' (pen.)' : e.type === 'goal' && e.gkind === 'own' ? ' (vl.)' : '';
+          e.type === 'goal' && e.gkind === 'penalty' ? ' (pen.)'
+            : e.type === 'goal' && e.gkind === 'own' ? ' (vl.)'
+              : e.type === 'sub' && e.playerOut ? ` za ${e.playerOut}` : '';
         return (
           <li key={i} className={e.side === 'home' ? 'text-left' : 'text-right'}>
             <span className="text-slate-100/75">
@@ -1095,6 +1100,7 @@ function StatBars({ home, away }: { home: TeamStats; away: TeamStats }) {
   };
   const pct = (v?: string) => (v == null ? '–' : /%/.test(v) ? v : `${v}%`);
   const rows: { label: string; h?: string; a?: string; hd: string; ad: string }[] = [
+    { label: 'xG', h: home.xg, a: away.xg, hd: home.xg ?? '–', ad: away.xg ?? '–' },
     { label: 'Střely', h: home.shots, a: away.shots, hd: home.shots ?? '–', ad: away.shots ?? '–' },
     { label: 'Střely na branku', h: home.sot, a: away.sot, hd: home.sot ?? '–', ad: away.sot ?? '–' },
     { label: 'Rohy', h: home.corners, a: away.corners, hd: home.corners ?? '–', ad: away.corners ?? '–' },

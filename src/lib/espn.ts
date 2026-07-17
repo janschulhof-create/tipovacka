@@ -25,7 +25,26 @@ export interface CardEvent {
   player: string;
   color: 'yellow' | 'red';
 }
+export interface SubstitutionEvent {
+  min: string;
+  side: 'home' | 'away';
+  playerIn: string;
+  playerOut: string;
+}
+export interface HighlightlySyncMeta {
+  id: number;
+  leagueId?: number | null;
+  homeLogo?: string | null;
+  awayLogo?: string | null;
+  listFetchedAt?: string;
+  lineupsFetchedAt?: string;
+  eventsFetchedAt?: string;
+  statsFetchedAt?: string;
+  halftimeDetailsAt?: string;
+  finalDetailsAt?: string;
+}
 export interface TeamStats {
+  xg?: string; // očekávané góly
   shots?: string; // střely celkem
   sot?: string; // střely na branku
   corners?: string; // rohy
@@ -56,8 +75,10 @@ export interface MatchDetail {
   attendance?: number;
   goals?: GoalEvent[];
   cards?: CardEvent[];
+  substitutions?: SubstitutionEvent[];
   stats?: { home: TeamStats; away: TeamStats };
   lineups?: MatchLineups | null;
+  _highlightly?: HighlightlySyncMeta;
 }
 
 export interface EspnResult {

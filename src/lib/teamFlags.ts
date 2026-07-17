@@ -86,6 +86,42 @@ export function clubLogoId(name: string): string | null {
   return CLUB_LOGOS[norm(name)] ?? null;
 }
 
+/**
+ * Názvy používané pro bezplatné dohledání klubového znaku v TheSportsDB.
+ * České překlady a zkrácené názvy převádíme na mezinárodní klubový název,
+ * aby se například Bayern Mnichov nehledal pod českým překladem.
+ */
+const LOGO_SEARCH_NAMES: Record<string, string> = {
+  'bayern mnichov': 'Bayern Munich',
+  'inter milan': 'Inter Milan',
+  'ac milan': 'AC Milan',
+  'atletico madrid': 'Atletico Madrid',
+  neapol: 'Napoli',
+  'aek atheny': 'AEK Athens',
+  strasburk: 'Strasbourg',
+  'sachtar doneck': 'Shakhtar Donetsk',
+  'dynamo kyjev': 'Dynamo Kyiv',
+  'rapid viden': 'Rapid Vienna',
+  'crvena zvezda': 'Red Star Belgrade',
+  'dinamo zagreb': 'Dinamo Zagreb',
+  'slovan bratislava': 'Slovan Bratislava',
+  'austria wien': 'Austria Vienna',
+  'basaksehir': 'Istanbul Basaksehir',
+  'besiktas': 'Besiktas',
+  'ferencvaros': 'Ferencvaros',
+  malmo: 'Malmo FF',
+  'copenhagen': 'FC Copenhagen',
+  'club brugge': 'Club Brugge',
+  'sporting cp': 'Sporting Lisbon',
+  psg: 'Paris Saint-Germain',
+  'bohemians dublin': 'Bohemian FC',
+};
+
+export function clubLogoSearchName(name: string): string {
+  if (!name) return '';
+  return LOGO_SEARCH_NAMES[norm(name)] ?? name;
+}
+
 const CODES: Record<string, string> = {
   mexiko: 'mx', 'jizni afrika': 'za', 'jizni korea': 'kr', cesko: 'cz', kanada: 'ca',
   'bosna a hercegovina': 'ba', katar: 'qa', svycarsko: 'ch', brazilie: 'br', maroko: 'ma',

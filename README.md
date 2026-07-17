@@ -34,7 +34,7 @@ Megatipovačky, automatické načítání rozpisu a výsledků.
                                 │ service role (jen server)
                                 ▼
                        ┌────────────────────┐
-                       │  API-Football v3   │  rozpis + výsledky + stav
+                       │ LFA + Highlightly + ESPN │ rozpis + live + Evropa
                        └────────────────────┘
 ```
 
@@ -79,25 +79,58 @@ a SQL `calculate_points` (kanonická, počítá produkčně).
 
 ---
 
-## 4) Zdroj dat — proč API-Football
+## 4) Zdroje zápasů
 
-| Zdroj | Chance Liga zdarma? | Oficiální API? | Verdikt |
-|---|---|---|---|
-| **API-Football** (api-sports.io) | ✅ (free 100 req/den) | ✅ | **Doporučeno** |
-| Football-data.org | ❌ (jen placený plán) | ✅ | Nevhodné pro CZ ligu |
-| SofaScore | — | ❌ (jen scraping, proti ToS) | Nepoužívat |
+Aplikace používá více zdrojů podle toho, k čemu jsou vhodné:
 
-API-Football pokrývá 1200+ soutěží včetně české 1. ligy, má stabilní league ID,
-rozpis + průběžné skóre + stav utkání. Free plán bohatě stačí (jeden sync = pár
-volání, cron běží à 15 min jen kolem zápasů).
+| Oblast | Primární zdroj | Úloha |
+|---|---|---|
+| Chance liga – rozpis | oficiální web Chance ligy | 240 validovaných zápasů, termíny a konečné výsledky |
+| Chance liga – live | Highlightly Football API | minuta, průběžné skóre, události, sestavy a statistiky |
+| Příprava 17.–24. 7. 2026 | Highlightly Football API | zápasy 16 ligových klubů v kole `Příprava` |
+| Evropa | veřejný ESPN scoreboard | vybrané evropské poháry a kvalifikace |
+| Loga | lokální sprite + TheSportsDB | klubové znaky |
 
-**Nastavení:** najdi league ID jednorázově přes
-`GET /leagues?country=Czech-Republic&season=2025`, ulož do `API_FOOTBALL_LEAGUE_ID`
-(očekávaná hodnota kolem `345`, ale ověř na dashboardu). Integrace:
-[`src/lib/apiFootball.ts`](src/lib/apiFootball.ts), sync:
-[`src/app/api/sync/route.ts`](src/app/api/sync/route.ts).
+Oficiální ligový web zůstává bezpečnou zálohou. Výpadek Highlightly tedy
+neodstraní rozpis Chance ligy a nezastaví běžnou synchronizaci.
 
----
+### Highlightly
+
+Ve Vercelu přidej tajnou proměnnou:
+
+```text
+HIGHLIGHTLY_API_KEY=tvuj_klic
+```
+
+Volitelné nastavení:
+
+```text
+HIGHLIGHTLY_LIVE_POLL_MINUTES=20
+HIGHLIGHTLY_RESERVE_REQUESTS=12
+HIGHLIGHTLY_CHANCE_LEAGUE_ID=
+HIGHLIGHTLY_CHANCE_LEAGUE_NAME=Chance Liga
+HIGHLIGHTLY_FRIENDLY_LEAGUE_ID=
+HIGHLIGHTLY_FRIENDLY_LEAGUE_NAME=Club Friendlies
+```
+
+Bezplatný tarif má 100 požadavků denně. Výchozí strategie proto používá jeden
+společný live dotaz za celý hrací den každých 20 minut. Souběžné zápasy nezvyšují
+počet základních dotazů. Sestavy se zkoušejí jednou, události a statistiky
+zejména o poločase a po konci. Posledních 12 požadavků se ponechává jako rezerva.
+
+Jednorázový import přípravy spusť až po přidání klíče:
+
+```text
+/api/sync?key=CRON_SECRET&competition=liga&highlightly_bootstrap=1
+```
+
+Read-only diagnostika:
+
+```text
+/api/liga-check?key=CRON_SECRET&source=highlightly&mode=leagues
+/api/liga-check?key=CRON_SECRET&source=highlightly&mode=matches&date=2026-07-25
+/api/liga-check?key=CRON_SECRET&source=highlightly&mode=friendlies&date=2026-07-17
+```
 
 ## 5) Wireframy (mobil)
 
@@ -136,12 +169,12 @@ src/
     page.tsx            # HOME (server)
     tipovat/page.tsx    # výběr hráče + matches (server) → PredictionForm
     sin-slavy/page.tsx  # historické statistiky (server)
-    api/sync/route.ts   # sync z API-Football (cron / ruční)
+    api/sync/route.ts   # společný cron MS + Chance liga + Evropa
   components/
     StandingsTable.tsx  StatsCards.tsx  MatchList.tsx  PredictionForm.tsx
   lib/
     scoring.ts  scoring.test.ts        # bodování + testy
-    apiFootball.ts                     # integrace zdroje dat
+    espnCompetition.ts                 # LFA, ESPN a Highlightly
     queries.ts                         # SQL dotazy pro server komponenty
     types.ts
     supabase/{client,server}.ts        # anon + service role klienti
@@ -155,7 +188,7 @@ vercel.json                            # cron */15
 
 1. **Den 1 — Supabase:** projekt, spustit `schema.sql` + `seed.sql`, ověřit
    triggery (zkusit vložit tip do „minulého" zápasu → musí selhat).
-2. **Den 1 — API:** registrace API-Football, najít league ID, vyplnit `.env`.
+2. **Den 1 — API:** vytvořit bezplatný Highlightly klíč a uložit jej do Vercelu.
 3. **Den 2 — Sync:** `npm run dev`, ručně `GET /api/sync?key=...`, zkontrolovat
    naplněné `matches`. Nastavit Vercel Cron.
 4. **Den 2 — Frontend:** home + tipovat ověřit na telefonu (DevTools mobile).
@@ -169,7 +202,7 @@ vercel.json                            # cron */15
 
 ```bash
 npm install
-cp .env.example .env.local   # doplň Supabase + API-Football klíče
+# do .env.local doplň Supabase, CRON_SECRET a HIGHLIGHTLY_API_KEY
 # v Supabase SQL editoru spusť supabase/schema.sql a seed.sql
 npm run dev                  # http://localhost:3000
 curl "http://localhost:3000/api/sync?key=<CRON_SECRET>"   # první načtení dat
