@@ -26,7 +26,7 @@ export function SideRail() {
         <BrandMark className="h-10 w-10" />
         <div className="leading-tight">
           <div className="font-display text-lg font-semibold tracking-wide text-white">Tipovačka</div>
-          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300/60">MS · Liga · Evropa</div>
+          <div className="text-[11px] uppercase tracking-[0.2em] text-slate-300/60">MS · Liga</div>
         </div>
       </Link>
 

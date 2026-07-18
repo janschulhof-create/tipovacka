@@ -2,6 +2,7 @@
 
 import { useEffect, useId, useState } from 'react';
 import { pointsBadgeClass, qualityColor, qualitySoftClass } from '@/lib/points';
+import { canonTeam } from '@/lib/teamAliases';
 import { Flag } from './Flag';
 
 interface MutualMatchRow {
@@ -338,6 +339,8 @@ function MutualMatchesContent({
         <div className="overflow-hidden rounded-2xl border border-line-subtle bg-surface-1/70">
           {data.mutualMatches.slice(0, 6).map((r, i) => {
             const hasTip = r.ph != null && r.pa != null;
+            const home = canonTeam(r.home);
+            const away = canonTeam(r.away);
             const meta = r.round != null
               ? `${r.round}. kolo${r.season ? ` · ${r.season}` : ''}`
               : r.date
@@ -353,12 +356,19 @@ function MutualMatchesContent({
                     </span>
                   )}
                 </div>
-                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12.5px]">
-                  <span className="min-w-0 flex-1 font-medium text-copy-primary">{r.home} – {r.away}</span>
+                <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 text-[12.5px]">
+                  <span
+                    className="inline-flex min-w-[94px] items-center gap-2 rounded-xl border border-line-subtle bg-app-deep/34 px-2.5 py-1.5"
+                    title={`${home} – ${away}`}
+                    aria-label={`${home} – ${away}, výsledek ${r.hs}:${r.as}`}
+                  >
+                    <Flag team={home} className="h-6 w-6" />
+                    <strong className="font-display text-sm tabular-nums text-copy-primary">{r.hs}:{r.as}</strong>
+                    <Flag team={away} className="h-6 w-6" />
+                  </span>
                   {hasTip && (
                     <span className="text-copy-muted">tvůj tip <strong className="tabular-nums text-copy-primary">{r.ph}:{r.pa}</strong></span>
                   )}
-                  <span className="text-copy-muted">výsledek <strong className="tabular-nums text-copy-primary">{r.hs}:{r.as}</strong></span>
                 </div>
               </div>
             );
@@ -423,7 +433,7 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
   return (
     <div className="rounded-2xl border border-line-subtle bg-app-deep/35 p-3">
       <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
-        Tvoje xB v posledních {rows.length} zápasech
+        Tvoje xB v posledních {rows.length} zápasech minulé sezony
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} className="h-[126px] w-full overflow-visible" role="img" aria-label="Graf vývoje osobního xB">
         <defs>
@@ -447,13 +457,13 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
               <title>{`xB ${row.value.toFixed(1)} · skutečně ${row.actual} b`}</title>
             </circle>
             <text x={x(index)} y={height - 5} textAnchor="middle" fill="rgba(180,192,212,.50)" fontSize="8">
-              {rows.length - index}
+              {index + 1}
             </text>
           </g>
         ))}
       </svg>
       <p className="mt-1 text-[9.5px] leading-snug text-copy-muted">
-        Průběžný osobní odhad dopočítaný z tehdejší formy. Bod ukazuje xB; po najetí také skutečný zisk.
+        Zleva doprava jsou zápasy 1–10 v chronologickém pořadí. Bod ukazuje tehdejší osobní xB; po najetí také skutečný bodový zisk.
       </p>
     </div>
   );
@@ -597,7 +607,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
       </div>
 
       <p className="text-[10.5px] leading-snug text-copy-muted">
-        xB se během sezony průběžně přepočítává. Přípravné zápasy se do dlouhodobého hodnocení nezahrnují.
+        Aktuální xB se během sezony průběžně přepočítává. Trend výše zůstává referencí posledních deseti zápasů minulé ligové sezony.
       </p>
     </div>
   );

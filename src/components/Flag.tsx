@@ -27,7 +27,6 @@ const badgeRequests = new Map<string, Promise<string | null>>();
 const STORAGE_PREFIX = 'tipovacka-club-badge-v1:';
 const SPRITE_COLUMNS = 8;
 const SPRITE_ROWS = 8;
-const DISPLAY_CELL = 24;
 
 function normalized(value: string): string {
   return value
@@ -128,8 +127,11 @@ function SpriteIcon({
       className={`inline-block h-6 w-6 shrink-0 bg-no-repeat ${className}`}
       style={{
         backgroundImage: 'url(/team-sprite-v1.webp)',
-        backgroundSize: `${SPRITE_COLUMNS * DISPLAY_CELL}px ${SPRITE_ROWS * DISPLAY_CELL}px`,
-        backgroundPosition: `-${column * DISPLAY_CELL}px -${row * DISPLAY_CELL}px`,
+        // Procentuální výřez se přizpůsobí skutečné velikosti prvku. Díky tomu
+        // logo zůstane správně oříznuté i při h-8/w-8 nebo h-9/w-9 a neukáže
+        // sousední znaky ze sprite obrázku.
+        backgroundSize: `${SPRITE_COLUMNS * 100}% ${SPRITE_ROWS * 100}%`,
+        backgroundPosition: `${column === 0 ? 0 : (column / (SPRITE_COLUMNS - 1)) * 100}% ${row === 0 ? 0 : (row / (SPRITE_ROWS - 1)) * 100}%`,
       }}
     />
   );

@@ -134,7 +134,7 @@ export function StandingsTable({
 }
 
 
-/** Projekce konečných bodů pro celou Chance ligu (bez kola Příprava). */
+/** Projekce konečných bodů pro celou Chance ligu. */
 export function SeasonXbTable({
   rows,
   currentPlayerId,
@@ -224,9 +224,6 @@ export function SeasonXbTable({
           })}
         </ol>
 
-        <div className="border-t border-line-subtle px-3 py-2 text-center text-[10.5px] font-medium text-copy-muted">
-          Otevřít detail projekce <span aria-hidden>→</span>
-        </div>
       </div>
     );
   }
@@ -299,7 +296,7 @@ export function SeasonXbTable({
       </ol>
 
       <div className="border-t border-line-subtle px-4 py-3 text-[10.5px] leading-relaxed text-copy-muted">
-        <b className="text-copy-secondary">Jak to číst:</b> odehrané ligové zápasy používají skutečné body, zbytek rozpisu osobní xB. Kolo Příprava se nepočítá. Tajné tipy před výkopem tabulka neprozrazuje.
+        <b className="text-copy-secondary">Jak to číst:</b> odehrané ligové zápasy používají skutečné body, zbytek rozpisu osobní xB. Tajné tipy před výkopem tabulka neprozrazuje.
       </div>
     </div>
   );
