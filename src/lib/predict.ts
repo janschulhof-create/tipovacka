@@ -33,7 +33,7 @@ export interface Prediction {
 }
 
 
-export type XbFactorKey = 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'tip';
+export type XbFactorKey = 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'context' | 'tip';
 
 export interface XbHistoryRow {
   home: string;
@@ -52,12 +52,20 @@ export interface XbFactor {
   description: string;
 }
 
+export interface XbTrendPoint {
+  index: number;
+  value: number;
+  actual: number;
+}
+
 export interface XbPrediction {
   value: number;
   low: number;
   high: number;
   confidence: number;
   factors: XbFactor[];
+  /** Posledních maximálně 10 průběžných osobních odhadů podle tehdejší formy tipéra. */
+  trend: XbTrendPoint[];
   explanation: string;
   hasTip: boolean;
 }
@@ -73,6 +81,12 @@ export interface PersonalXbInput {
   /** Očekávané body konkrétního uloženého tipu podle modelu skóre. */
   tipExpectedPoints?: number | null;
   tipSample?: number;
+  /** Čitelnost konkrétního zápasu podle formy týmů, H2H a pravděpodobností modelu. */
+  contextValue?: number | null;
+  contextSample?: number;
+  contextDescription?: string;
+  /** Historické body v chronologickém pořadí pro graf vývoje osobního xB. */
+  trendPoints?: number[];
 }
 
 const avgPoints = (rows: XbHistoryRow[]): number | null =>
@@ -149,6 +163,17 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     });
   }
 
+  if (input.contextValue != null && Number.isFinite(input.contextValue)) {
+    drafts.push({
+      key: 'context',
+      label: 'Forma a čitelnost zápasu',
+      value: clamp10(input.contextValue),
+      sample: input.contextSample ?? 0,
+      description: input.contextDescription
+        ?? 'Jak jednoznačně se zápas jeví podle současné formy obou týmů, vzájemných výsledků a rozložení pravděpodobností modelu.',
+    });
+  }
+
   if (input.tipExpectedPoints != null && Number.isFinite(input.tipExpectedPoints)) {
     drafts.push({
       key: 'tip',
@@ -166,6 +191,7 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     away: 0.14,
     overall: 0.25,
     season: Math.min(0.18, 0.04 + seasonPoints.length * 0.012),
+    context: input.contextValue != null && Number.isFinite(input.contextValue) ? 0.16 : 0,
     tip: hasTip ? 0.28 : 0,
   };
   const activeWeight = drafts.reduce((sum, factor) => sum + baseWeights[factor.key], 0) || 1;
@@ -180,12 +206,23 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     + pairRows.length * 4
     + homeRows.length * 0.4
     + awayRows.length * 0.4
-    + seasonPoints.length * 5;
+    + seasonPoints.length * 5
+    + ((input.contextSample ?? 0) * 0.8);
   const confidence = Math.round(Math.max(36, Math.min(93, 41 + Math.log1p(evidence) * 8 + (hasTip ? 5 : 0))));
   const spread = Math.max(1.1, 3.4 - confidence / 38);
   const rounded = clamp10(value);
   const strongest = [...factors].sort((a, b) => b.value - a.value)[0];
   const weakest = [...factors].sort((a, b) => a.value - b.value)[0];
+
+  const sourceTrend = (input.trendPoints ?? [])
+    .filter((point) => Number.isFinite(point))
+    .map(clamp10);
+  let rolling = priorAverage;
+  const trendAll = sourceTrend.map((actual, index) => {
+    // Citlivější exponenciální forma: poslední zápasy hýbou odhadem, ale jeden extrém ho nerozbije.
+    rolling = rolling * 0.68 + actual * 0.32;
+    return { index: index + 1, value: Number(clamp10(rolling).toFixed(1)), actual };
+  });
 
   return {
     value: Number(rounded.toFixed(1)),
@@ -193,6 +230,7 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     high: Number(Math.min(10, rounded + spread).toFixed(1)),
     confidence,
     factors,
+    trend: trendAll.slice(-10),
     explanation: strongest.value - weakest.value >= 1.2
       ? `${strongest.label} ti vychází nejlépe. Největší rezervu model vidí ve faktoru „${weakest.label}“.`
       : 'Jednotlivé faktory jsou poměrně vyrovnané, takže odhad zůstává blízko tvého dlouhodobého průměru.',

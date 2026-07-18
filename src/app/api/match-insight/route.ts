@@ -248,6 +248,9 @@ export async function GET(req: Request) {
     );
     // Chybějící tip na dohraném ligovém zápase je skutečných 0 bodů.
     const seasonPoints = regularFinished.map((playedMatch) => seasonPointMap.get(playedMatch.id) ?? 0);
+    const seasonPointsChronological = [...regularFinished]
+      .reverse()
+      .map((playedMatch) => seasonPointMap.get(playedMatch.id) ?? 0);
 
     const { data: currentPrediction } = await sb
       .from('predictions')
@@ -265,6 +268,13 @@ export async function GET(req: Request) {
       }
     }
 
+    const contextValue = prediction
+      ? Math.max(0, Math.min(10, Math.max(prediction.pHome, prediction.pDraw, prediction.pAway) * 6 + prediction.bestTip.ev * 0.4))
+      : null;
+    const contextDescription = prediction
+      ? `Čitelnost zápasu z aktuální formy a H2H. Model doporučuje ${prediction.bestTip.h}:${prediction.bestTip.a}; používá ${prediction.formSample} vstupů formy a ${prediction.h2hSample} vzájemných zápasů.`
+      : 'Současná forma ani vzájemné zápasy zatím nestačí na samostatné vyhodnocení čitelnosti utkání.';
+
     xb = computePersonalXb({
       home: teams.home,
       away: teams.away,
@@ -273,6 +283,10 @@ export async function GET(req: Request) {
       seasonPoints,
       tipExpectedPoints,
       tipSample: prediction?.sample ?? 0,
+      contextValue,
+      contextSample: prediction?.sample ?? 0,
+      contextDescription,
+      trendPoints: [...archiveTips.map((row) => row.points), ...seasonPointsChronological],
     });
   }
 

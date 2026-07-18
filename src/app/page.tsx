@@ -12,6 +12,7 @@ import {
 } from '@/lib/pageQueries';
 import { getRoundPredictions } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
+import { LigaDesktopBoard } from '@/components/LigaDesktopBoard';
 import { RoundSelector } from '@/components/RoundSelector';
 import { roundLabel } from '@/lib/roundLabel';
 import { CompetitionSwitcher } from '@/components/CompetitionSwitcher';
@@ -113,57 +114,104 @@ export default async function Home({
         )}
       </header>
 
-      <div className="grid gap-6 lg:grid-cols-3 lg:items-start">
-        {/* ---------- LEVÝ SLOUPEC: ZÁPASY ---------- */}
-        <div className="space-y-8 lg:col-span-2">
-          <section className="space-y-3">
-            {roundOpen && !sessionPlayer && (
-              <p className="px-1 text-center text-[13px] text-slate-300/60">
-                Pro tipování se <Link prefetch={false} href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
-              </p>
-            )}
-            {matches.length ? (
-              <RoundPanel
-                matches={matches}
-                players={players}
-                predictions={predictions}
-                editable={!!sessionPlayer}
-                playerId={sessionPlayer?.id ?? ''}
-                showSelector={false}
-                groupBySource={competition.key === 'evropa'}
-              />
-            ) : (
-              <div className="panel">
-                <Empty msg="Rozpis se načte po synchronizaci." />
-              </div>
-            )}
-          </section>
-        </div>
+      {competition.key === 'liga' ? (
+        <>
+          {/* Chance liga: desktopové třísloupcové rozložení podle schváleného návrhu. */}
+          <div className="hidden min-w-0 grid-cols-[minmax(0,2.2fr)_320px] items-start gap-4 xl:grid">
+            <LigaDesktopBoard
+              matches={matches}
+              players={players}
+              predictions={predictions}
+              editable={!!sessionPlayer}
+              playerId={sessionPlayer?.id ?? ''}
+            />
 
-        {/* ---------- PRAVÝ SLOUPEC: POŘADÍ / GRAF / STATISTIKY ---------- */}
-        <aside className="space-y-6">
-          <section>
-            <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
-          </section>
+            <aside className="min-w-0 space-y-4 xl:sticky xl:top-20">
+              <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
 
-          {competition.key === 'liga' && (
-            <section>
+              {chart.matches.length > 0 && (
+                <section className="space-y-2">
+                  <h2 className="eyebrow px-1">
+                    <span className="flag-chip" /> Vývoj bodů
+                  </h2>
+                  <StandingsChart matches={chart.matches} players={chart.players} />
+                </section>
+              )}
+
               <Suspense fallback={<SeasonXbSkeleton />}>
                 <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} />
               </Suspense>
-            </section>
-          )}
+            </aside>
+          </div>
 
-          {chart.matches.length > 0 && (
+          {/* Mobilní Chance liga zůstává funkčně i prostorově stejná. */}
+          <div className="space-y-6 xl:hidden">
             <section className="space-y-3">
-              <h2 className="eyebrow">
-                <span className="flag-chip" /> Vývoj bodů
-              </h2>
-              <StandingsChart matches={chart.matches} players={chart.players} />
+              {roundOpen && !sessionPlayer && (
+                <p className="px-1 text-center text-[13px] text-slate-300/60">
+                  Pro tipování se <Link prefetch={false} href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
+                </p>
+              )}
+              {matches.length ? (
+                <RoundPanel
+                  matches={matches}
+                  players={players}
+                  predictions={predictions}
+                  editable={!!sessionPlayer}
+                  playerId={sessionPlayer?.id ?? ''}
+                  showSelector={false}
+                />
+              ) : (
+                <div className="panel"><Empty msg="Rozpis se načte po synchronizaci." /></div>
+              )}
             </section>
-          )}
-        </aside>
-      </div>
+            <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
+            <Suspense fallback={<SeasonXbSkeleton />}>
+              <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} />
+            </Suspense>
+            {chart.matches.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="eyebrow"><span className="flag-chip" /> Vývoj bodů</h2>
+                <StandingsChart matches={chart.matches} players={chart.players} />
+              </section>
+            )}
+          </div>
+        </>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-3 lg:items-start">
+          <div className="space-y-8 lg:col-span-2">
+            <section className="space-y-3">
+              {roundOpen && !sessionPlayer && (
+                <p className="px-1 text-center text-[13px] text-slate-300/60">
+                  Pro tipování se <Link prefetch={false} href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
+                </p>
+              )}
+              {matches.length ? (
+                <RoundPanel
+                  matches={matches}
+                  players={players}
+                  predictions={predictions}
+                  editable={!!sessionPlayer}
+                  playerId={sessionPlayer?.id ?? ''}
+                  showSelector={false}
+                  groupBySource={competition.key === 'evropa'}
+                />
+              ) : (
+                <div className="panel"><Empty msg="Rozpis se načte po synchronizaci." /></div>
+              )}
+            </section>
+          </div>
+          <aside className="space-y-6">
+            <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
+            {chart.matches.length > 0 && (
+              <section className="space-y-3">
+                <h2 className="eyebrow"><span className="flag-chip" /> Vývoj bodů</h2>
+                <StandingsChart matches={chart.matches} players={chart.players} />
+              </section>
+            )}
+          </aside>
+        </div>
+      )}
 
       {/* ---------- STATISTIKY SEZÓNY: pod zápasy, na celou šířku (desktop); na mobilu stejné pořadí ---------- */}
       <section className="mt-6 space-y-4 lg:mt-8">

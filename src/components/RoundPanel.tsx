@@ -56,6 +56,9 @@ export function RoundPanel({
   onPlayerChange,
   showSelector = true,
   groupBySource = false,
+  desktopListOnly = false,
+  selectedMatchId,
+  onMatchSelect,
 }: {
   matches: Match[];
   players: Player[];
@@ -67,6 +70,10 @@ export function RoundPanel({
   showSelector?: boolean;
   /** U evropského týdenního kola vloží výrazné předěly mezi poháry. */
   groupBySource?: boolean;
+  /** Na desktopu se detail vykreslí ve vedlejším panelu; inline detail zůstane jen na mobilu. */
+  desktopListOnly?: boolean;
+  selectedMatchId?: number;
+  onMatchSelect?: (matchId: number) => void;
 }) {
   // Supabase klient (~200 kB JS) se stáhne až ve chvíli, kdy je fakt potřeba
   // (načtení/uložení tipů) – ne při startu stránky. Výrazně zrychlí první vykreslení.
@@ -321,6 +328,9 @@ export function RoundPanel({
                 score={scores[m.id] ?? { h: '', a: '' }}
                 onBump={bump}
                 onChange={setVal}
+                desktopListOnly={desktopListOnly}
+                desktopSelected={selectedMatchId === m.id}
+                onDesktopSelect={onMatchSelect}
               />
             </Fragment>
           );
@@ -442,6 +452,9 @@ function MatchRow({
   onBump,
   onChange,
   now,
+  desktopListOnly = false,
+  desktopSelected = false,
+  onDesktopSelect,
 }: {
   m: Match;
   locked: boolean;
@@ -453,6 +466,9 @@ function MatchRow({
   score: { h: string; a: string };
   onBump: (mid: number, side: 'h' | 'a', d: number) => void;
   onChange: (mid: number, side: 'h' | 'a', v: string) => void;
+  desktopListOnly?: boolean;
+  desktopSelected?: boolean;
+  onDesktopSelect?: (matchId: number) => void;
 }) {
   const [open, setOpen] = useState(false);
   const live = m.status === 'live';
@@ -546,14 +562,18 @@ function MatchRow({
         tabIndex={0}
         aria-label="Detail zápasu"
         aria-expanded={open}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          onDesktopSelect?.(m.id);
+          setOpen((o) => !o);
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault();
+            onDesktopSelect?.(m.id);
             setOpen((o) => !o);
           }
         }}
-        className="flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left transition hover:bg-terrain-900/40 sm:px-4"
+        className={`flex w-full cursor-pointer items-center gap-3 px-3 py-3 text-left transition hover:bg-surface-hover/45 sm:px-4 ${desktopSelected ? 'xl:bg-violet-500/10 xl:shadow-[inset_3px_0_0_#a46af7]' : ''}`}
       >
         <div className="min-w-0 flex-1">{Body}</div>
         <span
@@ -565,7 +585,11 @@ function MatchRow({
       </div>
 
       {/* rozbalený detail: záložky Tipy | Statistiky | Sestavy */}
-      {open && <MatchExpanded m={m} locked={locked} live={live} preds={preds} selectedName={selectedName} />}
+      {open && (
+        <div className={desktopListOnly ? 'xl:hidden' : ''}>
+          <MatchExpanded m={m} locked={locked} live={live} preds={preds} selectedName={selectedName} />
+        </div>
+      )}
     </li>
   );
 }
@@ -576,12 +600,14 @@ function MatchExpanded({
   live,
   preds,
   selectedName,
+  preferXb = false,
 }: {
   m: Match;
   locked: boolean;
   live: boolean;
   preds: RoundPrediction[];
   selectedName?: string;
+  preferXb?: boolean;
 }) {
   const myTip = selectedName ? preds.find((p) => p.name === selectedName) : undefined;
   const d = m.detail;
@@ -595,7 +621,12 @@ function MatchExpanded({
   // Jakmile se hraje / je dohráno, mají přednost Průběh, Statistiky a Hodnocení.
   const showPrediction = m.status === 'scheduled';
 
-  const isChanceLeague = m.source_league === 'cze.1' && Number(m.round) > 0;
+  const sourceKey = String(m.source_league ?? '').toLowerCase();
+  const isChanceLeague = Number(m.round) > 0 && (
+    sourceKey === 'cze.1'
+    || sourceKey.includes('czech-liga')
+    || sourceKey.includes('chance-liga')
+  );
 
   type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'xb' | 'prubeh' | 'staty' | 'sestavy';
   const tabs = (
@@ -611,7 +642,7 @@ function MatchExpanded({
     ] as ({ id: TabId; label: string } | null)[]
   ).filter((t): t is { id: TabId; label: string } => t !== null);
 
-  const [tab, setTab] = useState<TabId>('tipy');
+  const [tab, setTab] = useState<TabId>(preferXb && isChanceLeague ? 'xb' : 'tipy');
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
   // Data pro H2H / xB / predikci se načtou až při otevření příslušné záložky.
@@ -665,6 +696,55 @@ function MatchExpanded({
         {active === 'sestavy' && lu && <FormationView lineups={lu} homeTeam={m.home_team} awayTeam={m.away_team} />}
       </div>
     </div>
+  );
+}
+
+export function DesktopMatchDetail({
+  match,
+  predictions,
+  selectedName,
+}: {
+  match: Match;
+  predictions: RoundPrediction[];
+  selectedName?: string;
+}) {
+  const locked = match.status !== 'scheduled' || new Date(match.kickoff).getTime() <= Date.now();
+  const live = match.status === 'live';
+  return (
+    <section className="panel-flush overflow-hidden shadow-elevated">
+      <div className="border-b border-line-subtle bg-gradient-to-r from-violet-500/10 via-surface-2/80 to-surface-1 px-5 py-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
+            <span className="truncate font-display text-lg font-bold text-copy-primary">{match.home_team}</span>
+            <Flag team={match.home_team} className="h-8 w-8" />
+          </div>
+          <div className="shrink-0 text-center">
+            {locked ? (
+              <div className={`rounded-xl px-4 py-2 font-display text-2xl font-bold tabular-nums ${live ? 'bg-state-live/15 text-state-live' : 'bg-app-deep/65 text-white'}`}>
+                {match.home_score ?? '–'} <span className="text-copy-muted">:</span> {match.away_score ?? '–'}
+              </div>
+            ) : (
+              <div className="rounded-xl border border-line-strong bg-app-deep/45 px-4 py-2 font-display text-base text-copy-muted">vs</div>
+            )}
+            <div className="mt-1.5 text-[10px] uppercase tracking-[0.12em] text-copy-muted">
+              {live ? `živě ${match.clock ?? match.minute ?? ''}` : match.status === 'finished' ? 'konec' : dt(match.kickoff)}
+            </div>
+          </div>
+          <div className="flex min-w-0 flex-1 items-center gap-3">
+            <Flag team={match.away_team} className="h-8 w-8" />
+            <span className="truncate font-display text-lg font-bold text-copy-primary">{match.away_team}</span>
+          </div>
+        </div>
+      </div>
+      <MatchExpanded
+        m={match}
+        locked={locked}
+        live={live}
+        preds={predictions.filter((prediction) => prediction.match_id === match.id)}
+        selectedName={selectedName}
+        preferXb
+      />
+    </section>
   );
 }
 

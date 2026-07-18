@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useId, useState } from 'react';
 import { pointsBadgeClass, qualityColor, qualitySoftClass } from '@/lib/points';
 import { Flag } from './Flag';
 
@@ -27,7 +27,7 @@ interface Prediction {
   basis: 'form+h2h' | 'form' | 'h2h';
 }
 interface XbFactor {
-  key: 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'tip';
+  key: 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'context' | 'tip';
   label: string;
   value: number;
   sample: number;
@@ -40,6 +40,7 @@ interface XbPrediction {
   high: number;
   confidence: number;
   factors: XbFactor[];
+  trend: { index: number; value: number; actual: number }[];
   explanation: string;
   hasTip: boolean;
 }
@@ -355,6 +356,68 @@ function QualityLegend() {
   );
 }
 
+function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
+  const rawId = useId();
+  const gradientId = `xb-trend-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  if (!rows?.length) {
+    return (
+      <div className="flex h-32 items-center justify-center rounded-xl border border-line-subtle bg-app-deep/30 px-3 text-center text-[11px] text-copy-muted">
+        Vývoj xB se objeví po prvních vyhodnocených tipech.
+      </div>
+    );
+  }
+
+  const width = 286;
+  const height = 126;
+  const padX = 22;
+  const padTop = 12;
+  const padBottom = 22;
+  const innerW = width - padX * 2;
+  const innerH = height - padTop - padBottom;
+  const x = (index: number) => padX + (rows.length === 1 ? innerW / 2 : (index / (rows.length - 1)) * innerW);
+  const y = (value: number) => padTop + innerH - (Math.max(0, Math.min(10, value)) / 10) * innerH;
+  const line = rows.map((row, index) => `${index === 0 ? 'M' : 'L'} ${x(index).toFixed(1)} ${y(row.value).toFixed(1)}`).join(' ');
+  const area = `${line} L ${x(rows.length - 1).toFixed(1)} ${(padTop + innerH).toFixed(1)} L ${x(0).toFixed(1)} ${(padTop + innerH).toFixed(1)} Z`;
+
+  return (
+    <div className="rounded-2xl border border-line-subtle bg-app-deep/35 p-3">
+      <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
+        Tvoje xB v posledních {rows.length} zápasech
+      </div>
+      <svg viewBox={`0 0 ${width} ${height}`} className="h-[126px] w-full overflow-visible" role="img" aria-label="Graf vývoje osobního xB">
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stopColor="#49A8FF" />
+            <stop offset="55%" stopColor="#8B4EEB" />
+            <stop offset="100%" stopColor="#BE94FF" />
+          </linearGradient>
+        </defs>
+        {[0, 5, 10].map((tick) => (
+          <g key={tick}>
+            <line x1={padX} x2={width - padX} y1={y(tick)} y2={y(tick)} stroke="rgba(180,192,212,.12)" strokeWidth="1" />
+            <text x="2" y={y(tick) + 3} fill="rgba(180,192,212,.52)" fontSize="9" className="tabular-nums">{tick}</text>
+          </g>
+        ))}
+        <path d={area} fill={`url(#${gradientId})`} opacity="0.10" />
+        <path d={line} fill="none" stroke={`url(#${gradientId})`} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {rows.map((row, index) => (
+          <g key={`${row.index}-${index}`}>
+            <circle cx={x(index)} cy={y(row.value)} r="4" fill="#A46AF7" stroke="#07101D" strokeWidth="2">
+              <title>{`xB ${row.value.toFixed(1)} · skutečně ${row.actual} b`}</title>
+            </circle>
+            <text x={x(index)} y={height - 5} textAnchor="middle" fill="rgba(180,192,212,.50)" fontSize="8">
+              {rows.length - index}
+            </text>
+          </g>
+        ))}
+      </svg>
+      <p className="mt-1 text-[9.5px] leading-snug text-copy-muted">
+        Průběžný osobní odhad dopočítaný z tehdejší formy. Bod ukazuje xB; po najetí také skutečný zisk.
+      </p>
+    </div>
+  );
+}
+
 /** Personalizovaná xB predikce + forma a H2H pro zápas Chance ligy. */
 export function XbContent({ data, loading }: { data: InsightData | null; loading: boolean }) {
   if (loading) return <p className="text-xs text-copy-muted">Počítám xB predikci…</p>;
@@ -362,7 +425,7 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
 
   const xb = data.xb;
   const factorIcon: Record<XbFactor['key'], string> = {
-    h2h: '🎯', home: '👕', away: '🛡️', overall: '📈', season: '🔥', tip: '🧠',
+    h2h: '🎯', home: '👕', away: '🛡️', overall: '📈', season: '🔥', context: '⭐', tip: '🧠',
   };
 
   const label = !xb
@@ -392,7 +455,7 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
       ) : (
         <>
           <div className="panel-premium p-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+            <div className="grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center lg:grid-cols-[9rem_minmax(0,1fr)_18rem]">
               <div
                 className="relative mx-auto flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[9px] sm:mx-0"
                 style={{ background: `conic-gradient(${mainColor} ${degrees}deg, rgb(23 42 71) ${degrees}deg)` }}
@@ -423,7 +486,15 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
                   <p className="mt-2 text-[11px] text-copy-muted">Po uložení konkrétního tipu se odhad ještě zpřesní.</p>
                 )}
               </div>
+
+              <div className="hidden lg:block">
+                <XbTrendChart rows={xb.trend ?? []} />
+              </div>
             </div>
+          </div>
+
+          <div className="lg:hidden">
+            <XbTrendChart rows={xb.trend ?? []} />
           </div>
 
           <div className="space-y-3">
@@ -451,7 +522,7 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
                           <span className="font-display text-xl font-bold tabular-nums" style={{ color }}>{factor.value.toFixed(1)}</span>
                         </div>
                         <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
-                          <div className="h-full rounded-full quality-gradient" style={{ width: `${Math.max(3, factor.value * 10)}%` }} />
+                          <div className="h-full rounded-full" style={{ width: `${Math.max(3, factor.value * 10)}%`, backgroundColor: color }} />
                         </div>
                         <p className="mt-2 text-[10.5px] leading-relaxed text-copy-muted">{factor.description}</p>
                         <div className="mt-2 flex flex-wrap gap-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-copy-muted">
@@ -469,7 +540,7 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
           </div>
 
           <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-r from-violet-500/10 to-state-info/5 p-3.5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-300">🤖 Shrnutí xB</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-300">🤖 AI komentář xB</div>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-copy-secondary">{xb.explanation}</p>
           </div>
         </>
