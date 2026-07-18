@@ -376,23 +376,6 @@ function MetricRow({ label, value, accent = 'text-white' }: { label: string; val
   );
 }
 
-function CircularScore({ value, label }: { value: number; label: string }) {
-  const circumference = 2 * Math.PI * 39;
-  const dash = circumference * clamp(value, 0, 10) / 10;
-  return (
-    <div className="text-center">
-      <div className="relative mx-auto h-24 w-24">
-        <svg viewBox="0 0 100 100" className="h-full w-full -rotate-90" aria-hidden="true">
-          <circle cx="50" cy="50" r="39" fill="none" stroke="rgba(48,73,110,.45)" strokeWidth="8" />
-          <circle cx="50" cy="50" r="39" fill="none" stroke="#a46af7" strokeWidth="8" strokeLinecap="round" strokeDasharray={`${dash} ${circumference - dash}`} />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center font-display text-3xl font-bold tabular-nums text-violet-300">{value.toFixed(1)}</div>
-      </div>
-      <div className="mt-1 text-[9px] uppercase tracking-wider text-copy-muted">{label}</div>
-    </div>
-  );
-}
-
 function MatchSwitcher({
   matches,
   selectedId,
@@ -667,6 +650,52 @@ export function AIAnalysisSection({
 
       <MatchSwitcher matches={matches} selectedId={selectedMatch.id} onSelect={handleMatchSelect} roundTitle={roundTitle} activeSummary={`Tvůj základní tip ${currentLabel}, nejčastější skóre davu ${modeLabel}, vzorek ${crowd.count} tipů.`} />
 
+        <div className="mb-3 rounded-[18px] border border-line-subtle/90 bg-[linear-gradient(145deg,rgba(12,24,41,.98),rgba(5,13,24,.98))] p-4 shadow-card">
+          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="eyebrow mb-1"><span className="flag-chip" /> Simulátor · {matchName}</div>
+              <h3 className="font-display text-xl font-bold text-violet-300">Co když změním tip?</h3>
+              <p className="mt-1 text-[10px] text-copy-muted">Simulace je vždy navázaná na zápas vybraný nahoře. Nic se neukládá do skutečného tipu.</p>
+            </div>
+            <div className="grid min-w-[280px] grid-cols-3 overflow-hidden rounded-xl border border-line-subtle/80 bg-app-deep/35 text-center">
+              <div className="px-3 py-2">
+                <span className="block text-[8px] text-copy-muted">Domácí</span>
+                <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.homeTeam} className="h-9 w-9" /></div>
+                <strong className="mt-1 block text-[10px] text-white">{selectedMatch.homeTeam}</strong>
+              </div>
+              <div className="border-x border-line-subtle/70 px-3 py-2">
+                <span className="block text-[8px] text-copy-muted">Hosté</span>
+                <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.awayTeam} className="h-9 w-9" /></div>
+                <strong className="mt-1 block text-[10px] text-white">{selectedMatch.awayTeam}</strong>
+              </div>
+              <div className="px-3 py-2"><span className="block text-[8px] text-copy-muted">Aktuální tip</span><strong className="font-display text-lg text-white">{selectedMatch.userTip ? currentLabel : '–'}</strong></div>
+            </div>
+          </div>
+      
+          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+            {alternatives.map((score) => {
+              const label = scoreLabel(score);
+              const isSelected = label === selectedLabel;
+              const simulated = model.estimate(score);
+              const delta = simulated - currentXb;
+              return (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => handleSimulationSelect(score)}
+                  className={`min-h-[128px] rounded-xl border p-3 text-center transition focus-visible:ring-offset-app-deep ${isSelected ? 'border-violet-300 bg-violet-500/15 shadow-violet' : 'border-line-subtle bg-surface-1/75 hover:border-violet-400/50 hover:bg-surface-hover'}`}
+                  aria-pressed={isSelected}
+                >
+                  <div className={`font-display text-2xl font-bold tabular-nums ${isSelected ? 'text-violet-200' : 'text-white'}`}>{label}</div>
+                  <div className="mt-1 text-[9px] text-copy-muted">xB <strong className="font-display text-sm text-copy-secondary">{simulated.toFixed(1)}</strong></div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${delta >= -0.2 ? 'bg-violet-400' : delta >= -1.4 ? 'bg-state-info' : 'bg-state-danger'}`} style={{ width: `${clamp(simulated * 10)}%` }} /></div>
+                  <div className={`mt-2 text-[9px] font-semibold ${isSelected ? 'text-violet-300' : delta >= 0 ? 'text-state-success' : 'text-state-danger'}`}>{isSelected ? 'Vybraná simulace' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} xB`}</div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
       <div key={selectedMatch.id} className="ai-analysis-grid">
         <AnalysisCard>
           <CardHeader number={1} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} />
@@ -829,93 +858,31 @@ export function AIAnalysisSection({
         </AnalysisCard>
 
         <AnalysisCard>
-          <CardHeader number={10} title="Prediction engine" subtitle={`Souhrn modelu pro ${matchName}.`} tone="pink" />
+          <CardHeader number={10} title="Jak se to počítá?" subtitle={`Co stojí za doporučením pro ${matchName}.`} tone="pink" />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
-            <div className="grid grid-cols-2 gap-2 border-b border-line-subtle/70 pb-3">
-              <CircularScore value={selectedXb} label="xB" />
-              <div className="flex flex-col items-center justify-center border-l border-line-subtle/70 pl-2 text-center">
-                <div className="text-[9px] text-copy-muted">Jistota modelu</div>
-                <div className="mt-2 font-display text-3xl font-bold tabular-nums text-white">{selectedConfidence}<span className="text-sm">%</span></div>
-                <div className="mt-2 h-1.5 w-full rounded-full bg-surface-3"><div className="h-full rounded-full bg-violet-400" style={{ width: `${selectedConfidence}%` }} /></div>
-              </div>
+            <p className="text-[10px] leading-relaxed text-copy-secondary">Model po každé změně zápasu nebo simulovaného skóre znovu vyhodnotí čtyři hlavní signály:</p>
+            <div className="mt-3 space-y-2.5">
+              {[
+                { title: 'Shoda s kolem', text: `Jak blízko je skóre ${selectedLabel} průměru ${crowdAverage} a nejčastějšímu tipu ${modeLabel}.` },
+                { title: 'Tvůj profil', text: `Historická úspěšnost ${profile.success_rate.toFixed(1)} % a dlouhodobá forma ${model.form.toFixed(1)}/10.` },
+                { title: 'Čitelnost duelu', text: `Rozptyl tipů ${Math.round(crowd.dispersion)} % a síla hlavního scénáře tohoto zápasu.` },
+                { title: 'Riziko skóre', text: `Odlišnost ${crowdDifference} %, výsledek proti směru davu a počet očekávaných gólů.` },
+              ].map((item, index) => (
+                <div key={item.title} className="grid grid-cols-[24px_1fr] gap-2.5 rounded-lg border border-line-subtle/60 bg-surface-1/55 p-2.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500/15 font-display text-[10px] font-bold text-violet-300">{index + 1}</span>
+                  <div>
+                    <div className="text-[10px] font-semibold text-white">{item.title}</div>
+                    <div className="mt-0.5 text-[9px] leading-relaxed text-copy-muted">{item.text}</div>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="mt-3 grid grid-cols-[1fr_1.1fr] gap-3">
-              <div>
-                <div className="mb-1 text-[8px] text-copy-muted">Pravděpodobnosti skóre</div>
-                <Heatmap selected={selected} crowd={crowd} compact />
-              </div>
-              <div>
-                <div className="mb-1 text-[8px] text-copy-muted">Metriky zápasu</div>
-                <MetricRow label="Tip" value={selectedLabel} accent="text-violet-300" />
-                <MetricRow label="Shoda davu" value={`${100 - crowdDifference}%`} accent="text-state-success" />
-                <MetricRow label="Čitelnost" value={`${model.readability.toFixed(1)}/10`} accent="text-state-info" />
-              </div>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-2 text-[9px]">
-              <div className="rounded-lg border border-line-subtle/70 bg-surface-1/70 p-2"><span className="block text-copy-muted">Jak ti sedí tip</span><strong className="font-display text-sm text-state-success">{tipFit.toFixed(1)}</strong></div>
-              <div className="rounded-lg border border-line-subtle/70 bg-surface-1/70 p-2"><span className="block text-copy-muted">Vzorek tipů</span><strong className="font-display text-sm text-state-warning">{crowd.count}</strong></div>
-            </div>
+            <p className="mt-3 border-t border-line-subtle/70 pt-3 text-[9px] leading-relaxed text-copy-muted">Výsledkem není kurz ani garantovaná predikce. xB a jistota modelu jsou orientační skóre, která pomáhají porovnat varianty tipu v rámci jednoho zápasu.</p>
           </div>
         </AnalysisCard>
       </div>
 
-      <div className="mt-3 grid gap-3 xl:grid-cols-[minmax(0,1fr)_300px]">
-        <div className="rounded-[18px] border border-line-subtle/90 bg-[linear-gradient(145deg,rgba(12,24,41,.98),rgba(5,13,24,.98))] p-4 shadow-card">
-          <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="eyebrow mb-1"><span className="flag-chip" /> Simulátor · {matchName}</div>
-              <h3 className="font-display text-xl font-bold text-violet-300">Co když změním tip?</h3>
-              <p className="mt-1 text-[10px] text-copy-muted">Simulace je vždy navázaná na zápas vybraný nahoře. Nic se neukládá do skutečného tipu.</p>
-            </div>
-            <div className="grid min-w-[280px] grid-cols-3 overflow-hidden rounded-xl border border-line-subtle/80 bg-app-deep/35 text-center">
-              <div className="px-3 py-2">
-                <span className="block text-[8px] text-copy-muted">Domácí</span>
-                <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.homeTeam} className="h-9 w-9" /></div>
-                <strong className="mt-1 block text-[10px] text-white">{selectedMatch.homeTeam}</strong>
-              </div>
-              <div className="border-x border-line-subtle/70 px-3 py-2">
-                <span className="block text-[8px] text-copy-muted">Hosté</span>
-                <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.awayTeam} className="h-9 w-9" /></div>
-                <strong className="mt-1 block text-[10px] text-white">{selectedMatch.awayTeam}</strong>
-              </div>
-              <div className="px-3 py-2"><span className="block text-[8px] text-copy-muted">Aktuální tip</span><strong className="font-display text-lg text-white">{selectedMatch.userTip ? currentLabel : '–'}</strong></div>
-            </div>
-          </div>
 
-          <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {alternatives.map((score) => {
-              const label = scoreLabel(score);
-              const isSelected = label === selectedLabel;
-              const simulated = model.estimate(score);
-              const delta = simulated - currentXb;
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => handleSimulationSelect(score)}
-                  className={`min-h-[128px] rounded-xl border p-3 text-center transition focus-visible:ring-offset-app-deep ${isSelected ? 'border-violet-300 bg-violet-500/15 shadow-violet' : 'border-line-subtle bg-surface-1/75 hover:border-violet-400/50 hover:bg-surface-hover'}`}
-                  aria-pressed={isSelected}
-                >
-                  <div className={`font-display text-2xl font-bold tabular-nums ${isSelected ? 'text-violet-200' : 'text-white'}`}>{label}</div>
-                  <div className="mt-1 text-[9px] text-copy-muted">xB <strong className="font-display text-sm text-copy-secondary">{simulated.toFixed(1)}</strong></div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${delta >= -0.2 ? 'bg-violet-400' : delta >= -1.4 ? 'bg-state-info' : 'bg-state-danger'}`} style={{ width: `${clamp(simulated * 10)}%` }} /></div>
-                  <div className={`mt-2 text-[9px] font-semibold ${isSelected ? 'text-violet-300' : delta >= 0 ? 'text-state-success' : 'text-state-danger'}`}>{isSelected ? 'Vybraná simulace' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} xB`}</div>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <aside className="rounded-[18px] border border-line-subtle/90 bg-[linear-gradient(145deg,rgba(12,24,41,.98),rgba(5,13,24,.98))] p-4 shadow-card">
-          <h3 className="font-display text-sm font-bold text-violet-300">Jak se simulace počítá?</h3>
-          <p className="mt-2 text-[10px] leading-relaxed text-copy-secondary">Pro každý výsledek se znovu vyhodnotí konkrétní duel {matchName}:</p>
-          <div className="mt-3 space-y-2 text-[10px] text-copy-secondary">
-            {['shoda s rozložením tipů kola', 'historická úspěšnost tvého profilu', 'čitelnost a rozptyl vybraného zápasu', 'riziko rozdílu a celkového počtu gólů'].map((text, index) => (
-              <div key={text} className="flex items-center gap-2"><span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 font-display text-[9px] font-bold text-violet-300">{index + 1}</span><span>{text}</span></div>
-            ))}
-          </div>
-        </aside>
-      </div>
     </section>
   );
 }
