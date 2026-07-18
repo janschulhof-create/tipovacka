@@ -41,6 +41,10 @@ export const COMPETITIONS: Competition[] = [
     active: true,
     espnSlugs: ['cze.1'],
   },
+  /*
+   * Evropa je dočasně skrytá pouze v uživatelském rozhraní. Konfiguraci
+   * ponecháváme zakomentovanou, aby šla později bezpečně vrátit bez změn API.
+   *
   {
     key: 'evropa',
     label: 'Evropa',
@@ -55,6 +59,7 @@ export const COMPETITIONS: Competition[] = [
       'uefa.europa.conf_qual', 'uefa.europa.conf',
     ],
   },
+   */
 ];
 
 export function getCompetition(key: string | undefined): Competition {
