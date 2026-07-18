@@ -807,7 +807,35 @@ export function AIAnalysisSection({
 
       <div key={selectedMatch.id} className="ai-analysis-grid">
         <AnalysisCard>
-          <CardHeader number={1} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} tone={xbTone} />
+          <CardHeader number={1} title="Jak se to počítá?" subtitle={`Co stojí za doporučením pro ${matchName}.`} tone="pink" />
+          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
+            <p className="text-[10px] leading-relaxed text-copy-secondary">Dashboard i profil používají jeden centrální osobní xB model. Jednotlivé metriky ale odpovídají na různé otázky:</p>
+            <div className="mt-3 space-y-2.5">
+              {[
+                { title: 'xB · očekávané body', text: `Odhad bodového zisku 0–10 pro tip ${selectedLabel}. Kombinuje tvoji historii, zkušenost s týmy, H2H, sezonní formu, čitelnost duelu a konkrétní skóre.` },
+                { title: 'AI confidence · jistota dat', text: `Hodnota ${selectedXbData ? `${selectedConfidence} %` : 'se načítá'} vyjadřuje sílu vzorku a dostupných podkladů. Není to pravděpodobnost, že tip vyjde.` },
+                { title: 'Dav a heatmapa', text: `Průměr ${crowdAverage}, nejčastější tip ${modeLabel} a odlišnost ${crowdDifference} % popisují ostatní tipéry v tomto kole. Nejsou samy o sobě xB.` },
+                { title: 'Simulátor', text: `Přepočítává stejné xB pro alternativní skóre. Vybraná varianta se propíše do analýzy, ale neukládá ani nepřepisuje tvůj skutečný tip.` },
+              ].map((item, index) => (
+                <div key={item.title} className="grid grid-cols-[24px_1fr] gap-2.5 rounded-lg border border-line-subtle/60 bg-surface-1/55 p-2.5">
+                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500/15 font-display text-[10px] font-bold text-violet-300">{index + 1}</span>
+                  <div>
+                    <div className="text-[10px] font-semibold text-white">{item.title}</div>
+                    <div className="mt-0.5 text-[9px] leading-relaxed text-copy-muted">{item.text}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {selectedXbData && (
+              <div className="mt-3 border-t border-line-subtle/70 pt-3 text-[9px] leading-relaxed text-copy-muted">
+                <b className="text-violet-200">Aktuální výpočet:</b> {selectedXbData.explanation} Interval odhadu je {selectedXbData.low.toFixed(1)}–{selectedXbData.high.toFixed(1)} bodu.
+              </div>
+            )}
+            <p className="mt-2 text-[9px] leading-relaxed text-copy-muted">Výsledkem není kurz ani garance. xB slouží k porovnání očekávaného bodového potenciálu, zatímco jistota popisuje kvalitu datového základu.</p>
+          </div>
+        </AnalysisCard>
+        <AnalysisCard>
+          <CardHeader number={2} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} tone={xbTone} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
             <div className="mb-2 flex items-end justify-between gap-3">
               <div>
@@ -859,9 +887,41 @@ export function AIAnalysisSection({
           </div>
           {xbError && <div className="mt-2 text-[9px] text-state-danger">Jednotný xB model se nepodařilo načíst. Zkus stránku obnovit.</div>}
         </AnalysisCard>
-
         <AnalysisCard>
-          <CardHeader number={2} title="AI coach" subtitle={`Doporučení pro ${matchName}.`} tone="green" />
+          <CardHeader number={3} title="xB radar" subtitle={`Stejné osobní faktory, ze kterých vzniká xB pro ${matchName}.`} tone={xbTone} />
+          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-2">
+            <RadarChart values={radarValues} tone={xbTone} />
+            <div className="mt-1 flex justify-between border-t border-line-subtle/70 px-2 pt-2 text-[8px] text-copy-muted"><span>0 = slabé</span><span>10 = výborné</span></div>
+            <p className="mt-2 px-2 text-[9px] leading-relaxed text-copy-muted">Domácí a hosté znamenají, jak ti historicky sedí jednotlivé týmy. Kontext je čitelnost utkání z formy a H2H, průměr je tvůj dlouhodobý bodový základ.</p>
+          </div>
+        </AnalysisCard>
+        <AnalysisCard>
+          <CardHeader number={4} title="Heatmap skóre" subtitle={`Pravděpodobnosti pro ${matchName}.`} tone="blue" />
+          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
+            <div className="mb-2 text-[10px] font-semibold text-white">Pravděpodobnost skóre</div>
+            <Heatmap selected={selected} crowd={crowd} />
+            <div className="mt-3 flex items-center justify-between border-t border-line-subtle/70 pt-2">
+              <span className="text-[9px] text-copy-muted">Nejčastější tip kola</span>
+              <strong className="rounded-md bg-violet-500/20 px-2 py-1 font-display text-sm tabular-nums text-violet-200">{modeLabel}</strong>
+            </div>
+            <div className="mt-2 flex items-center justify-between">
+              <span className="text-[9px] text-copy-muted">Vybraná simulace</span>
+              <strong className="font-display text-lg tabular-nums text-state-live">{selectedLabel}</strong>
+            </div>
+          </div>
+        </AnalysisCard>
+        <AnalysisCard>
+          <CardHeader number={5} title="AI confidence" subtitle={`Síla datového základu pro ${matchName}.`} tone="violet" />
+          <div className="rounded-xl border border-violet-400/25 bg-[linear-gradient(160deg,rgba(139,78,235,.13),rgba(7,16,29,.55))] p-3 text-center">
+            <ConfidenceShield value={selectedXbData ? selectedConfidence : 0} tone="violet" />
+            <div className="mx-auto mt-1 inline-flex rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[9px] font-semibold text-violet-200">Kvalita podkladů</div>
+            <p className="mx-auto mt-2 max-w-[220px] text-[10px] leading-relaxed text-copy-secondary"><b className="text-violet-200">Není to šance, že tip vyjde.</b> Číslo pouze říká, jak silná a úplná data má model pro výpočet osobního xB.</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full bg-[linear-gradient(90deg,#6d5dfc,#a46af7,#c48cff)]" style={{ width: `${selectedXbData ? selectedConfidence : 0}%` }} /></div>
+            <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Málo dat</span><span>Dost dat</span><span>Silný základ</span></div>
+          </div>
+        </AnalysisCard>
+        <AnalysisCard>
+          <CardHeader number={6} title="AI coach" subtitle={`Doporučení pro ${matchName}.`} tone="green" />
           <div className="rounded-xl border border-violet-400/20 bg-violet-500/10 p-3">
             <div className="mb-2 flex items-center gap-3">
               <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-violet-400 bg-app-deep shadow-[0_0_22px_rgba(164,106,247,.38)]">
@@ -883,25 +943,8 @@ export function AIAnalysisSection({
             <strong className={toneTextClass[xbTone]}>Doporučení:</strong> {recommendation}
           </div>
         </AnalysisCard>
-
         <AnalysisCard>
-          <CardHeader number={3} title="Heatmap skóre" subtitle={`Pravděpodobnosti pro ${matchName}.`} tone="blue" />
-          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
-            <div className="mb-2 text-[10px] font-semibold text-white">Pravděpodobnost skóre</div>
-            <Heatmap selected={selected} crowd={crowd} />
-            <div className="mt-3 flex items-center justify-between border-t border-line-subtle/70 pt-2">
-              <span className="text-[9px] text-copy-muted">Nejčastější tip kola</span>
-              <strong className="rounded-md bg-violet-500/20 px-2 py-1 font-display text-sm tabular-nums text-violet-200">{modeLabel}</strong>
-            </div>
-            <div className="mt-2 flex items-center justify-between">
-              <span className="text-[9px] text-copy-muted">Vybraná simulace</span>
-              <strong className="font-display text-lg tabular-nums text-state-live">{selectedLabel}</strong>
-            </div>
-          </div>
-        </AnalysisCard>
-
-        <AnalysisCard>
-          <CardHeader number={4} title="Jak moc jdeš proti davu" subtitle={`Srovnání tipu pro ${matchName}.`} />
+          <CardHeader number={7} title="Jak moc jdeš proti davu" subtitle={`Srovnání tipu pro ${matchName}.`} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
             <MetricRow label="Průměr ostatních" value={crowdAverage} />
             <MetricRow label="Nejčastější skóre" value={modeLabel} />
@@ -917,20 +960,8 @@ export function AIAnalysisSection({
             <p className="border-t border-line-subtle/70 pt-3 text-[10px] leading-relaxed text-copy-muted">{crowdDifference > 70 ? 'Velmi odvážný tip: vyšší potenciál odlišit se, ale také vyšší rozptyl.' : crowdDifference > 40 ? 'Tip je mírně proti davu. Rozdíl je viditelný, ale stále obhajitelný.' : 'Tip je blízko hlavnímu scénáři kola a drží nízké riziko.'}</p>
           </div>
         </AnalysisCard>
-
         <AnalysisCard>
-          <CardHeader number={5} title="AI confidence" subtitle={`Síla datového základu pro ${matchName}.`} tone="violet" />
-          <div className="rounded-xl border border-violet-400/25 bg-[linear-gradient(160deg,rgba(139,78,235,.13),rgba(7,16,29,.55))] p-3 text-center">
-            <ConfidenceShield value={selectedXbData ? selectedConfidence : 0} tone="violet" />
-            <div className="mx-auto mt-1 inline-flex rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[9px] font-semibold text-violet-200">Kvalita podkladů</div>
-            <p className="mx-auto mt-2 max-w-[220px] text-[10px] leading-relaxed text-copy-secondary"><b className="text-violet-200">Není to šance, že tip vyjde.</b> Číslo pouze říká, jak silná a úplná data má model pro výpočet osobního xB.</p>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full bg-[linear-gradient(90deg,#6d5dfc,#a46af7,#c48cff)]" style={{ width: `${selectedXbData ? selectedConfidence : 0}%` }} /></div>
-            <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Málo dat</span><span>Dost dat</span><span>Silný základ</span></div>
-          </div>
-        </AnalysisCard>
-
-        <AnalysisCard>
-          <CardHeader number={6} title="Momentum" subtitle={`Dlouhodobý trend před duelem ${matchName}.`} tone={momentumPositive ? 'green' : 'pink'} />
+          <CardHeader number={8} title="Momentum" subtitle={`Dlouhodobý trend před duelem ${matchName}.`} tone={momentumPositive ? 'green' : 'pink'} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
             <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold text-white"><span>Posledních 10 zápasů</span><span className="text-copy-muted">0 / 2 / 4 / 6 / 10 b</span></div>
             <MiniSparkline values={momentum} tone={momentumPositive ? 'green' : 'pink'} height={110} dynamicSegments />
@@ -940,9 +971,23 @@ export function AIAnalysisSection({
             </div>
           </div>
         </AnalysisCard>
-
         <AnalysisCard>
-          <CardHeader number={7} title="Speciality kola" subtitle={`${roundTitle} podle rozložení všech uložených tipů.`} tone="blue" />
+          <CardHeader number={9} title="AI příběh zápasu" subtitle={`Shrnutí hlavních signálů pro ${matchName}.`} tone="amber" />
+          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
+            <div className="mb-3 flex items-center justify-between">
+              <strong className="text-[11px] text-white">{matchName}</strong>
+              <span className="rounded-full border border-state-warning/30 bg-state-warning/10 px-2 py-1 text-[9px] font-bold text-state-warning">{roundTitle}</span>
+            </div>
+            <div className="space-y-3">
+              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-state-success/15 text-[10px] font-bold text-state-success">1</span><div><div className="text-[9px] text-copy-muted">Hlavní scénář</div><div className="text-[10px] leading-relaxed text-white">{scenario}</div></div></div>
+              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-state-info/15 text-[10px] font-bold text-state-info">2</span><div><div className="text-[9px] text-copy-muted">Shoda na skóre</div><div className="text-[10px] leading-relaxed text-white">Výsledek {modeLabel} tvoří {crowd.modeShare}% uložených tipů.</div></div></div>
+              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/15 text-[10px] font-bold text-violet-300">3</span><div><div className="text-[9px] text-copy-muted">Tvůj prostor</div><div className="text-[10px] leading-relaxed text-white">Odlišnost {crowdDifference}% znamená {crowdDifference > 55 ? 'výraznou příležitost odlišit se' : 'spíše bezpečný profil tipu'}.</div></div></div>
+              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-state-danger/15 text-[10px] font-bold text-state-danger">4</span><div><div className="text-[9px] text-copy-muted">Riziko</div><div className="text-[10px] leading-relaxed text-white">Rozptyl tipů je {Math.round(crowd.dispersion)} %, čitelnost zápasu {model.readability.toFixed(1)}/10.</div></div></div>
+            </div>
+          </div>
+        </AnalysisCard>
+        <AnalysisCard>
+          <CardHeader number={10} title="Speciality kola" subtitle={`${roundTitle} podle rozložení všech uložených tipů.`} tone="blue" />
           <div className="space-y-2 rounded-xl border border-line-subtle/80 bg-app-deep/35 p-2.5">
             {specialties.map((item) => {
               const active = item.match.id === selectedMatch.id;
@@ -967,60 +1012,6 @@ export function AIAnalysisSection({
                 </button>
               );
             })}
-          </div>
-        </AnalysisCard>
-
-        <AnalysisCard>
-          <CardHeader number={8} title="xB radar" subtitle={`Stejné osobní faktory, ze kterých vzniká xB pro ${matchName}.`} tone={xbTone} />
-          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-2">
-            <RadarChart values={radarValues} tone={xbTone} />
-            <div className="mt-1 flex justify-between border-t border-line-subtle/70 px-2 pt-2 text-[8px] text-copy-muted"><span>0 = slabé</span><span>10 = výborné</span></div>
-            <p className="mt-2 px-2 text-[9px] leading-relaxed text-copy-muted">Domácí a hosté znamenají, jak ti historicky sedí jednotlivé týmy. Kontext je čitelnost utkání z formy a H2H, průměr je tvůj dlouhodobý bodový základ.</p>
-          </div>
-        </AnalysisCard>
-
-        <AnalysisCard>
-          <CardHeader number={9} title="AI příběh zápasu" subtitle={`Shrnutí hlavních signálů pro ${matchName}.`} tone="amber" />
-          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
-            <div className="mb-3 flex items-center justify-between">
-              <strong className="text-[11px] text-white">{matchName}</strong>
-              <span className="rounded-full border border-state-warning/30 bg-state-warning/10 px-2 py-1 text-[9px] font-bold text-state-warning">{roundTitle}</span>
-            </div>
-            <div className="space-y-3">
-              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-state-success/15 text-[10px] font-bold text-state-success">1</span><div><div className="text-[9px] text-copy-muted">Hlavní scénář</div><div className="text-[10px] leading-relaxed text-white">{scenario}</div></div></div>
-              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-state-info/15 text-[10px] font-bold text-state-info">2</span><div><div className="text-[9px] text-copy-muted">Shoda na skóre</div><div className="text-[10px] leading-relaxed text-white">Výsledek {modeLabel} tvoří {crowd.modeShare}% uložených tipů.</div></div></div>
-              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-violet-500/15 text-[10px] font-bold text-violet-300">3</span><div><div className="text-[9px] text-copy-muted">Tvůj prostor</div><div className="text-[10px] leading-relaxed text-white">Odlišnost {crowdDifference}% znamená {crowdDifference > 55 ? 'výraznou příležitost odlišit se' : 'spíše bezpečný profil tipu'}.</div></div></div>
-              <div className="grid grid-cols-[24px_1fr] gap-2"><span className="flex h-5 w-5 items-center justify-center rounded-full bg-state-danger/15 text-[10px] font-bold text-state-danger">4</span><div><div className="text-[9px] text-copy-muted">Riziko</div><div className="text-[10px] leading-relaxed text-white">Rozptyl tipů je {Math.round(crowd.dispersion)} %, čitelnost zápasu {model.readability.toFixed(1)}/10.</div></div></div>
-            </div>
-          </div>
-        </AnalysisCard>
-
-        <AnalysisCard>
-          <CardHeader number={10} title="Jak se to počítá?" subtitle={`Co stojí za doporučením pro ${matchName}.`} tone="pink" />
-          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
-            <p className="text-[10px] leading-relaxed text-copy-secondary">Dashboard i profil používají jeden centrální osobní xB model. Jednotlivé metriky ale odpovídají na různé otázky:</p>
-            <div className="mt-3 space-y-2.5">
-              {[
-                { title: 'xB · očekávané body', text: `Odhad bodového zisku 0–10 pro tip ${selectedLabel}. Kombinuje tvoji historii, zkušenost s týmy, H2H, sezonní formu, čitelnost duelu a konkrétní skóre.` },
-                { title: 'AI confidence · jistota dat', text: `Hodnota ${selectedXbData ? `${selectedConfidence} %` : 'se načítá'} vyjadřuje sílu vzorku a dostupných podkladů. Není to pravděpodobnost, že tip vyjde.` },
-                { title: 'Dav a heatmapa', text: `Průměr ${crowdAverage}, nejčastější tip ${modeLabel} a odlišnost ${crowdDifference} % popisují ostatní tipéry v tomto kole. Nejsou samy o sobě xB.` },
-                { title: 'Simulátor', text: `Přepočítává stejné xB pro alternativní skóre. Vybraná varianta se propíše do analýzy, ale neukládá ani nepřepisuje tvůj skutečný tip.` },
-              ].map((item, index) => (
-                <div key={item.title} className="grid grid-cols-[24px_1fr] gap-2.5 rounded-lg border border-line-subtle/60 bg-surface-1/55 p-2.5">
-                  <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500/15 font-display text-[10px] font-bold text-violet-300">{index + 1}</span>
-                  <div>
-                    <div className="text-[10px] font-semibold text-white">{item.title}</div>
-                    <div className="mt-0.5 text-[9px] leading-relaxed text-copy-muted">{item.text}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-            {selectedXbData && (
-              <div className="mt-3 border-t border-line-subtle/70 pt-3 text-[9px] leading-relaxed text-copy-muted">
-                <b className="text-violet-200">Aktuální výpočet:</b> {selectedXbData.explanation} Interval odhadu je {selectedXbData.low.toFixed(1)}–{selectedXbData.high.toFixed(1)} bodu.
-              </div>
-            )}
-            <p className="mt-2 text-[9px] leading-relaxed text-copy-muted">Výsledkem není kurz ani garance. xB slouží k porovnání očekávaného bodového potenciálu, zatímco jistota popisuje kvalitu datového základu.</p>
           </div>
         </AnalysisCard>
       </div>
