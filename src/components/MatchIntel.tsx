@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useMemo, useState } from 'react';
 import { pointsBadgeClass, qualityColor, qualitySoftClass } from '@/lib/points';
 import { canonTeam } from '@/lib/teamAliases';
 import { Flag } from './Flag';
@@ -410,60 +410,143 @@ function QualityLegend() {
 function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
   const rawId = useId();
   const gradientId = `xb-trend-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
+  const [windowSize, setWindowSize] = useState<5 | 10 | 20 | 35>(10);
+  const options = [5, 10, 20, 35] as const;
+
+  const visible = useMemo(
+    () => rows.slice(-Math.min(windowSize, rows.length)),
+    [rows, windowSize],
+  );
+
   if (!rows?.length) {
     return (
-      <div className="flex h-32 items-center justify-center rounded-xl border border-line-subtle bg-app-deep/30 px-3 text-center text-[11px] text-copy-muted">
-        Vývoj xB se objeví po prvních vyhodnocených tipech.
+      <div className="flex min-h-44 items-center justify-center rounded-2xl border border-line-subtle bg-app-deep/30 px-4 text-center text-[11px] text-copy-muted">
+        Trend xB se objeví po načtení vyhodnocených tipů z minulé sezony.
       </div>
     );
   }
 
-  const width = 286;
-  const height = 126;
-  const padX = 22;
-  const padTop = 12;
-  const padBottom = 22;
-  const innerW = width - padX * 2;
+  const width = 420;
+  const height = 176;
+  const padLeft = 28;
+  const padRight = 8;
+  const padTop = 14;
+  const padBottom = 28;
+  const innerW = width - padLeft - padRight;
   const innerH = height - padTop - padBottom;
-  const x = (index: number) => padX + (rows.length === 1 ? innerW / 2 : (index / (rows.length - 1)) * innerW);
-  const y = (value: number) => padTop + innerH - (Math.max(0, Math.min(10, value)) / 10) * innerH;
-  const line = rows.map((row, index) => `${index === 0 ? 'M' : 'L'} ${x(index).toFixed(1)} ${y(row.value).toFixed(1)}`).join(' ');
-  const area = `${line} L ${x(rows.length - 1).toFixed(1)} ${(padTop + innerH).toFixed(1)} L ${x(0).toFixed(1)} ${(padTop + innerH).toFixed(1)} Z`;
+  const x = (index: number) =>
+    padLeft + (visible.length === 1 ? innerW / 2 : (index / (visible.length - 1)) * innerW);
+  const y = (value: number) =>
+    padTop + innerH - (Math.max(0, Math.min(10, value)) / 10) * innerH;
+  const makeLine = (pick: (row: XbPrediction['trend'][number]) => number) =>
+    visible
+      .map((row, index) => `${index === 0 ? 'M' : 'L'} ${x(index).toFixed(1)} ${y(pick(row)).toFixed(1)}`)
+      .join(' ');
+  const xbLine = makeLine((row) => row.value);
+  const actualLine = makeLine((row) => row.actual);
+  const area = `${xbLine} L ${x(visible.length - 1).toFixed(1)} ${(padTop + innerH).toFixed(1)} L ${x(0).toFixed(1)} ${(padTop + innerH).toFixed(1)} Z`;
+  const avg = (pick: (row: XbPrediction['trend'][number]) => number) =>
+    visible.reduce((sum, row) => sum + pick(row), 0) / visible.length;
+  const labelIndexes = new Set(
+    visible.length <= 10
+      ? visible.map((_, index) => index)
+      : [0, Math.floor((visible.length - 1) / 2), visible.length - 1],
+  );
 
   return (
-    <div className="rounded-2xl border border-line-subtle bg-app-deep/35 p-3">
-      <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
-        Tvoje xB v posledních {rows.length} zápasech minulé sezony
+    <div className="rounded-2xl border border-line-subtle bg-app-deep/35 p-3.5">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
+            Trend z minulé sezony
+          </div>
+          <p className="mt-0.5 text-[10px] text-copy-muted">
+            Průběžný odhad xB proti skutečně získaným bodům.
+          </p>
+        </div>
+        <div className="flex rounded-lg border border-line-subtle bg-surface-1/75 p-0.5" aria-label="Počet zápasů v grafu">
+          {options.map((option) => {
+            const disabled = rows.length < option;
+            return (
+              <button
+                key={option}
+                type="button"
+                disabled={disabled}
+                onClick={() => setWindowSize(option)}
+                className={`rounded-md px-2 py-1 text-[10px] font-bold tabular-nums transition ${
+                  windowSize === option
+                    ? 'bg-violet-500/25 text-violet-200 shadow-[inset_0_0_0_1px_rgba(164,106,247,.35)]'
+                    : 'text-copy-muted hover:bg-surface-hover hover:text-copy-primary'
+                } disabled:cursor-not-allowed disabled:opacity-25`}
+              >
+                {option}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      <svg viewBox={`0 0 ${width} ${height}`} className="h-[126px] w-full overflow-visible" role="img" aria-label="Graf vývoje osobního xB">
+
+      <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/20 bg-violet-500/10 px-2 py-1 text-violet-200">
+          <span className="h-2 w-2 rounded-full bg-violet-400" />
+          xB Ø {avg((row) => row.value).toFixed(1)}
+        </span>
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-state-success/20 bg-state-success/10 px-2 py-1 text-state-success">
+          <span className="h-2 w-2 rounded-full bg-state-success" />
+          reálné body Ø {avg((row) => row.actual).toFixed(1)}
+        </span>
+      </div>
+
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="mt-1 h-[176px] w-full overflow-visible"
+        role="img"
+        aria-label={`Trend xB a skutečných bodů za posledních ${visible.length} zápasů minulé sezony`}
+      >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
-            <stop offset="0%" stopColor="#49A8FF" />
+            <stop offset="0%" stopColor="#6366F1" />
             <stop offset="55%" stopColor="#8B4EEB" />
             <stop offset="100%" stopColor="#BE94FF" />
           </linearGradient>
         </defs>
         {[0, 5, 10].map((tick) => (
           <g key={tick}>
-            <line x1={padX} x2={width - padX} y1={y(tick)} y2={y(tick)} stroke="rgba(180,192,212,.12)" strokeWidth="1" />
-            <text x="2" y={y(tick) + 3} fill="rgba(180,192,212,.52)" fontSize="9" className="tabular-nums">{tick}</text>
-          </g>
-        ))}
-        <path d={area} fill={`url(#${gradientId})`} opacity="0.10" />
-        <path d={line} fill="none" stroke={`url(#${gradientId})`} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
-        {rows.map((row, index) => (
-          <g key={`${row.index}-${index}`}>
-            <circle cx={x(index)} cy={y(row.value)} r="4" fill="#A46AF7" stroke="#07101D" strokeWidth="2">
-              <title>{`xB ${row.value.toFixed(1)} · skutečně ${row.actual} b`}</title>
-            </circle>
-            <text x={x(index)} y={height - 5} textAnchor="middle" fill="rgba(180,192,212,.50)" fontSize="8">
-              {index + 1}
+            <line
+              x1={padLeft}
+              x2={width - padRight}
+              y1={y(tick)}
+              y2={y(tick)}
+              stroke="rgba(180,192,212,.12)"
+              strokeWidth="1"
+            />
+            <text x="3" y={y(tick) + 3} fill="rgba(180,192,212,.52)" fontSize="9" className="tabular-nums">
+              {tick}
             </text>
           </g>
         ))}
+        <path d={area} fill={`url(#${gradientId})`} opacity="0.10" />
+        <path d={actualLine} fill="none" stroke="#35D07F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.92" />
+        <path d={xbLine} fill="none" stroke={`url(#${gradientId})`} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+        {visible.map((row, index) => (
+          <g key={`${row.index}-${index}`}>
+            <circle cx={x(index)} cy={y(row.actual)} r={visible.length > 20 ? 2.2 : 3.2} fill="#35D07F" stroke="#07101D" strokeWidth="1.4">
+              <title>{`Zápas ${index + 1}: skutečně ${row.actual} b`}</title>
+            </circle>
+            <circle cx={x(index)} cy={y(row.value)} r={visible.length > 20 ? 2.5 : 3.6} fill="#A46AF7" stroke="#07101D" strokeWidth="1.5">
+              <title>{`Zápas ${index + 1}: xB ${row.value.toFixed(1)} · skutečně ${row.actual} b`}</title>
+            </circle>
+            {labelIndexes.has(index) && (
+              <text x={x(index)} y={height - 6} textAnchor="middle" fill="rgba(180,192,212,.54)" fontSize="8.5">
+                {index + 1}
+              </text>
+            )}
+          </g>
+        ))}
       </svg>
+
       <p className="mt-1 text-[9.5px] leading-snug text-copy-muted">
-        Zleva doprava jsou zápasy 1–10 v chronologickém pořadí. Bod ukazuje tehdejší osobní xB; po najetí také skutečný bodový zisk.
+        Zleva doprava jde čas od nejstaršího k nejnovějšímu zápasu ve zvoleném výřezu. Fialová ukazuje tehdejší xB, zelená skutečný bodový zisk.
       </p>
     </div>
   );
@@ -494,7 +577,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
   const mainColor = xb ? qualityColor(xb.value) : '#7888a3';
 
   return (
-    <div className={desktop ? 'space-y-4' : 'space-y-5'}>
+    <div className={desktop ? 'xb-content space-y-4' : 'space-y-5'}>
       {!desktop && (
         <div className="rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-copy-secondary">
           <b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu v našem bodování 0–10. Není to procento ani slib výsledku; model odhaduje, jak dobře by právě tobě měl zápas sedět.
@@ -560,7 +643,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
               </p>
             </div>
             {!desktop && <QualityLegend />}
-            <div className={`grid sm:grid-cols-2 ${desktop ? 'gap-2' : 'gap-2.5'}`}>
+            <div className={desktop ? 'xb-factor-grid' : 'grid gap-2.5 sm:grid-cols-2'}>
               {xb.factors.map((factor) => {
                 const color = qualityColor(factor.value);
                 return (
@@ -601,13 +684,13 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
         </>
       )}
 
-      <div className="space-y-4 border-t border-line-subtle pt-5">
+      <div className={desktop ? 'xb-support-grid border-t border-line-subtle pt-5' : 'space-y-4 border-t border-line-subtle pt-5'}>
         <TeamFormContent data={data} />
         <MutualMatchesContent data={data} integrated />
       </div>
 
       <p className="text-[10.5px] leading-snug text-copy-muted">
-        Aktuální xB se během sezony průběžně přepočítává. Trend výše zůstává referencí posledních deseti zápasů minulé ligové sezony.
+        Aktuální xB se během sezony průběžně přepočítává. Trend výše zůstává referencí posledních 5, 10, 20 nebo 35 tipů minulé ligové sezony.
       </p>
     </div>
   );

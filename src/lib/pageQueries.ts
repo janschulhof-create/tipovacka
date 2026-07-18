@@ -115,6 +115,6 @@ export const getStoppageStats = unstable_cache(
 
 export const getWizardAndContinentStats = unstable_cache(
   async (seasonId: number) => readWizardAndContinentStats(seasonId),
-  ['page-wizard-continent-v1'],
+  ['page-wizard-continent-region-v2'],
   { revalidate: 60 },
 );

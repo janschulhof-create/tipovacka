@@ -173,10 +173,10 @@ textarea {
     min-width: 0;
   }
 
-  /* Všechny tři desktopové sloupce drží ve stejné výšce. Zápasy, detail i
-     pravý panel se posouvají uvnitř sebe, nikoli spolu s celou stránkou. */
+  /* Levý seznam a pravý přehled zůstávají dostupné u horní hrany.
+     Detail vybraného zápasu je nově součást běžného toku stránky: při scrollu
+     odjede nahoru a uživatele nepronásleduje. */
   .desktop-match-list,
-  .xb-detail-container,
   .chance-right-rail {
     position: sticky;
     top: 64px;
@@ -191,44 +191,57 @@ textarea {
     flex-direction: column;
   }
 
-  .desktop-match-list > div:last-child {
-    min-height: 0;
-    overflow-y: auto;
-    overscroll-behavior-y: contain;
-    scrollbar-width: thin;
-    scrollbar-color: rgba(164, 106, 247, 0.45) transparent;
-  }
-
-  .xb-detail-container,
+  .desktop-match-list > div:last-child,
   .chance-right-rail {
     overflow-y: auto;
     overscroll-behavior-y: contain;
     scrollbar-width: thin;
-    scrollbar-color: rgba(164, 106, 247, 0.34) transparent;
+    scrollbar-color: rgba(164, 106, 247, 0.38) transparent;
+  }
+
+  .desktop-match-list > div:last-child {
+    min-height: 0;
   }
 
   .desktop-match-list > div:last-child::-webkit-scrollbar,
-  .xb-detail-container::-webkit-scrollbar,
   .chance-right-rail::-webkit-scrollbar {
     width: 6px;
   }
 
   .desktop-match-list > div:last-child::-webkit-scrollbar-thumb,
-  .xb-detail-container::-webkit-scrollbar-thumb,
   .chance-right-rail::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: rgba(164, 106, 247, 0.38);
   }
 
   .xb-detail-container {
+    position: relative;
+    min-width: 0;
+    overflow: visible;
     container-type: inline-size;
+  }
+
+  .xb-content {
+    min-width: 0;
+  }
+
+  .xb-factor-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .xb-support-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
   }
 
   .xb-hero-grid {
     display: grid;
-    grid-template-columns: 112px minmax(0, 1fr);
+    grid-template-columns: 124px minmax(0, 1fr);
     align-items: center;
-    gap: 12px;
+    gap: 14px;
   }
 
   .xb-hero-chart {
@@ -241,14 +254,29 @@ textarea {
   }
 }
 
-@container (min-width: 600px) {
+@container (min-width: 760px) {
   .xb-hero-grid {
-    grid-template-columns: clamp(118px, 19%, 144px) minmax(150px, 1fr) minmax(210px, 42%);
-    gap: 14px;
+    grid-template-columns: clamp(124px, 17%, 144px) minmax(180px, 0.78fr) minmax(300px, 1.22fr);
+    gap: 16px;
   }
 
   .xb-hero-chart {
     grid-column: auto;
+  }
+}
+
+
+
+@container (min-width: 620px) {
+  .xb-factor-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@container (min-width: 860px) {
+  .xb-support-grid {
+    grid-template-columns: minmax(260px, 0.78fr) minmax(340px, 1.22fr);
+    align-items: start;
   }
 }
 
@@ -270,7 +298,6 @@ textarea {
   }
 
   .desktop-match-list,
-  .xb-detail-container,
   .chance-right-rail {
     top: 54px;
     max-height: calc(100dvh - 64px);

@@ -12,6 +12,7 @@ export function SeasonStats({
   spodina = [],
   misses = [],
   continents = [],
+  regions = [],
 }: {
   rounds: SRound[];
   players: string[];
@@ -20,6 +21,7 @@ export function SeasonStats({
   spodina?: { name: string; count: number }[];
   misses?: MissRow[];
   continents?: { key: string; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
+  regions?: { key: string; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
 }) {
   if (players.length === 0) {
     const emptyCards = [
@@ -109,6 +111,36 @@ export function SeasonStats({
             ))}
           </div>
         </div>
+      )}
+
+
+      {regions.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="eyebrow">
+              <span className="flag-chip" /> 🗺️ Pořadí podle regionů
+            </h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-100/40">
+              Body z utkání týmů daného regionu. Meziregionální zápas se započítá do obou regionů.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {regions.map((region) => (
+              <StatCard
+                key={region.key}
+                icon={region.icon}
+                label={region.label}
+                accent="text-pitch-light"
+                scale
+                rows={region.rows.map((row) => ({
+                  name: row.name,
+                  val: `${row.points} b · ${row.matches} z.`,
+                  n: row.points,
+                }))}
+              />
+            ))}
+          </div>
+        </section>
       )}
     </div>
   );

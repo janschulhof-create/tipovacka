@@ -4,6 +4,7 @@ import { CompetitionTabs } from '@/components/CompetitionTabs';
 import { HallOfFameSection, type HofSeason } from '@/components/HallOfFameSection';
 import { getMsSeason } from '@/lib/msSeason';
 import { getActiveSeasonId, getStoppageStats, getWizardAndContinentStats } from '@/lib/queries';
+import { buildHistoricalLeagueRegionTables } from '@/lib/leagueRegions';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,7 +19,7 @@ export default async function SinSlavyPage() {
   const seasonId = await getActiveSeasonId('ms');
   const [stoppage, wizCont] = seasonId
     ? await Promise.all([getStoppageStats(seasonId), getWizardAndContinentStats(seasonId)])
-    : [[], { wizard: [], spodina: [], continents: [] }];
+    : [[], { wizard: [], spodina: [], continents: [], regions: [] }];
 
   // statistiky, které má smysl ukazovat JEN u MS
   const fmtBal = (b: number) => (b > 0 ? `+${b} b` : b < 0 ? `\u2212${Math.abs(b)} b` : '0 b');
@@ -38,6 +39,17 @@ export default async function SinSlavyPage() {
     rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
   }));
 
+  const ligaRegions = buildHistoricalLeagueRegionTables(liga.rounds, liga.players).map((region) => ({
+    icon: region.icon,
+    label: region.label,
+    accent: 'text-pitch-light',
+    rows: region.rows.map((row) => ({
+      name: row.name,
+      val: `${row.points} b · ${row.matches} z.`,
+      n: row.points,
+    })),
+  }));
+
   return (
     <main>
       <PageHeader icon="🏆" title="Síň slávy" subtitle="Rekordy napříč soutěžemi" />
@@ -47,7 +59,7 @@ export default async function SinSlavyPage() {
             <p className="mb-4 text-xs text-slate-100/45">
               Rekordy z dokončených sezón Chance ligy ({liga.season}). MS se do nich nezapočítává.
             </p>
-            <HallOfFameSection s={liga} titleRows={titleRows} />
+            <HallOfFameSection s={liga} titleRows={titleRows} regionalCards={ligaRegions} />
           </>
         }
         ms={

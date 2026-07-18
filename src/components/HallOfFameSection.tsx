@@ -42,11 +42,13 @@ export function HallOfFameSection({
   titleRows,
   extraCards = [],
   trailingCards = [],
+  regionalCards = [],
 }: {
   s: HofSeason;
   titleRows?: Row[];
   extraCards?: StatCardDef[];
   trailingCards?: StatCardDef[];
+  regionalCards?: StatCardDef[];
 }) {
   // Karty ze sdíleného zdroje → shodné s Historií i dashboardem.
   const recordCards = buildStatCards({
@@ -85,6 +87,22 @@ export function HallOfFameSection({
           <StatCard key={c.label} {...c} scale />
         ))}
       </div>
+
+      {regionalCards.length > 0 && (
+        <section className="mt-6 space-y-3 lg:mt-8">
+          <div>
+            <h2 className="eyebrow"><span className="flag-chip" /> 🗺️ Pořadí podle regionů</h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-100/40">
+              Body z utkání týmů daného regionu. Meziregionální zápas se započítá do obou regionů.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {regionalCards.map((card) => (
+              <StatCard key={card.label} {...card} scale />
+            ))}
+          </div>
+        </section>
+      )}
 
       <h2 className="eyebrow mb-3 mt-6 lg:mt-8"><span className="flag-chip" /> Top 6 umístění (četnost v kolech)</h2>
       <div className="panel-flush">

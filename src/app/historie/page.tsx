@@ -5,6 +5,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { getMsSeason } from '@/lib/msSeason';
 import { getActiveSeasonId, getStoppageStats, getWizardAndContinentStats } from '@/lib/queries';
 import type { StatCardDef } from '@/lib/statCards';
+import { buildHistoricalLeagueRegionTables } from '@/lib/leagueRegions';
 
 export const dynamic = 'force-dynamic';
 export const metadata = { title: 'Historie' };
@@ -21,7 +22,7 @@ export default async function HistoriePage() {
   const seasonId = await getActiveSeasonId('ms');
   const [stoppage, wizCont] = seasonId
     ? await Promise.all([getStoppageStats(seasonId), getWizardAndContinentStats(seasonId)])
-    : [[], { wizard: [], spodina: [], continents: [] }];
+    : [[], { wizard: [], spodina: [], continents: [], regions: [] }];
 
   const fmtBal = (b: number) => (b > 0 ? `+${b} b` : b < 0 ? `\u2212${Math.abs(b)} b` : '0 b');
   const msExtra: StatCardDef[] = [
@@ -40,11 +41,22 @@ export default async function HistoriePage() {
     rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
   }));
 
+  const ligaRegions: StatCardDef[] = buildHistoricalLeagueRegionTables(liga.rounds, liga.players).map((region) => ({
+    icon: region.icon,
+    label: region.label,
+    accent: 'text-pitch-light',
+    rows: region.rows.map((row) => ({
+      name: row.name,
+      val: `${row.points} b · ${row.matches} z.`,
+      n: row.points,
+    })),
+  }));
+
   return (
     <main>
       <PageHeader icon="📚" title="Historie" subtitle="Kompletní průběh soutěží" />
       <CompetitionTabs
-        liga={<HistorieView data={liga} titleRows={titleRows} />}
+        liga={<HistorieView data={liga} titleRows={titleRows} regionalCards={ligaRegions} />}
         ms={ms ? <HistorieView data={ms.data} extraCards={msExtra} trailingCards={msContinents} /> : null}
       />
     </main>

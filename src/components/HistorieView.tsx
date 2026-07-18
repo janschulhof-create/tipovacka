@@ -46,11 +46,13 @@ export function HistorieView({
   titleRows,
   extraCards = [],
   trailingCards = [],
+  regionalCards = [],
 }: {
   data: Historie;
   titleRows?: RankRow[];
   extraCards?: StatCardDef[];
   trailingCards?: StatCardDef[];
+  regionalCards?: StatCardDef[];
 }) {
   const knockout = isKnockoutSeason(data.season);
   const ranked = [...data.players].sort((a, b) => data.stats[b].points - data.stats[a].points);
@@ -148,6 +150,22 @@ export function HistorieView({
           ))}
         </div>
       </section>
+
+      {regionalCards.length > 0 && (
+        <section className="space-y-3">
+          <div>
+            <h2 className="eyebrow"><span className="flag-chip" /> 🗺️ Pořadí podle regionů</h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-100/40">
+              Body z utkání týmů daného regionu. Meziregionální zápas se započítá do obou regionů.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {regionalCards.map((card) => (
+              <StatCard key={card.label} {...card} scale />
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Rozložení bodových zisků — až za statistikami */}
       <section className="space-y-2">

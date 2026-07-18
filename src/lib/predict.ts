@@ -64,7 +64,7 @@ export interface XbPrediction {
   high: number;
   confidence: number;
   factors: XbFactor[];
-  /** Posledních maximálně 10 průběžných osobních odhadů podle tehdejší formy tipéra. */
+  /** Posledních maximálně 35 průběžných osobních odhadů podle tehdejší formy tipéra. */
   trend: XbTrendPoint[];
   explanation: string;
   hasTip: boolean;
@@ -230,7 +230,7 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     high: Number(Math.min(10, rounded + spread).toFixed(1)),
     confidence,
     factors,
-    trend: trendAll.slice(-10),
+    trend: trendAll.slice(-35),
     explanation: strongest.value - weakest.value >= 1.2
       ? `${strongest.label} ti vychází nejlépe. Největší rezervu model vidí ve faktoru „${weakest.label}“.`
       : 'Jednotlivé faktory jsou poměrně vyrovnané, takže odhad zůstává blízko tvého dlouhodobého průměru.',

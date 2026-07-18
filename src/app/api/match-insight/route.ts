@@ -155,8 +155,15 @@ export async function GET(req: Request) {
     (m) => m.home_team && m.away_team && Number.isFinite(m.home_score) && Number.isFinite(m.away_score),
   );
 
+  // U Chance ligy se do formy, ligového průměru ani osobního xB nesmí dostat
+  // přípravné zápasy. Ochrana funguje i před spuštěním databázové migrace.
+  const isCurrentChanceMatch = match.source_league === 'cze.1' && Number(match.round) > 0;
+  const modelPlayed = isCurrentChanceMatch
+    ? played.filter((m) => m.source_league === 'cze.1' && Number(m.round) > 0)
+    : played;
+
   const lastMatches = (team: string) =>
-    played.filter((m) => m.home_team === team || m.away_team === team).slice(0, 5);
+    modelPlayed.filter((m) => m.home_team === team || m.away_team === team).slice(0, 5);
 
   const homeRecent = lastMatches(teams.home);
   const awayRecent = lastMatches(teams.away);
@@ -172,8 +179,8 @@ export async function GET(req: Request) {
     return stats;
   };
 
-  const totalGoals = played.reduce((sum, m) => sum + m.home_score + m.away_score, 0);
-  const leagueAvg = played.length ? totalGoals / (played.length * 2) : 0;
+  const totalGoals = modelPlayed.reduce((sum, m) => sum + m.home_score + m.away_score, 0);
+  const leagueAvg = modelPlayed.length ? totalGoals / (modelPlayed.length * 2) : 0;
   const predictionH2h = mutualMatches.map((m) => ({
     home: canonTeam(m.home),
     away: canonTeam(m.away),
@@ -210,15 +217,14 @@ export async function GET(req: Request) {
   // Osobní xB počítáme pouze pro ostré zápasy Chance ligy. Kolo Příprava
   // je z uživatelského rozhraní odstraněné a do modelu se nezapočítává.
   let xb = null;
-  const isChanceMatch = match.source_league === 'cze.1' && Number(match.round) > 0;
-  if (player && isChanceMatch) {
-    const archiveTips: XbHistoryRow[] = archive.rounds.flatMap((round) =>
-      round.matches.flatMap((m) => {
+  if (player && isCurrentChanceMatch) {
+    const archiveTips: XbHistoryRow[] = [...archive.rounds]
+      .sort((a, b) => a.round - b.round)
+      .flatMap((round) => round.matches.flatMap((m) => {
         const tip = m.tips[player.name];
         if (!tip || tip.pts == null || m.hs == null || m.as == null) return [];
         return [{ home: m.home, away: m.away, points: tip.pts }];
-      }),
-    );
+      }));
 
     const allArchivePoints = archive.rounds.flatMap((round) =>
       round.matches.flatMap((m) =>
@@ -231,9 +237,7 @@ export async function GET(req: Request) {
       ? allArchivePoints.reduce((sum, points) => sum + points, 0) / allArchivePoints.length
       : 3.2;
 
-    const regularFinished = played.filter(
-      (playedMatch) => playedMatch.source_league === 'cze.1' && Number(playedMatch.round) > 0,
-    );
+    const regularFinished = modelPlayed;
     const regularIds = regularFinished.map((playedMatch) => playedMatch.id);
     const { data: seasonPredictions } = regularIds.length
       ? await sb
@@ -283,9 +287,9 @@ export async function GET(req: Request) {
       contextValue,
       contextSample: prediction?.sample ?? 0,
       contextDescription,
-      // Graf je pevně založený na posledních deseti vyhodnocených tipech
-      // minulé ligové sezony. Aktuální sezona ho během prvních kol nemění.
-      trendPoints: archiveTips.slice(-10).map((row) => row.points),
+      // Pro přepínač 5 / 10 / 20 / 35 posíláme kompletní chronologickou
+      // historii minulé ligové sezony; výpočet vrátí posledních max. 35 bodů.
+      trendPoints: archiveTips.map((row) => row.points),
     });
   }
 

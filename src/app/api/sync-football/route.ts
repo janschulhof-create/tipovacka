@@ -237,10 +237,11 @@ async function syncHighlightlyLiga(args: {
 }): Promise<HighlightlyReport> {
   const pollMinutes = Math.max(15, Number(process.env.HIGHLIGHTLY_LIVE_POLL_MINUTES ?? 20));
   const reserve = Math.max(8, Number(process.env.HIGHLIGHTLY_RESERVE_REQUESTS ?? 12));
+  const allowPreparationImport = false;
   const report: HighlightlyReport = {
     configured: highlightlyConfigured(), requests: 0, remaining: null, limit: null,
     pollMinutes, reserve,
-    prep: { requested: args.bootstrapPrep, fetched: 0, selected: 0, inserted: 0, updated: 0, league: null },
+    prep: { requested: false, fetched: 0, selected: 0, inserted: 0, updated: 0, league: null },
     live: {
       due: false,
       date: null,
@@ -253,10 +254,10 @@ async function syncHighlightlyLiga(args: {
     },
     warnings: [],
   };
-  if (!report.configured) {
-    if (args.bootstrapPrep) report.warnings.push('Chybí HIGHLIGHTLY_API_KEY. Příprava nebyla načtena.');
-    return report;
+  if (args.bootstrapPrep && !allowPreparationImport) {
+    report.warnings.push('Import přípravných zápasů je trvale vypnutý.');
   }
+  if (!report.configured) return report;
 
   const absorb = (value: { requests: number; remaining: number | null; limit: number | null }) => {
     report.requests += value.requests;
@@ -268,7 +269,7 @@ async function syncHighlightlyLiga(args: {
   // Jednorázový import přípravy. Highlightly může přátelské zápasy vést
   // pod různými názvy soutěží. Proto se každý den načte jedním dotazem
   // a až lokálně se vyberou zápasy ligových klubů v přátelské soutěži.
-  if (args.bootstrapPrep) {
+  if (allowPreparationImport && args.bootstrapPrep) {
     try {
       const configuredLeagueId = Number(process.env.HIGHLIGHTLY_FRIENDLY_LEAGUE_ID ?? 0);
       const matches: HighlightlyMatch[] = [];
@@ -365,7 +366,7 @@ async function syncHighlightlyLiga(args: {
       // následně ověříme přes Europe/Prague.
       .gte('kickoff', new Date(utcAnchor - 3 * 3600_000).toISOString())
       .lt('kickoff', new Date(utcAnchor + 27 * 3600_000).toISOString())
-      .in('source_league', ['cze.1', 'highlightly.friendlies']);
+      .eq('source_league', 'cze.1');
     if (error) throw error;
     const dayRows = ((dayData as ExistingMatch[]) ?? []).filter((row) => pragueYmd(row.kickoff) === today);
     report.live.date = today;
@@ -573,7 +574,8 @@ export async function GET(req: NextRequest) {
   const keys = parseKeys(req.nextUrl.searchParams.get('competition'));
   const full = req.nextUrl.searchParams.get('full') === '1';
   const repairRequested = req.nextUrl.searchParams.get('repair') === '1';
-  const highlightlyBootstrap = req.nextUrl.searchParams.get('highlightly_bootstrap') === '1';
+  const highlightlyBootstrapRequested = req.nextUrl.searchParams.get('highlightly_bootstrap') === '1';
+  const highlightlyBootstrap = false;
   const highlightlyForce = req.nextUrl.searchParams.get('highlightly_force') === '1';
   const requestedRange = parseRequestedRange(req.nextUrl.searchParams.get('dates'));
   const supabase = createAdminClient();
@@ -627,7 +629,31 @@ export async function GET(req: NextRequest) {
       continue;
     }
 
-    const existingRows = ((existingData as ExistingMatch[]) ?? []);
+    let existingRows = ((existingData as ExistingMatch[]) ?? []);
+    const preparationCleanup: { removed: number; error: string | null } = { removed: 0, error: null };
+
+    // Jednorázový i opakovaně bezpečný úklid Přípravy. Predikce se odstraní
+    // automaticky díky ON DELETE CASCADE na predictions.match_id.
+    if (key === 'liga') {
+      const prepIds = existingRows
+        .filter((row) =>
+          Number(row.round) <= 0
+          || row.source_league === 'highlightly.friendlies'
+          || row.selection_reason === 'preparation'
+          || String(row.round_label ?? '').toLocaleLowerCase('cs-CZ').includes('příprav'))
+        .map((row) => row.id);
+      if (prepIds.length > 0) {
+        const { error: cleanupError } = await supabase.from('matches').delete().in('id', prepIds);
+        if (cleanupError) {
+          preparationCleanup.error = cleanupError.message;
+        } else {
+          preparationCleanup.removed = prepIds.length;
+          const prepSet = new Set(prepIds);
+          existingRows = existingRows.filter((row) => !prepSet.has(row.id));
+        }
+      }
+    }
+
     const officialRows = key === 'liga' ? existingRows.filter((match) => match.source_league === 'cze.1') : existingRows;
     const bootstrap = officialRows.length === 0;
     const seasonStartMs = Date.UTC(Number(season.api_season ?? 2026), 6, 1);
@@ -683,6 +709,12 @@ export async function GET(req: NextRequest) {
     const fetched: CompetitionFixture[] = [];
     const sourceErrors: { source: string; error: string }[] = [];
     const warnings: { source: string; error: string }[] = [];
+    if (preparationCleanup.error) {
+      warnings.push({ source: 'preparation-cleanup', error: preparationCleanup.error });
+    }
+    if (highlightlyBootstrapRequested) {
+      warnings.push({ source: 'highlightly', error: 'Parametr highlightly_bootstrap je ignorován; Příprava je vypnutá.' });
+    }
     let requests = 0;
     let requestsRemaining: number | null = null;
 
@@ -907,7 +939,7 @@ export async function GET(req: NextRequest) {
     const highlightly = key === 'liga'
       ? await syncHighlightlyLiga({
           supabase, seasonId: season.id, now,
-          bootstrapPrep: highlightlyBootstrap, force: highlightlyForce,
+          bootstrapPrep: false, force: highlightlyForce,
         })
       : null;
     if (highlightly) {
@@ -949,6 +981,7 @@ export async function GET(req: NextRequest) {
       updated,
       unchanged,
       removed,
+      preparationCleanup,
       invalidatedPredictions,
       liveCandidates: liveCandidates.length,
       requests,

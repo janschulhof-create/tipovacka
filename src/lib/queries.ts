@@ -2,6 +2,7 @@ import { createServerReadClient } from '@/lib/supabase/server';
 import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player } from '@/lib/types';
 import { calculatePoints } from './scoring';
 import { CONTINENTS, matchContinents, type ContinentKey } from './continents';
+import { LEAGUE_REGIONS, matchLeagueRegions, type LeagueRegionKey } from './leagueRegions';
 import type { CompetitionKey } from './competitions';
 import historie from '@/data/historie.json';
 import { computePersonalXb, type XbHistoryRow } from './predict';
@@ -642,18 +643,32 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
   wizard: { name: string; count: number }[];
   spodina: { name: string; count: number }[];
   continents: { key: ContinentKey; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
+  regions: { key: LeagueRegionKey; label: string; icon: string; rows: { name: string; points: number; matches: number }[] }[];
 }> {
   const sb = createServerReadClient();
-  const { data: ms } = await sb
+  const { data: seasonMeta } = await sb
+    .from('seasons')
+    .select('competition_key')
+    .eq('id', seasonId)
+    .maybeSingle();
+  const isLeagueSeason = seasonMeta?.competition_key === 'liga';
+
+  let matchQuery = sb
     .from('matches')
-    .select('id, home_team, away_team')
+    .select('id, home_team, away_team, round, source_league')
     .eq('season_id', seasonId)
     .eq('status', 'finished')
     .not('home_score', 'is', null);
 
-  type M = { id: number; home_team: string; away_team: string };
+  if (isLeagueSeason) {
+    matchQuery = matchQuery.gt('round', 0).eq('source_league', 'cze.1');
+  }
+
+  const { data: ms } = await matchQuery;
+
+  type M = { id: number; home_team: string; away_team: string; round: number; source_league: string | null };
   const matches = (ms as M[]) ?? [];
-  if (matches.length === 0) return { wizard: [], spodina: [], continents: [] };
+  if (matches.length === 0) return { wizard: [], spodina: [], continents: [], regions: [] };
 
   const { data: ps } = await sb
     .from('predictions')
@@ -674,6 +689,7 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
   const wizard = new Map<string, number>();
   const spodina = new Map<string, number>();
   const cont = new Map<ContinentKey, Map<string, { points: number; matches: number }>>();
+  const regions = new Map<LeagueRegionKey, Map<string, { points: number; matches: number }>>();
 
   for (const m of matches) {
     const tips = byMatch.get(m.id) ?? [];
@@ -701,6 +717,21 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
       }
       cont.set(key, tbl);
     }
+
+    // Liga: stejné pravidlo jako u kontinentů MS, jen podle regionálních skupin.
+    // Meziregionální zápas přispěje do obou tabulek, derby pouze jednou.
+    if (isLeagueSeason) {
+      for (const key of matchLeagueRegions(m.home_team, m.away_team)) {
+        const tbl = regions.get(key) ?? new Map<string, { points: number; matches: number }>();
+        for (const t of tips) {
+          const cur = tbl.get(t.name) ?? { points: 0, matches: 0 };
+          cur.points += t.points;
+          cur.matches += 1;
+          tbl.set(t.name, cur);
+        }
+        regions.set(key, tbl);
+      }
+    }
   }
 
   return {
@@ -714,6 +745,12 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
       ...c,
       rows: [...(cont.get(c.key) ?? new Map()).entries()]
         .map(([name, v]) => ({ name, points: v.points, matches: v.matches }))
+        .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name, 'cs')),
+    })),
+    regions: LEAGUE_REGIONS.filter((region) => regions.has(region.key)).map((region) => ({
+      ...region,
+      rows: [...(regions.get(region.key) ?? new Map()).entries()]
+        .map(([name, value]) => ({ name, points: value.points, matches: value.matches }))
         .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name, 'cs')),
     })),
   };

@@ -46,6 +46,7 @@ export async function SeasonStatsSection({
         spodina={hasResults ? wizCont.spodina : []}
         misses={hasResults ? misses : []}
         continents={hasResults ? wizCont.continents : []}
+        regions={hasResults ? wizCont.regions : []}
       />
     </>
   );
