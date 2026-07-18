@@ -381,31 +381,18 @@ function MatchSwitcher({
   selectedId,
   onSelect,
   roundTitle,
-  activeSummary,
 }: {
   matches: AIAnalysisMatch[];
   selectedId: number;
   onSelect: (id: number) => void;
   roundTitle: string;
-  activeSummary: string;
 }) {
-  const selected = matches.find((match) => match.id === selectedId) ?? matches[0];
   return (
     <div className="mb-3 rounded-[18px] border border-violet-400/25 bg-[linear-gradient(145deg,rgba(17,33,58,.98),rgba(7,16,29,.98))] p-4 shadow-card sm:p-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="eyebrow mb-1"><span className="flag-chip" /> Chance liga · {roundTitle}</div>
-          <h2 className="font-display text-lg font-bold text-white sm:text-xl">Vyber zápas pro AI analýzu</h2>
-          <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-copy-secondary">Vyber konkrétní duel aktuálního kola a celá AI analýza se okamžitě přepočítá jen pro něj. Níže vždy uvidíš doporučené skóre, chování davu, jistotu modelu i simulátor alternativních tipů navázaný na právě zvolený zápas.</p>
-        </div>
-        <div className="rounded-xl border border-line-subtle/80 bg-app-deep/45 px-3 py-2 text-right">
-          <div className="text-[9px] uppercase tracking-wider text-copy-muted">Aktivní duel</div>
-          <div className="mt-1">
-            <MatchLogos homeTeam={selected.homeTeam} awayTeam={selected.awayTeam} size="h-9 w-9" />
-          </div>
-          <div className="mt-0.5 text-[10px] text-violet-300">{statusLabel(selected)}</div>
-          <div className="mt-1 max-w-[210px] text-[9px] leading-relaxed text-copy-muted">{activeSummary}</div>
-        </div>
+      <div>
+        <div className="eyebrow mb-1"><span className="flag-chip" /> Chance liga · {roundTitle}</div>
+        <h2 className="font-display text-lg font-bold text-white sm:text-xl">Vyber zápas pro AI analýzu</h2>
+        <p className="mt-1 max-w-4xl text-[12px] leading-relaxed text-copy-secondary">Vyber konkrétní duel aktuálního kola a celá AI analýza se okamžitě přepočítá jen pro něj. Níže vždy uvidíš doporučené skóre, chování davu, jistotu modelu i simulátor alternativních tipů navázaný na právě zvolený zápas.</p>
       </div>
 
       <label className="mt-4 block lg:hidden">
@@ -648,7 +635,7 @@ export function AIAnalysisSection({
     <section className="ai-analysis-section mb-6" aria-labelledby="ai-analysis-title">
       <h1 id="ai-analysis-title" className="sr-only">AI analýza</h1>
 
-      <MatchSwitcher matches={matches} selectedId={selectedMatch.id} onSelect={handleMatchSelect} roundTitle={roundTitle} activeSummary={`Tvůj základní tip ${currentLabel}, nejčastější skóre davu ${modeLabel}, vzorek ${crowd.count} tipů.`} />
+      <MatchSwitcher matches={matches} selectedId={selectedMatch.id} onSelect={handleMatchSelect} roundTitle={roundTitle} />
 
         <div className="mb-3 rounded-[18px] border border-line-subtle/90 bg-[linear-gradient(145deg,rgba(12,24,41,.98),rgba(5,13,24,.98))] p-4 shadow-card">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -668,7 +655,10 @@ export function AIAnalysisSection({
                 <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.awayTeam} className="h-9 w-9" /></div>
                 <strong className="mt-1 block text-[10px] text-white">{selectedMatch.awayTeam}</strong>
               </div>
-              <div className="px-3 py-2"><span className="block text-[8px] text-copy-muted">Aktuální tip</span><strong className="font-display text-lg text-white">{selectedMatch.userTip ? currentLabel : '–'}</strong></div>
+              <div className="flex min-h-[82px] flex-col items-center justify-center px-3 py-2 text-center">
+                <span className="block text-[8px] text-copy-muted">Aktuální tip</span>
+                <strong className="mt-1 font-display text-2xl font-bold tabular-nums text-violet-300">{selectedMatch.userTip ? currentLabel : '–'}</strong>
+              </div>
             </div>
           </div>
       
