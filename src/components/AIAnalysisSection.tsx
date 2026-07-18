@@ -831,26 +831,40 @@ export function AIAnalysisSection({
               <div><span className="block text-copy-muted">Tip</span><strong className="text-copy-secondary">{selectedLabel}</strong></div>
             </div>
           </div>
-          <div className="mt-3 space-y-1.5 text-[10px]">
-            <div className="flex justify-between"><span className="text-copy-muted">Dlouhodobý průměr</span><span className={toneTextClass[scoreTone(overallFactor)]}>{overallFactor.toFixed(1)}/10</span></div>
-            <div className="flex justify-between"><span className="text-copy-muted">Čitelnost zápasu</span><span className={toneTextClass[scoreTone(contextFactor)]}>{contextFactor.toFixed(1)}/10</span></div>
-            <div className="flex justify-between"><span className="text-copy-muted">Odlišnost od davu</span><span className={toneTextClass[crowdSemanticTone]}>{crowdDifference}%</span></div>
-          </div>
           <div className={`mt-3 rounded-lg border p-3 ${toneSoftClass[xbTone]}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0 flex-1">
                 <b className={toneTextClass[xbTone]}>Proč vychází xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
                 <p className="mt-1 text-[9px] leading-relaxed text-copy-muted">
-                  Základ tvoří tvůj dlouhodobý průměr {xbBaseline.toFixed(1)} bodu. Jednotlivé faktory ho posouvají nahoru nebo dolů; nejde o procento pravděpodobnosti.
+                  Základ tvoří tvoje základní hodnota xB {xbBaseline.toFixed(1)} b. Níže jsou hlavní signály, které ji pro duel {matchName} a tip {selectedLabel} posouvají nahoru nebo dolů.
                 </p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                  <div className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2">
+                    <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Základní xB</div>
+                    <div className={`mt-1 font-display text-lg tabular-nums ${toneTextClass[scoreTone(overallFactor)]}`}>{xbBaseline.toFixed(1)}<span className="text-[11px]"> b</span></div>
+                    <div className="text-[8px] text-copy-muted">dlouhodobý profil</div>
+                  </div>
+                  <div className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2">
+                    <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Čitelnost duelu</div>
+                    <div className={`mt-1 font-display text-lg tabular-nums ${toneTextClass[scoreTone(contextFactor)]}`}>{contextFactor.toFixed(1)}<span className="text-[11px]"> / 10</span></div>
+                    <div className="text-[8px] text-copy-muted">forma + data zápasu</div>
+                  </div>
+                  <div className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2">
+                    <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Odlišnost od davu</div>
+                    <div className={`mt-1 font-display text-lg tabular-nums ${toneTextClass[crowdSemanticTone]}`}>{crowdDifference}<span className="text-[11px]"> %</span></div>
+                    <div className="text-[8px] text-copy-muted">míra rizika tipu</div>
+                  </div>
+                </div>
                 {xbImpactFactors.length > 0 && (
-                  <div className="mt-2 space-y-1.5">
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                     {xbImpactFactors.map((factor) => {
                       const impact = factor.impact ?? 0;
                       return (
-                        <div key={factor.key} className="flex items-start justify-between gap-3 text-[9px]">
-                          <span className="min-w-0 text-copy-secondary">{factorImpactLabel(factor.key, selectedMatch.homeTeam, selectedMatch.awayTeam, selectedLabel)}</span>
-                          <strong className={`shrink-0 tabular-nums ${impact > 0 ? 'text-state-success' : impact < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{impact > 0 ? '+' : ''}{impact.toFixed(1)} b</strong>
+                        <div key={factor.key} className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2.5">
+                          <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Faktor</div>
+                          <div className="mt-1 text-[9px] leading-relaxed text-copy-primary">{factorImpactLabel(factor.key, selectedMatch.homeTeam, selectedMatch.awayTeam, selectedLabel)}</div>
+                          <div className={`mt-2 font-display text-lg tabular-nums ${impact > 0 ? 'text-state-success' : impact < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{impact > 0 ? '+' : ''}{impact.toFixed(1)}<span className="text-[11px]"> b</span></div>
+                          <div className="text-[8px] text-copy-muted">posun výsledného xB</div>
                         </div>
                       );
                     })}

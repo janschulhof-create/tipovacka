@@ -580,7 +580,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
   return (
     <div className={desktop ? 'xb-content space-y-4' : 'space-y-5'}>
       <div className={`rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 leading-relaxed text-copy-secondary ${desktop ? 'text-[11.5px]' : 'text-[11px]'}`}>
-        <b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu v našem bodování 0–10. Stejný osobní výpočet se používá také v profilu a simulátoru. xB není procento ani slib výsledku. <b className="text-copy-primary">Jistota</b> vedle odhadu popisuje sílu a množství dat, nikoli pravděpodobnost, že konkrétní skóre vyjde.
+        <b className="text-violet-200">Co je xB?</b> xB z tohoto zápasu v našem bodování 0–10. Stejný osobní výpočet se používá také v profilu a simulátoru. xB není procento ani slib výsledku. <b className="text-copy-primary">Jistota</b> vedle odhadu popisuje sílu a množství dat, nikoli pravděpodobnost, že konkrétní skóre vyjde.
       </div>
 
       {!data.loggedIn ? (
@@ -594,20 +594,20 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
               <div
                 className={`${desktop ? 'h-[124px] w-[124px] p-[8px] 2xl:h-36 2xl:w-36 2xl:p-[9px]' : 'h-36 w-36 p-[9px]'} relative mx-auto flex shrink-0 items-center justify-center rounded-full sm:mx-0`}
                 style={{ background: `conic-gradient(${mainColor} ${degrees}deg, rgb(23 42 71) ${degrees}deg)` }}
-                aria-label={`Očekávané body ${xb.value} z 10`}
+                aria-label={`xB ${xb.value} z 10`}
               >
                 <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-app-deep shadow-inner">
                   <span className={`${desktop ? 'text-[34px] 2xl:text-4xl' : 'text-4xl'} font-display font-bold tabular-nums text-white`}>{xb.value.toFixed(1)}</span>
                   <span className="text-xs text-copy-muted">/ 10</span>
-                  <span className="mt-1 text-[10px] uppercase tracking-wide text-copy-muted">očekávané body</span>
+                  <span className="mt-1 text-[10px] uppercase tracking-wide text-copy-muted"><span className="normal-case">xB</span></span>
                 </div>
               </div>
 
               <div className="min-w-0 flex-1 text-center sm:text-left">
-                <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-violet-300">{desktop ? <>Očekávané body (<span className="normal-case">xB</span>)</> : <><span className="normal-case">xB</span> predikce</>}</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-violet-300">{desktop ? <><span className="normal-case">xB</span></> : <><span className="normal-case">xB</span> predikce</>}</div>
                 <h4 className={`${desktop ? 'text-[18px] 2xl:text-xl' : 'text-xl'} mt-1 font-display font-bold`} style={{ color: mainColor }}>{label}</h4>
                 <p className="mt-2 text-[12.5px] leading-relaxed text-copy-secondary">
-                  Podle tvé historie model očekává v tomto zápase přibližně <b className="tabular-nums text-copy-primary">{xb.value.toFixed(1)} bodu</b>.
+                  Podle tvé historie model odhaduje v tomto zápase přibližné <b className="tabular-nums text-copy-primary">xB {xb.value.toFixed(1)}</b>.
                 </p>
                 <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
                   <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${qualitySoftClass(xb.value)}`}>
