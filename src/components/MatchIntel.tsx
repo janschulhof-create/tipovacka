@@ -33,6 +33,7 @@ interface XbFactor {
   value: number;
   sample: number;
   weight: number;
+  impact: number;
   description: string;
 }
 interface XbPrediction {
@@ -637,7 +638,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
             <div>
               <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-copy-secondary">Faktory ovlivňující <span className="normal-case">xB</span></div>
               <p className="mt-1 text-[11px] leading-relaxed text-copy-muted">
-                Hodnota říká, kolik bodů ti daný faktor historicky naznačuje. „Vliv“ ukazuje, jak silně je započtený do výsledku.
+                Hodnota říká, kolik bodů daný faktor naznačuje. „Posun xB“ ukazuje, o kolik proti tvému dlouhodobému průměru výsledný odhad skutečně zvyšuje nebo snižuje.
               </p>
             </div>
             {!desktop && <QualityLegend />}
@@ -662,6 +663,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
                         </div>
                         <p className="mt-2 text-[10.5px] leading-relaxed text-copy-muted">{factor.description}</p>
                         <div className="mt-2 flex flex-wrap gap-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-copy-muted">
+                          <span className={`rounded-full border px-2 py-0.5 ${factor.impact > 0 ? 'border-state-success/30 text-state-success' : factor.impact < 0 ? 'border-state-danger/30 text-state-danger' : 'border-line-subtle text-copy-muted'}`}>posun xB {factor.impact > 0 ? '+' : ''}{factor.impact.toFixed(1)} b</span>
                           <span className="rounded-full border border-line-subtle px-2 py-0.5">vliv {Math.round(factor.weight * 100)} %</span>
                           <span className="rounded-full border border-line-subtle px-2 py-0.5">
                             {factor.key === 'tip' ? `${factor.sample} vstupů modelu` : `${factor.sample} tipů`}

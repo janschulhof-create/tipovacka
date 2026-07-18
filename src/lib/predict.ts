@@ -48,6 +48,8 @@ export interface XbFactor {
   sample: number;
   /** Normalizovaná váha faktoru ve výsledném xB (0–1). */
   weight: number;
+  /** Posun výsledného xB proti dlouhodobému průměru tipéra, v bodech. */
+  impact: number;
   /** Srozumitelná vysvětlivka zobrazená přímo tipérovi. */
   description: string;
 }
@@ -116,7 +118,7 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
   const shrink = (raw: number | null, sample: number, priorMatches: number) =>
     raw == null ? overallRaw : (raw * sample + overallRaw * priorMatches) / (sample + priorMatches);
 
-  const drafts: Omit<XbFactor, 'weight'>[] = [
+  const drafts: Omit<XbFactor, 'weight' | 'impact'>[] = [
     {
       key: 'overall',
       label: 'Celková úspěšnost',
@@ -195,10 +197,15 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     tip: hasTip ? 0.28 : 0,
   };
   const activeWeight = drafts.reduce((sum, factor) => sum + baseWeights[factor.key], 0) || 1;
-  const factors: XbFactor[] = drafts.map((factor) => ({
+  const normalizedFactors = drafts.map((factor) => ({
     ...factor,
     value: clamp10(factor.value),
     weight: baseWeights[factor.key] / activeWeight,
+  }));
+  const baseline = normalizedFactors.find((factor) => factor.key === 'overall')?.value ?? priorAverage;
+  const factors: XbFactor[] = normalizedFactors.map((factor) => ({
+    ...factor,
+    impact: Number(((factor.value - baseline) * factor.weight).toFixed(2)),
   }));
 
   const value = factors.reduce((sum, factor) => sum + factor.value * factor.weight, 0);
@@ -211,8 +218,11 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
   const confidence = Math.round(Math.max(36, Math.min(93, 41 + Math.log1p(evidence) * 8 + (hasTip ? 5 : 0))));
   const spread = Math.max(1.1, 3.4 - confidence / 38);
   const rounded = clamp10(value);
-  const strongest = [...factors].sort((a, b) => b.value - a.value)[0];
-  const weakest = [...factors].sort((a, b) => a.value - b.value)[0];
+  const meaningfulImpacts = factors
+    .filter((factor) => factor.key !== 'overall' && Math.abs(factor.impact) >= 0.05)
+    .sort((a, b) => Math.abs(b.impact) - Math.abs(a.impact));
+  const strongestPositive = meaningfulImpacts.filter((factor) => factor.impact > 0).sort((a, b) => b.impact - a.impact)[0];
+  const strongestNegative = meaningfulImpacts.filter((factor) => factor.impact < 0).sort((a, b) => a.impact - b.impact)[0];
 
   const sourceTrend = (input.trendPoints ?? [])
     .filter((point) => Number.isFinite(point))
@@ -231,9 +241,13 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     confidence,
     factors,
     trend: trendAll.slice(-35),
-    explanation: strongest.value - weakest.value >= 1.2
-      ? `${strongest.label} ti vychází nejlépe. Největší rezervu model vidí ve faktoru „${weakest.label}“.`
-      : 'Jednotlivé faktory jsou poměrně vyrovnané, takže odhad zůstává blízko tvého dlouhodobého průměru.',
+    explanation: strongestPositive || strongestNegative
+      ? [
+          `Výchozí dlouhodobý průměr je ${baseline.toFixed(1)} xB.`,
+          strongestPositive ? `${strongestPositive.label} přidává ${strongestPositive.impact.toFixed(1)} bodu.` : '',
+          strongestNegative ? `${strongestNegative.label} ubírá ${Math.abs(strongestNegative.impact).toFixed(1)} bodu.` : '',
+        ].filter(Boolean).join(' ')
+      : 'Jednotlivé faktory se od dlouhodobého průměru téměř neodchylují, proto zůstává xB stabilní.',
     hasTip,
   };
 }

@@ -99,6 +99,16 @@ function riskTone(value: number): Tone {
   return 'pink';
 }
 
+function factorImpactLabel(key: string, homeTeam: string, awayTeam: string, tip: string): string {
+  if (key === 'h2h') return `Tvoje historie v duelech ${homeTeam}–${awayTeam}`;
+  if (key === 'home') return `Tvoje historie se ${homeTeam}`;
+  if (key === 'away') return `Tvoje historie s ${awayTeam}`;
+  if (key === 'season') return 'Aktuální forma tipéra';
+  if (key === 'context') return 'Forma týmů a čitelnost duelu';
+  if (key === 'tip') return `Statistická opora tipu ${tip}`;
+  return 'Dlouhodobý průměr';
+}
+
 const emptyCrowd: AICrowdSummary = {
   count: 0,
   avgHome: 1,
@@ -737,6 +747,11 @@ export function AIAnalysisSection({
   const xbTone = selectedXbData ? scoreTone(selectedXb) : 'violet';
   const confidenceSemanticTone = selectedXbData ? confidenceTone(selectedConfidence) : 'violet';
   const crowdSemanticTone = riskTone(crowdDifference);
+  const xbBaseline = selectedXbData?.factors.find((factor) => factor.key === 'overall')?.value ?? overallFactor;
+  const xbImpactFactors = (selectedXbData?.factors ?? [])
+    .filter((factor) => factor.key !== 'overall' && Math.abs(factor.impact ?? 0) >= 0.05)
+    .sort((a, b) => Math.abs(b.impact ?? 0) - Math.abs(a.impact ?? 0))
+    .slice(0, 3);
 
   return (
     <section className="ai-analysis-section mb-6" aria-labelledby="ai-analysis-title">
@@ -809,6 +824,7 @@ export function AIAnalysisSection({
               </div>
             </div>
             <MiniSparkline values={xBTimeline} tone={xbTone} />
+            <p className="mt-1 text-[8px] leading-relaxed text-copy-muted">Historie ukazuje průběžnou formu tipéra. Poslední bod je aktuální odhad pro {matchName} a tip {selectedLabel}.</p>
             <div className="mt-2 grid grid-cols-3 gap-2 border-t border-line-subtle/60 pt-2 text-[9px]">
               <div><span className="block text-copy-muted">Zápas</span><strong className={`font-display text-base ${toneTextClass[xbTone]}`}>{selectedXbData ? selectedXb.toFixed(1) : '—'}</strong></div>
               <div><span className="block text-copy-muted">Trend xB</span><strong className={xbTrendPositive ? 'text-state-success' : 'text-state-danger'}>{xBTimeline.length > 1 ? xbTrendPositive ? 'Roste' : 'Klesá' : 'Bez historie'}</strong></div>
@@ -821,18 +837,31 @@ export function AIAnalysisSection({
             <div className="flex justify-between"><span className="text-copy-muted">Odlišnost od davu</span><span className={toneTextClass[crowdSemanticTone]}>{crowdDifference}%</span></div>
           </div>
           <div className={`mt-3 rounded-lg border p-3 ${toneSoftClass[xbTone]}`}>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0">
-                <b className={toneTextClass[xbTone]}>Co znamená xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0 flex-1">
+                <b className={toneTextClass[xbTone]}>Proč vychází xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
                 <p className="mt-1 text-[9px] leading-relaxed text-copy-muted">
-                  Očekávaný bodový zisk 0–10 pro tento tip. Barva ukazuje sílu odhadu; nejde o procento šance ani garanci výsledku.
+                  Základ tvoří tvůj dlouhodobý průměr {xbBaseline.toFixed(1)} bodu. Jednotlivé faktory ho posouvají nahoru nebo dolů; nejde o procento pravděpodobnosti.
                 </p>
+                {xbImpactFactors.length > 0 && (
+                  <div className="mt-2 space-y-1.5">
+                    {xbImpactFactors.map((factor) => {
+                      const impact = factor.impact ?? 0;
+                      return (
+                        <div key={factor.key} className="flex items-start justify-between gap-3 text-[9px]">
+                          <span className="min-w-0 text-copy-secondary">{factorImpactLabel(factor.key, selectedMatch.homeTeam, selectedMatch.awayTeam, selectedLabel)}</span>
+                          <strong className={`shrink-0 tabular-nums ${impact > 0 ? 'text-state-success' : impact < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{impact > 0 ? '+' : ''}{impact.toFixed(1)} b</strong>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
               <Link
                 href={`/?soutez=liga&kolo=${selectedMatch.round}&zapas=${selectedMatch.id}#xb-predikce`}
                 className="shrink-0 rounded-lg border border-line-strong bg-app-deep/45 px-3 py-2 text-[9px] font-semibold text-violet-200 transition hover:border-violet-400/60 hover:bg-violet-500/10"
               >
-                Detail faktorů na dashboardu →
+                Detail faktorů →
               </Link>
             </div>
           </div>
