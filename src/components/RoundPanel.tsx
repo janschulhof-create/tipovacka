@@ -6,7 +6,7 @@ import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/e
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
-import { Baroko, H2HContent, PredictionContent, useInsight } from './MatchIntel';
+import { Baroko, H2HContent, PredictionContent, XbContent, useInsight } from './MatchIntel';
 import { sourceLabel } from '@/lib/espnCompetition';
 
 type Scores = Record<number, { h: string; a: string }>;
@@ -595,13 +595,16 @@ function MatchExpanded({
   // Jakmile se hraje / je dohráno, mají přednost Průběh, Statistiky a Hodnocení.
   const showPrediction = m.status === 'scheduled';
 
-  type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'prubeh' | 'staty' | 'sestavy';
+  const isChanceLeague = m.source_league === 'cze.1' && Number(m.round) > 0;
+
+  type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'xb' | 'prubeh' | 'staty' | 'sestavy';
   const tabs = (
     [
       { id: 'tipy' as const, label: 'Tipy' },
       hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení' } : null,
       showPrediction ? { id: 'h2h' as const, label: 'H2H' } : null,
-      showPrediction ? { id: 'predikce' as const, label: 'Predikce' } : null,
+      showPrediction && isChanceLeague ? { id: 'xb' as const, label: 'xB' } : null,
+      showPrediction && !isChanceLeague ? { id: 'predikce' as const, label: 'Predikce' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
       hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
       hasLineups ? { id: 'sestavy' as const, label: 'Sestavy' } : null,
@@ -612,7 +615,7 @@ function MatchExpanded({
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
   // data pro H2H/Predikci se načtou až při otevření příslušné záložky
-  const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce');
+  const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce' || active === 'xb');
 
   return (
     <div className="min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40">
@@ -653,6 +656,7 @@ function MatchExpanded({
         )}
         {active === 'hodnoceni' && <RoastContent m={m} preds={preds} />}
         {active === 'h2h' && <H2HContent data={intel} loading={intelLoading} />}
+        {active === 'xb' && <XbContent data={intel} loading={intelLoading} />}
         {active === 'predikce' && (
           <PredictionContent data={intel} loading={intelLoading} home={m.home_team} away={m.away_team} />
         )}

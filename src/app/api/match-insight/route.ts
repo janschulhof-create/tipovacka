@@ -4,7 +4,7 @@ import { getSessionPlayer } from '@/lib/auth';
 import h2hData from '@/data/h2h.json';
 import historie from '@/data/historie.json';
 import { canonTeam } from '@/lib/teamAliases';
-import { predictMatch, type TeamForm } from '@/lib/predict';
+import { expectedPointsForTip, predictMatch, type TeamForm } from '@/lib/predict';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,6 +47,23 @@ interface PlayedMatch {
   kickoff: string;
 }
 
+interface XbFactor {
+  key: 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'tip';
+  label: string;
+  value: number;
+  sample: number;
+}
+
+interface XbPrediction {
+  value: number;
+  low: number;
+  high: number;
+  confidence: number;
+  factors: XbFactor[];
+  explanation: string;
+  hasTip: boolean;
+}
+
 export async function GET(req: Request) {
   const matchId = Number(new URL(req.url).searchParams.get('match'));
   if (!matchId) return NextResponse.json({ error: 'bad request' }, { status: 400 });
@@ -54,7 +71,7 @@ export async function GET(req: Request) {
   const sb = await createServerAuthClient();
   const { data: match } = await sb
     .from('matches')
-    .select('id, home_team, away_team, season_id')
+    .select('id, home_team, away_team, season_id, source_league, round')
     .eq('id', matchId)
     .single();
   if (!match) return NextResponse.json({ error: 'not found' }, { status: 404 });
@@ -197,11 +214,124 @@ export async function GET(req: Request) {
     away: formatForm(awayRecent, teams.away),
   };
 
+  // Personalizované očekávané body (xB) jsou zatím pouze pro řádné zápasy Chance ligy.
+  // Příprava má jiný zdroj a do dlouhodobého modelu se nezapočítává.
+  let xb: XbPrediction | null = null;
+  if (player && match.source_league === 'cze.1' && Number(match.round) > 0) {
+    type ArchiveTipRow = { home: string; away: string; points: number };
+    const archiveTips: ArchiveTipRow[] = archive.rounds.flatMap((round) =>
+      round.matches.flatMap((m) => {
+        const tip = m.tips[player.name];
+        if (!tip || tip.pts == null || m.hs == null || m.as == null) return [];
+        return [{ home: canonTeam(m.home), away: canonTeam(m.away), points: tip.pts }];
+      }),
+    );
+
+    const avg = (rows: ArchiveTipRow[]) =>
+      rows.length ? rows.reduce((sum, row) => sum + row.points, 0) / rows.length : null;
+    const overallRaw = avg(archiveTips) ?? 3;
+    const pairRows = archiveTips.filter((row) => [row.home, row.away].sort().join('|') === currentPair);
+    const homeCanon = canonTeam(teams.home);
+    const awayCanon = canonTeam(teams.away);
+    const homeRows = archiveTips.filter((row) => row.home === homeCanon || row.away === homeCanon);
+    const awayRows = archiveTips.filter((row) => row.home === awayCanon || row.away === awayCanon);
+
+    const shrink = (raw: number | null, sample: number, priorMatches: number) =>
+      raw == null ? overallRaw : (raw * sample + overallRaw * priorMatches) / (sample + priorMatches);
+
+    const factors: XbFactor[] = [
+      { key: 'overall', label: 'Celková úspěšnost', value: overallRaw, sample: archiveTips.length },
+      { key: 'home', label: `Úspěšnost u ${teams.home}`, value: shrink(avg(homeRows), homeRows.length, 8), sample: homeRows.length },
+      { key: 'away', label: `Úspěšnost u ${teams.away}`, value: shrink(avg(awayRows), awayRows.length, 8), sample: awayRows.length },
+    ];
+    if (pairRows.length) {
+      factors.unshift({
+        key: 'h2h',
+        label: 'Historie vzájemných zápasů',
+        value: shrink(avg(pairRows), pairRows.length, 3),
+        sample: pairRows.length,
+      });
+    }
+
+    const { data: seasonPredictions } = await sb
+      .from('predictions')
+      .select('points, matches!inner(season_id, source_league, status, round)')
+      .eq('player_id', player.id)
+      .eq('matches.season_id', match.season_id)
+      .eq('matches.source_league', 'cze.1')
+      .eq('matches.status', 'finished')
+      .gt('matches.round', 0)
+      .not('points', 'is', null);
+
+    const seasonPoints = ((seasonPredictions as unknown as { points: number | null }[]) ?? [])
+      .map((row) => row.points)
+      .filter((points): points is number => points != null && Number.isFinite(points));
+    if (seasonPoints.length) {
+      const raw = seasonPoints.reduce((sum, points) => sum + points, 0) / seasonPoints.length;
+      factors.push({
+        key: 'season',
+        label: 'Forma tipera v této sezoně',
+        value: shrink(raw, seasonPoints.length, 5),
+        sample: seasonPoints.length,
+      });
+    }
+
+    const { data: currentPrediction } = await sb
+      .from('predictions')
+      .select('predicted_home, predicted_away')
+      .eq('player_id', player.id)
+      .eq('match_id', matchId)
+      .maybeSingle();
+
+    if (prediction && currentPrediction) {
+      const ph = Number(currentPrediction.predicted_home);
+      const pa = Number(currentPrediction.predicted_away);
+      if (Number.isFinite(ph) && Number.isFinite(pa)) {
+        factors.push({
+          key: 'tip',
+          label: `Tvůj tip ${ph}:${pa}`,
+          value: expectedPointsForTip(prediction.lambdaHome, prediction.lambdaAway, ph, pa),
+          sample: prediction.sample,
+        });
+      }
+    }
+
+    const baseWeights: Record<XbFactor['key'], number> = {
+      h2h: 0.30,
+      home: 0.16,
+      away: 0.14,
+      overall: 0.25,
+      season: Math.min(0.18, 0.04 + seasonPoints.length * 0.012),
+      tip: factors.some((factor) => factor.key === 'tip') ? 0.28 : 0,
+    };
+    const activeWeight = factors.reduce((sum, factor) => sum + baseWeights[factor.key], 0);
+    const value = factors.reduce((sum, factor) => sum + factor.value * baseWeights[factor.key], 0) / activeWeight;
+    const evidence = archiveTips.length + pairRows.length * 4 + homeRows.length * 0.4 + awayRows.length * 0.4 + seasonPoints.length * 5;
+    const confidence = Math.round(Math.max(38, Math.min(92, 42 + Math.log1p(evidence) * 8 + (factors.some((f) => f.key === 'tip') ? 5 : 0))));
+    const spread = Math.max(1.2, 3.4 - confidence / 38);
+    const rounded = Math.max(0, Math.min(10, value));
+    const strongest = [...factors].sort((a, b) => b.value - a.value)[0];
+    const weakest = [...factors].sort((a, b) => a.value - b.value)[0];
+
+    xb = {
+      value: Number(rounded.toFixed(1)),
+      low: Number(Math.max(0, rounded - spread).toFixed(1)),
+      high: Number(Math.min(10, rounded + spread).toFixed(1)),
+      confidence,
+      factors,
+      explanation: strongest.value - weakest.value >= 1.2
+        ? `${strongest.label} ti historicky sedí nejlépe. Největší rezervu máš v oblasti „${weakest.label}“.`
+        : 'Jednotlivé historické faktory jsou vyrovnané, model proto čeká výkon blízko tvého dlouhodobého průměru.',
+      hasTip: factors.some((factor) => factor.key === 'tip'),
+    };
+  }
+
   return NextResponse.json({
     teams,
     mutualMatches,
     form5,
     prediction,
+    xb,
     loggedIn: !!player,
   });
 }

@@ -37,6 +37,23 @@ function poisson(k: number, lambda: number): number {
   return (Math.exp(-lambda) * Math.pow(lambda, k)) / fact;
 }
 
+/** Očekávaný bodový zisk konkrétního tipu v Poissonově modelu zápasu. */
+export function expectedPointsForTip(
+  lambdaHome: number,
+  lambdaAway: number,
+  predHome: number,
+  predAway: number,
+): number {
+  const MAX = 7;
+  let ev = 0;
+  for (let h = 0; h <= MAX; h++) {
+    for (let a = 0; a <= MAX; a++) {
+      ev += poisson(h, lambdaHome) * poisson(a, lambdaAway) * calculatePoints(h, a, predHome, predAway);
+    }
+  }
+  return ev;
+}
+
 export function predictMatch(
   home: TeamForm,
   away: TeamForm,
@@ -118,8 +135,7 @@ export function predictMatch(
   let bestTip = { h: 1, a: 1, ev: -1 };
   for (let th = 0; th <= 5; th++) {
     for (let ta = 0; ta <= 5; ta++) {
-      let ev = 0;
-      for (const g of grid) ev += g.p * calculatePoints(g.h, g.a, th, ta);
+      const ev = expectedPointsForTip(lh, la, th, ta);
       if (ev > bestTip.ev) bestTip = { h: th, a: ta, ev };
     }
   }

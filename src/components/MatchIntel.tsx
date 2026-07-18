@@ -26,12 +26,28 @@ interface Prediction {
   h2hSample: number;
   basis: 'form+h2h' | 'form' | 'h2h';
 }
+interface XbFactor {
+  key: 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'tip';
+  label: string;
+  value: number;
+  sample: number;
+}
+interface XbPrediction {
+  value: number;
+  low: number;
+  high: number;
+  confidence: number;
+  factors: XbFactor[];
+  explanation: string;
+  hasTip: boolean;
+}
 interface Form5Row { opponent: string; gf: number; ga: number; res: 'W' | 'D' | 'L' }
 export interface InsightData {
   teams: { home: string; away: string };
   mutualMatches: MutualMatchRow[];
   form5: { home: Form5Row[]; away: Form5Row[] };
   prediction: Prediction | null;
+  xb: XbPrediction | null;
   loggedIn: boolean;
 }
 
@@ -300,6 +316,97 @@ export function H2HContent({ data, loading }: { data: InsightData | null; loadin
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Personalizované očekávané body tipera pro zápas Chance ligy. */
+export function XbContent({ data, loading }: { data: InsightData | null; loading: boolean }) {
+  if (loading) return <p className="text-xs text-slate-300/45">Počítám očekávané body…</p>;
+  if (!data?.loggedIn) return <Empty text="xB se zobrazí po přihlášení tipera." />;
+  const xb = data.xb;
+  if (!xb) return <Empty text="Pro tento zápas zatím nelze xB spočítat." />;
+
+  const factorIcon: Record<XbFactor['key'], string> = {
+    h2h: '🎯', home: '🟢', away: '🟠', overall: '📈', season: '🔥', tip: '🧠',
+  };
+  const factorColor: Record<XbFactor['key'], string> = {
+    h2h: 'bg-violet-500', home: 'bg-pitch', away: 'bg-orange-500',
+    overall: 'bg-blue-500', season: 'bg-rose-500', tip: 'bg-cyan-400',
+  };
+  const label = xb.value >= 7.5 ? 'Vysoký potenciál bodů' : xb.value >= 5.5 ? 'Solidní bodový potenciál' : xb.value >= 3.5 ? 'Nejistý zápas' : 'Rizikový zápas';
+  const degrees = Math.round((xb.value / 10) * 360);
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 via-terrain-900/50 to-blue-500/5 p-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+          <div
+            className="relative mx-auto flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[9px] sm:mx-0"
+            style={{ background: `conic-gradient(rgb(139 92 246) ${degrees}deg, rgb(30 41 59) ${degrees}deg)` }}
+            aria-label={`Očekávané body ${xb.value} z 10`}
+          >
+            <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-terrain-950 shadow-inner">
+              <span className="font-display text-4xl font-bold tabular-nums text-white">{xb.value.toFixed(1)}</span>
+              <span className="text-xs text-slate-300/45">/ 10</span>
+              <span className="mt-1 text-[10px] uppercase tracking-wide text-slate-300/45">očekávané body</span>
+            </div>
+          </div>
+
+          <div className="min-w-0 flex-1 text-center sm:text-left">
+            <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-300/80">Očekávané body (xB)</div>
+            <h4 className="mt-1 font-display text-xl font-bold text-violet-300">{label}</h4>
+            <p className="mt-2 text-[12.5px] leading-relaxed text-slate-100/65">
+              Podle tvé historie tipování model očekává v tomto zápase přibližně {xb.value.toFixed(1)} bodu.
+            </p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+              <span className="rounded-full bg-violet-500/15 px-3 py-1 text-xs font-semibold text-violet-200">
+                {xb.low.toFixed(1)}–{xb.high.toFixed(1)} bodu
+              </span>
+              <span className="rounded-full border border-terrain-600 bg-terrain-900/60 px-3 py-1 text-xs text-slate-100/70">
+                Jistota {xb.confidence} %
+              </span>
+            </div>
+            {!xb.hasTip && (
+              <p className="mt-2 text-[11px] text-slate-300/45">Po uložení tipu se xB zpřesní podle zvoleného skóre.</p>
+            )}
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">Faktory ovlivňující xB</div>
+        <div className="grid gap-2 sm:grid-cols-2">
+          {xb.factors.map((factor) => (
+            <div key={factor.key} className="rounded-xl border border-terrain-700 bg-terrain-900/40 p-3">
+              <div className="flex items-start gap-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-terrain-800 text-sm">{factorIcon[factor.key]}</span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="truncate text-[12px] font-medium text-slate-100/75">{factor.label}</span>
+                    <span className="font-display text-lg font-bold tabular-nums text-white">{factor.value.toFixed(1)}</span>
+                  </div>
+                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-terrain-800">
+                    <div className={`h-full rounded-full ${factorColor[factor.key]}`} style={{ width: `${Math.max(3, factor.value * 10)}%` }} />
+                  </div>
+                  <div className="mt-1 text-[10px] text-slate-300/40">
+                    {factor.key === 'tip' ? `model zápasu · ${factor.sample} vstupů` : `${factor.sample} historických tipů`}
+                  </div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-300/80">🤖 Komentář xB</div>
+        <p className="mt-1.5 text-[12.5px] leading-relaxed text-slate-100/65">{xb.explanation}</p>
+      </div>
+
+      <p className="text-[10.5px] leading-snug text-slate-300/35">
+        xB je statistický odhad, ne garantovaný bodový zisk. Model se bude během sezony zpřesňovat podle tvých nových tipů a výsledků Chance ligy.
+      </p>
     </div>
   );
 }
