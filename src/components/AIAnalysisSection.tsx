@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Flag } from '@/components/Flag';
 import type { PlayerProfile } from '@/lib/queries';
 
 type Score = { home: number; away: number };
@@ -52,6 +53,13 @@ const emptyCrowd: AICrowdSummary = {
   awayWinShare: 33,
   dispersion: 50,
 };
+
+function defaultScoreForMatch(match: AIAnalysisMatch | undefined, profileFallback: Score): Score {
+  if (!match) return profileFallback;
+  if (match.userTip) return match.userTip;
+  if (match.crowd.count) return crowdMode(match.crowd);
+  return profileFallback;
+}
 
 function clamp(value: number, min = 0, max = 100) {
   return Math.min(max, Math.max(min, value));
@@ -139,6 +147,34 @@ function AnalysisCard({ children, className = '' }: { children: ReactNode; class
     <article className={`ai-analysis-card min-w-0 overflow-hidden rounded-[16px] border border-line-subtle/90 bg-[linear-gradient(150deg,rgba(14,29,50,.98),rgba(6,15,28,.98))] p-3.5 shadow-card ${className}`}>
       {children}
     </article>
+  );
+}
+
+function MatchLogos({
+  homeTeam,
+  awayTeam,
+  size = 'h-8 w-8',
+  showNames = false,
+  nameClassName = 'text-[9px] text-copy-muted',
+}: {
+  homeTeam: string;
+  awayTeam: string;
+  size?: string;
+  showNames?: boolean;
+  nameClassName?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2" aria-label={`${homeTeam} proti ${awayTeam}`}>
+      <div className="flex min-w-0 items-center gap-2">
+        <Flag team={homeTeam} className={size} />
+        {showNames ? <span className={`truncate ${nameClassName}`}>{homeTeam}</span> : <span className="sr-only">{homeTeam}</span>}
+      </div>
+      <span className="text-[10px] font-semibold text-copy-muted">vs</span>
+      <div className="flex min-w-0 items-center gap-2">
+        <Flag team={awayTeam} className={size} />
+        {showNames ? <span className={`truncate ${nameClassName}`}>{awayTeam}</span> : <span className="sr-only">{awayTeam}</span>}
+      </div>
+    </div>
   );
 }
 
@@ -325,11 +361,13 @@ function MatchSwitcher({
   selectedId,
   onSelect,
   roundTitle,
+  activeSummary,
 }: {
   matches: AIAnalysisMatch[];
   selectedId: number;
   onSelect: (id: number) => void;
   roundTitle: string;
+  activeSummary: string;
 }) {
   const selected = matches.find((match) => match.id === selectedId) ?? matches[0];
   return (
@@ -338,12 +376,15 @@ function MatchSwitcher({
         <div>
           <div className="eyebrow mb-1"><span className="flag-chip" /> Chance liga · {roundTitle}</div>
           <h2 className="font-display text-lg font-bold text-white sm:text-xl">Vyber zápas pro AI analýzu</h2>
-          <p className="mt-1 text-[12px] leading-relaxed text-copy-secondary">Po změně zápasu se přepočítají doporučení, heatmapa, porovnání s davem, speciality i simulátor.</p>
+          <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-copy-secondary">Vyber konkrétní duel aktuálního kola a celá AI analýza se okamžitě přepočítá jen pro něj. Níže vždy uvidíš doporučené skóre, chování davu, jistotu modelu i simulátor alternativních tipů navázaný na právě zvolený zápas.</p>
         </div>
         <div className="rounded-xl border border-line-subtle/80 bg-app-deep/45 px-3 py-2 text-right">
           <div className="text-[9px] uppercase tracking-wider text-copy-muted">Aktivní duel</div>
-          <div className="mt-0.5 font-display text-sm font-bold text-white">{selected.homeTeam} – {selected.awayTeam}</div>
+          <div className="mt-1">
+            <MatchLogos homeTeam={selected.homeTeam} awayTeam={selected.awayTeam} size="h-9 w-9" />
+          </div>
           <div className="mt-0.5 text-[10px] text-violet-300">{statusLabel(selected)}</div>
+          <div className="mt-1 max-w-[210px] text-[9px] leading-relaxed text-copy-muted">{activeSummary}</div>
         </div>
       </div>
 
@@ -373,7 +414,10 @@ function MatchSwitcher({
               className={`min-h-[58px] min-w-[180px] flex-1 rounded-xl border px-3 py-2.5 text-left transition ${active ? 'border-violet-300 bg-violet-500/16 shadow-violet' : 'border-line-subtle bg-surface-1/75 hover:border-violet-400/45 hover:bg-surface-hover'}`}
             >
               <span className="block text-[10px] text-copy-muted">{statusLabel(match)}</span>
-              <span className={`mt-1 block font-display text-[13px] font-bold leading-tight ${active ? 'text-violet-200' : 'text-white'}`}>{match.homeTeam} – {match.awayTeam}</span>
+              <div className="mt-1">
+                <MatchLogos homeTeam={match.homeTeam} awayTeam={match.awayTeam} size="h-8 w-8" />
+              </div>
+              <span className={`mt-1 block text-[10px] leading-tight ${active ? 'text-violet-200' : 'text-copy-secondary'}`}>{match.homeTeam} · {match.awayTeam}</span>
               <span className="mt-1 block text-[9px] text-copy-secondary">Tvůj tip: {match.userTip ? scoreLabel(match.userTip) : 'zatím nevyplněn'}</span>
             </button>
           );
@@ -393,11 +437,12 @@ export function AIAnalysisSection({
   roundTitle: string;
 }) {
   const [selectedMatchId, setSelectedMatchId] = useState(matches[0]?.id ?? 0);
+  const profileFallback = useMemo(() => parseScore(profile.most_common_tip?.tip), [profile.most_common_tip?.tip]);
+  const [selectedByMatch, setSelectedByMatch] = useState<Record<number, Score>>({});
   const selectedMatch = matches.find((match) => match.id === selectedMatchId) ?? matches[0];
   const crowd = selectedMatch?.crowd ?? emptyCrowd;
-  const profileFallback = useMemo(() => parseScore(profile.most_common_tip?.tip), [profile.most_common_tip?.tip]);
-  const currentScore = selectedMatch?.userTip ?? (crowd.count ? crowdMode(crowd) : profileFallback);
-  const [selected, setSelected] = useState<Score>(currentScore);
+  const currentScore = defaultScoreForMatch(selectedMatch, profileFallback);
+  const selected = selectedMatch ? selectedByMatch[selectedMatch.id] ?? currentScore : currentScore;
 
   useEffect(() => {
     if (matches.length && !matches.some((match) => match.id === selectedMatchId)) {
@@ -406,8 +451,24 @@ export function AIAnalysisSection({
   }, [matches, selectedMatchId]);
 
   useEffect(() => {
-    setSelected(currentScore);
-  }, [selectedMatch?.id, currentScore.home, currentScore.away]);
+    if (!selectedMatch) return;
+    setSelectedByMatch((prev) => {
+      if (prev[selectedMatch.id]) return prev;
+      return { ...prev, [selectedMatch.id]: defaultScoreForMatch(selectedMatch, profileFallback) };
+    });
+  }, [selectedMatch, profileFallback]);
+
+  const handleMatchSelect = (id: number) => {
+    const nextMatch = matches.find((match) => match.id === id);
+    const fallbackScore = defaultScoreForMatch(nextMatch, profileFallback);
+    setSelectedMatchId(id);
+    setSelectedByMatch((prev) => (prev[id] ? prev : { ...prev, [id]: fallbackScore }));
+  };
+
+  const handleSimulationSelect = (score: Score) => {
+    if (!selectedMatch) return;
+    setSelectedByMatch((prev) => ({ ...prev, [selectedMatch.id]: score }));
+  };
 
   const alternatives = useMemo(() => {
     const candidates: Score[] = [
@@ -436,33 +497,44 @@ export function AIAnalysisSection({
     const dominant = dominantOutcome(crowd);
     const consensus = Math.max(dominant.value, crowd.modeShare);
     const readability = clamp(3.2 + consensus / 13 - crowd.dispersion / 22 + Math.min(crowd.count, 8) * 0.16, 2.5, 9.7);
-    const homeBias = clamp(3.5 + crowd.homeWinShare / 16 + Math.max(0, crowd.avgHome - crowd.avgAway) * 0.65, 2.5, 9.6);
-    const awayBias = clamp(3.5 + crowd.awayWinShare / 16 + Math.max(0, crowd.avgAway - crowd.avgHome) * 0.65, 2.5, 9.6);
-    const crowdFit = clamp(2.5 + consensus / 13, 2.5, 9.7);
+    const homeBias = clamp(3.2 + crowd.homeWinShare / 14 + Math.max(0, crowd.avgHome - crowd.avgAway) * 0.8, 2.5, 9.7);
+    const awayBias = clamp(3.2 + crowd.awayWinShare / 14 + Math.max(0, crowd.avgAway - crowd.avgHome) * 0.8, 2.5, 9.7);
+    const crowdFit = clamp(2.4 + consensus / 12, 2.5, 9.7);
     const success = clamp(profile.success_rate / 10, 2.5, 9.8);
-    const confidence = Math.round(clamp(
-      34 + profile.success_rate * 0.29 + exactRate * 0.35 + consensus * 0.23 + Math.min(crowd.count, 8) * 1.1 - crowd.dispersion * 0.11,
-      38,
-      96,
-    ));
 
     const estimate = (score: Score) => {
       const distance = Math.abs(score.home - crowd.avgHome) + Math.abs(score.away - crowd.avgAway);
-      const tipFit = clamp(9.1 - distance * 1.25 + exactRate / 20 + profile.avg_points / 7, 2.3, 9.8);
       const sameOutcome = outcome(score) === dominant.key;
-      const goalPenalty = Math.max(0, score.home + score.away - 5) * 0.32;
+      const scoreTilt = sameOutcome ? 0.45 : -0.38;
+      const goalPenalty = Math.max(0, score.home + score.away - 5) * 0.34;
+      const exactPull = Math.abs(score.home - crowd.modeHome) + Math.abs(score.away - crowd.modeAway);
+      const matchSpecificity = clamp((crowd.modeShare - crowd.dispersion * 0.42 + Math.abs(crowd.homeWinShare - crowd.awayWinShare) * 0.18) / 10, -0.7, 1.2);
+      const tipFit = clamp(9.2 - distance * 1.3 - exactPull * 0.45 + exactRate / 18 + profile.avg_points / 7 + matchSpecificity, 2.2, 9.9);
       return clamp(
-        form * 0.24 + tipFit * 0.31 + readability * 0.18 + success * 0.15 + crowdFit * 0.12 + (sameOutcome ? 0.25 : -0.22) - goalPenalty,
-        2.7,
-        9.7,
+        form * 0.23 + tipFit * 0.33 + readability * 0.18 + success * 0.14 + crowdFit * 0.12 + scoreTilt - goalPenalty,
+        2.5,
+        9.9,
       );
     };
 
-    return { exactRate, consistency, form, readability, homeBias, awayBias, crowdFit, success, confidence, dominant, estimate };
+    const confidenceFor = (score: Score) => {
+      const distance = Math.abs(score.home - crowd.avgHome) + Math.abs(score.away - crowd.avgAway);
+      const sameOutcome = outcome(score) === dominant.key;
+      const stabilityBoost = sameOutcome ? 6 : -4;
+      return Math.round(clamp(
+        28 + profile.success_rate * 0.24 + exactRate * 0.28 + consensus * 0.26 + Math.min(crowd.count, 10) * 1.2 - crowd.dispersion * 0.16 - distance * 6 + stabilityBoost,
+        34,
+        97,
+      ));
+    };
+
+    return { exactRate, consistency, form, readability, homeBias, awayBias, crowdFit, success, dominant, estimate, confidenceFor };
   }, [crowd, profile]);
 
   const selectedXb = model.estimate(selected);
   const currentXb = model.estimate(currentScore);
+  const selectedConfidence = model.confidenceFor(selected);
+  const currentConfidence = model.confidenceFor(currentScore);
   const scoreDistance = Math.abs(selected.home - crowd.avgHome) + Math.abs(selected.away - crowd.avgAway);
   const outcomeAgainstCrowd = outcome(selected) !== model.dominant.key;
   const crowdDifference = Math.round(clamp(scoreDistance * 27 + (outcomeAgainstCrowd ? 16 : 0), 0, 100));
@@ -476,8 +548,10 @@ export function AIAnalysisSection({
           return Number(clamp(4.4 + (rolling - profile.avg_points * 2) / 8 + profile.success_rate / 28, 2.8, 9.4).toFixed(1));
         })
       : [4.8, 5.6, 5.4, 6.2, 6.8, 7.1];
-    return [...history, Number(selectedXb.toFixed(1))];
-  }, [profile, selectedXb]);
+    const matchShift = ((crowd.homeWinShare - crowd.awayWinShare) * 0.012 + crowd.modeShare * 0.018 - crowd.dispersion * 0.008);
+    const adjusted = history.map((value, index) => Number(clamp(value + matchShift * ((index + 1) / history.length), 2.8, 9.7).toFixed(1)));
+    return [...adjusted, Number(selectedXb.toFixed(1))];
+  }, [crowd, profile, selectedXb]);
 
   const momentum = useMemo(() => {
     if (!profile.rounds.length) return [22, 39, 47, 63, 58, 72, 85, 96, 108];
@@ -527,6 +601,7 @@ export function AIAnalysisSection({
   const roundChange = profile.rounds.length > 1
     ? profile.rounds[profile.rounds.length - 1].points - profile.rounds[profile.rounds.length - 2].points
     : 0;
+  const momentumPositive = roundChange >= 0;
   const crowdAverage = `${crowd.avgHome.toFixed(1)} : ${crowd.avgAway.toFixed(1)}`;
   const coachHeadline = !selectedMatch.userTip
     ? `Pro duel ${matchName} zatím nemáš uložený tip. Model jako výchozí bod používá nejčastější skóre davu ${modeLabel}.`
@@ -545,16 +620,9 @@ export function AIAnalysisSection({
 
   return (
     <section className="ai-analysis-section mb-6" aria-labelledby="ai-analysis-title">
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-3 rounded-[18px] border border-violet-400/20 bg-[linear-gradient(135deg,rgba(139,78,235,.14),rgba(17,33,58,.72)_42%,rgba(7,16,29,.92))] px-4 py-4 shadow-violet sm:px-5">
-        <div>
-          <div className="eyebrow mb-1"><span className="flag-chip" /> Profil · pouze Chance liga</div>
-          <h1 id="ai-analysis-title" className="font-display text-2xl font-bold tracking-wide text-white sm:text-3xl">AI analýza</h1>
-          <p className="mt-1 max-w-3xl text-[12px] leading-relaxed text-copy-secondary">Každé doporučení je navázané na konkrétní zápas aktuálního kola. Vybraný duel se propisuje do všech zápasových modulů i simulátoru.</p>
-        </div>
-        <div className="rounded-full border border-state-success/30 bg-state-success/10 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.14em] text-state-success">Chance liga</div>
-      </div>
+      <h1 id="ai-analysis-title" className="sr-only">AI analýza</h1>
 
-      <MatchSwitcher matches={matches} selectedId={selectedMatch.id} onSelect={setSelectedMatchId} roundTitle={roundTitle} />
+      <MatchSwitcher matches={matches} selectedId={selectedMatch.id} onSelect={handleMatchSelect} roundTitle={roundTitle} activeSummary={`Tvůj základní tip ${currentLabel}, nejčastější skóre davu ${modeLabel}, vzorek ${crowd.count} tipů.`} />
 
       <div className="ai-analysis-grid">
         <AnalysisCard>
@@ -644,21 +712,22 @@ export function AIAnalysisSection({
         <AnalysisCard>
           <CardHeader number={5} title="AI confidence" subtitle={`Jistota modelu pro ${matchName}.`} tone="green" />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3 text-center">
-            <ConfidenceShield value={model.confidence} />
-            <p className="mx-auto max-w-[210px] text-[10px] leading-relaxed text-copy-secondary">Jistota kombinuje tvoji historickou úspěšnost, shodu tipů v kole a rozptyl výsledků tohoto duelu.</p>
+            <ConfidenceShield value={selectedConfidence} />
+            <div className={`mx-auto mt-2 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${selectedConfidence >= currentConfidence ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{selectedConfidence >= currentConfidence ? '+' : ''}{selectedConfidence - currentConfidence}%</div>
+            <p className="mx-auto mt-2 max-w-[210px] text-[10px] leading-relaxed text-copy-secondary">Jistota vychází z tvé historické úspěšnosti, shody zvoleného tipu s průběhem kola a z rozptylu výsledků právě tohoto duelu.</p>
             <div className="mt-3 h-2 rounded-full quality-gradient" />
             <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Nízká</span><span>Střední</span><span>Vysoká</span></div>
           </div>
         </AnalysisCard>
 
         <AnalysisCard>
-          <CardHeader number={6} title="Momentum" subtitle={`Dlouhodobý trend před duelem ${matchName}.`} tone="amber" />
+          <CardHeader number={6} title="Momentum" subtitle={`Dlouhodobý trend před duelem ${matchName}.`} tone={momentumPositive ? 'green' : 'pink'} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
             <div className="mb-1 text-[10px] font-semibold text-white">Tvoje momentum</div>
-            <MiniSparkline values={momentum} tone="amber" height={110} />
+            <MiniSparkline values={momentum} tone={momentumPositive ? 'green' : 'pink'} height={110} />
             <div className="mt-2 border-t border-line-subtle/70 pt-2">
-              <span className={`inline-flex rounded-md px-2 py-1 text-[9px] font-bold ${roundChange >= 0 ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{roundChange >= 0 ? 'Pozitivní trend' : 'Dočasný pokles'}</span>
-              <p className="mt-2 text-[10px] leading-relaxed text-copy-muted">Profilová forma má skóre <strong className="text-white">{model.form.toFixed(1)}/10</strong>. Pro vybraný zápas ji model kombinuje s čitelností {model.readability.toFixed(1)}/10.</p>
+              <span className={`inline-flex rounded-md px-2 py-1 text-[9px] font-bold ${momentumPositive ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{momentumPositive ? 'Růstová vlna' : 'Klesající vlna'}</span>
+              <p className="mt-2 text-[10px] leading-relaxed text-copy-muted">Poslední změna kola je <strong className={momentumPositive ? 'text-state-success' : 'text-state-danger'}>{momentumPositive ? '+' : ''}{roundChange.toFixed(1)} bodu</strong>. Profilová forma má skóre <strong className="text-white">{model.form.toFixed(1)}/10</strong> a pro vybraný zápas ji model kombinuje s čitelností {model.readability.toFixed(1)}/10.</p>
             </div>
           </div>
         </AnalysisCard>
@@ -672,7 +741,7 @@ export function AIAnalysisSection({
                 <button
                   key={item.code}
                   type="button"
-                  onClick={() => setSelectedMatchId(item.match.id)}
+                  onClick={() => handleMatchSelect(item.match.id)}
                   className={`flex w-full items-start gap-3 rounded-lg border p-2.5 text-left transition ${active ? 'border-violet-300/70 bg-violet-500/12' : 'border-transparent hover:border-line-strong hover:bg-surface-hover'}`}
                 >
                   <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border font-display text-[10px] font-bold ${toneClass[item.tone]}`}>{item.code}</span>
@@ -681,7 +750,10 @@ export function AIAnalysisSection({
                       {item.title}
                       {active && <span className="rounded-full bg-violet-500/20 px-2 py-0.5 text-[8px] uppercase tracking-wider text-violet-200">Vybraný duel</span>}
                     </span>
-                    <span className="mt-0.5 block text-[9px] leading-relaxed text-copy-muted">{item.detail}</span>
+                    <div className="mt-1">
+                      <MatchLogos homeTeam={item.match.homeTeam} awayTeam={item.match.awayTeam} size="h-7 w-7" />
+                    </div>
+                    <span className="mt-1 block text-[9px] leading-relaxed text-copy-muted">{item.detail}</span>
                   </span>
                 </button>
               );
@@ -720,8 +792,8 @@ export function AIAnalysisSection({
               <CircularScore value={selectedXb} label="xB" />
               <div className="flex flex-col items-center justify-center border-l border-line-subtle/70 pl-2 text-center">
                 <div className="text-[9px] text-copy-muted">Jistota modelu</div>
-                <div className="mt-2 font-display text-3xl font-bold tabular-nums text-white">{model.confidence}<span className="text-sm">%</span></div>
-                <div className="mt-2 h-1.5 w-full rounded-full bg-surface-3"><div className="h-full rounded-full bg-violet-400" style={{ width: `${model.confidence}%` }} /></div>
+                <div className="mt-2 font-display text-3xl font-bold tabular-nums text-white">{selectedConfidence}<span className="text-sm">%</span></div>
+                <div className="mt-2 h-1.5 w-full rounded-full bg-surface-3"><div className="h-full rounded-full bg-violet-400" style={{ width: `${selectedConfidence}%` }} /></div>
               </div>
             </div>
             <div className="mt-3 grid grid-cols-[1fr_1.1fr] gap-3">
@@ -753,8 +825,16 @@ export function AIAnalysisSection({
               <p className="mt-1 text-[10px] text-copy-muted">Simulace je vždy navázaná na zápas vybraný nahoře. Nic se neukládá do skutečného tipu.</p>
             </div>
             <div className="grid min-w-[280px] grid-cols-3 overflow-hidden rounded-xl border border-line-subtle/80 bg-app-deep/35 text-center">
-              <div className="px-3 py-2"><span className="block text-[8px] text-copy-muted">Domácí</span><strong className="font-display text-sm text-white">{selectedMatch.homeTeam}</strong></div>
-              <div className="border-x border-line-subtle/70 px-3 py-2"><span className="block text-[8px] text-copy-muted">Hosté</span><strong className="font-display text-sm text-white">{selectedMatch.awayTeam}</strong></div>
+              <div className="px-3 py-2">
+                <span className="block text-[8px] text-copy-muted">Domácí</span>
+                <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.homeTeam} className="h-9 w-9" /></div>
+                <strong className="mt-1 block text-[10px] text-white">{selectedMatch.homeTeam}</strong>
+              </div>
+              <div className="border-x border-line-subtle/70 px-3 py-2">
+                <span className="block text-[8px] text-copy-muted">Hosté</span>
+                <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.awayTeam} className="h-9 w-9" /></div>
+                <strong className="mt-1 block text-[10px] text-white">{selectedMatch.awayTeam}</strong>
+              </div>
               <div className="px-3 py-2"><span className="block text-[8px] text-copy-muted">Aktuální tip</span><strong className="font-display text-lg text-white">{selectedMatch.userTip ? currentLabel : '–'}</strong></div>
             </div>
           </div>
@@ -769,7 +849,7 @@ export function AIAnalysisSection({
                 <button
                   key={label}
                   type="button"
-                  onClick={() => setSelected(score)}
+                  onClick={() => handleSimulationSelect(score)}
                   className={`min-h-[128px] rounded-xl border p-3 text-center transition focus-visible:ring-offset-app-deep ${isSelected ? 'border-violet-300 bg-violet-500/15 shadow-violet' : 'border-line-subtle bg-surface-1/75 hover:border-violet-400/50 hover:bg-surface-hover'}`}
                   aria-pressed={isSelected}
                 >
