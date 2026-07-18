@@ -4,104 +4,151 @@
 
 :root {
   color-scheme: dark;
+  --quality-best: #a46af7;
+  --quality-good: #29d17d;
+  --quality-mid: #49a8ff;
+  --quality-low: #f5b942;
+  --quality-bad: #f0526e;
 }
 
-html,
+html {
+  background: #040a13;
+  scrollbar-color: #30496e #07101d;
+}
+
 body {
-  /* jednobarevné tmavě modré pozadí, bílé texty */
-  background: #0b1220;
-  color: #eef2fb;
+  min-height: 100dvh;
+  background-color: #07101d;
+  background-image:
+    radial-gradient(circle at 78% -8%, rgba(139, 78, 235, 0.17), transparent 34rem),
+    radial-gradient(circle at 2% 34%, rgba(73, 168, 255, 0.07), transparent 28rem),
+    linear-gradient(180deg, #07101d 0%, #050c17 100%);
+  color: #f7f9fc;
   -webkit-tap-highlight-color: transparent;
+  text-rendering: optimizeLegibility;
 }
 
-button {
+::selection {
+  background: rgba(164, 106, 247, 0.34);
+  color: #fff;
+}
+
+button,
+a,
+input,
+select {
   touch-action: manipulation;
 }
 
+button,
+a,
+input,
+select,
+textarea {
+  @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400/70 focus-visible:ring-offset-2 focus-visible:ring-offset-app-bg;
+}
+
+input,
+select,
+textarea {
+  font-variant-numeric: tabular-nums lining-nums;
+}
+
 @layer components {
-  /* ---------- panel / karta ---------- */
   .panel {
-    @apply rounded-2xl border border-terrain-700 bg-terrain-800;
+    @apply rounded-[18px] border border-line-subtle/90 bg-gradient-panel shadow-card;
   }
+
   .panel-flush {
-    @apply overflow-hidden rounded-2xl border border-terrain-700 bg-terrain-800;
+    @apply overflow-hidden rounded-[18px] border border-line-subtle/90 bg-gradient-panel shadow-card;
   }
 
-  /* ---------- nadpis sekce s kontrolkou ---------- */
+  .panel-premium {
+    @apply rounded-[22px] border border-violet-400/25 bg-gradient-to-br from-violet-500/10 via-surface-1 to-blue-500/5 shadow-violet;
+  }
+
   .eyebrow {
-    @apply flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-slate-300/70;
+    @apply flex items-center gap-2 text-[11px] font-bold uppercase tracking-[0.17em] text-copy-muted;
   }
+
   .section-title {
-    @apply font-display text-lg font-semibold tracking-wide text-white;
+    @apply font-display text-lg font-bold tracking-wide text-copy-primary;
   }
 
-  /* ---------- kontrolka (oranžovo-bílý praporek orientačního běhu) ---------- */
   .flag-chip {
-    @apply inline-block h-3.5 w-3.5 shrink-0 rounded-[3px];
-    background: linear-gradient(135deg, #fff 0 50%, #ff5a2c 50% 100%);
-    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+    @apply inline-block h-3.5 w-3.5 shrink-0 rounded-[4px];
+    background: linear-gradient(135deg, #a46af7 0 52%, #6366f1 52% 100%);
+    box-shadow: 0 0 0 1px rgba(216, 191, 255, 0.16), 0 0 14px rgba(139, 78, 235, 0.28);
   }
 
-  /* ---------- odznak pořadí = mapová kontrola (magenta kruh) ---------- */
   .control-badge {
-    @apply relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full
-           font-display text-sm font-bold tabular-nums text-white;
-    box-shadow: inset 0 0 0 2px #e6007e;
+    @apply relative flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-line-strong bg-surface-3 font-display text-sm font-bold tabular-nums text-copy-secondary;
   }
+
   .control-badge--1 {
-    @apply text-terrain-950;
-    background: radial-gradient(circle at 30% 25%, #ffe79a, #f5b301);
-    box-shadow: inset 0 0 0 2px #f5b301, 0 6px 16px -6px rgba(245, 179, 1, 0.8);
+    @apply border-violet-300/65 bg-violet-500/20 text-violet-200;
+    box-shadow: 0 0 0 1px rgba(164, 106, 247, 0.18), 0 8px 24px rgba(115, 52, 212, 0.22);
   }
+
   .control-badge--2 {
-    @apply text-terrain-950;
-    background: radial-gradient(circle at 30% 25%, #f1f5f9, #94a3b8);
-    box-shadow: inset 0 0 0 2px #cbd5e1;
+    @apply border-state-success/55 bg-state-success/12 text-state-success;
   }
+
   .control-badge--3 {
-    @apply text-terrain-950;
-    background: radial-gradient(circle at 30% 25%, #e7b78a, #b06b35);
-    box-shadow: inset 0 0 0 2px #d08b52;
+    @apply border-state-info/55 bg-state-info/12 text-state-info;
   }
 
-  /* ---------- primární akce – viditelná, ale ne křiklavá ---------- */
   .btn-pitch {
-    @apply block w-full rounded-xl border border-pitch/55 bg-pitch/20 py-3 text-center
-           text-base font-bold tracking-wide text-pitch-light transition
-           hover:border-pitch/75 hover:bg-pitch/25 active:scale-[0.99] disabled:opacity-50;
-    box-shadow: 0 2px 12px -6px rgba(74, 222, 128, 0.4);
+    @apply block w-full rounded-[14px] border border-violet-300/45 bg-gradient-violet px-4 py-3 text-center text-base font-bold tracking-wide text-white transition duration-150 hover:brightness-110 active:scale-[0.985] disabled:cursor-not-allowed disabled:opacity-50;
+    box-shadow: 0 10px 30px -12px rgba(139, 78, 235, 0.8);
   }
 
-  /* ---------- sekundární / neutrální akce ---------- */
   .btn-soft {
-    @apply block w-full rounded-xl border border-terrain-600 bg-terrain-800/50 py-2.5 text-center
-           text-sm font-semibold text-slate-100/85 transition
-           hover:bg-terrain-700 hover:text-white active:scale-[0.99] disabled:opacity-50;
+    @apply block w-full rounded-[14px] border border-line-strong bg-surface-2/85 px-4 py-2.5 text-center text-sm font-semibold text-copy-secondary transition duration-150 hover:border-violet-400/40 hover:bg-surface-hover hover:text-white active:scale-[0.985] disabled:opacity-50;
   }
 
   .chip {
-    @apply inline-flex items-center gap-1 rounded-full border border-terrain-600 bg-terrain-900
-           px-2.5 py-1 text-[11px] font-medium text-slate-100/80;
+    @apply inline-flex items-center gap-1 rounded-full border border-line-strong bg-surface-2/80 px-2.5 py-1 text-[11px] font-semibold text-copy-secondary;
+  }
+
+  .quality-gradient {
+    background: linear-gradient(90deg, var(--quality-bad), var(--quality-low), var(--quality-mid), var(--quality-good), var(--quality-best));
+  }
+
+  .glass-bar {
+    @apply border border-line-subtle/80 bg-app-deep/82 shadow-elevated backdrop-blur-xl;
   }
 }
 
 @layer utilities {
-  /* živý zápas — pulzující tečka */
   .live-dot {
-    @apply inline-block h-2 w-2 rounded-full bg-flag;
-    box-shadow: 0 0 0 0 rgba(255, 90, 44, 0.7);
+    @apply inline-block h-2 w-2 rounded-full bg-state-live;
+    box-shadow: 0 0 0 0 rgba(255, 86, 61, 0.7);
     animation: live-pulse 1.6s infinite;
+  }
+
+  .tabular-nums {
+    font-variant-numeric: tabular-nums lining-nums;
+  }
+
+  .text-balance {
+    text-wrap: balance;
   }
 }
 
 @keyframes live-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(255, 90, 44, 0.6);
-  }
-  70% {
-    box-shadow: 0 0 0 7px rgba(255, 90, 44, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(255, 90, 44, 0);
+  0% { box-shadow: 0 0 0 0 rgba(255, 86, 61, 0.58); }
+  70% { box-shadow: 0 0 0 7px rgba(255, 86, 61, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(255, 86, 61, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
 }

@@ -1,4 +1,5 @@
 import { calculatePoints } from './scoring';
+import { canonTeam } from './teamAliases';
 
 /**
  * Statistická predikce zápasu.
@@ -29,6 +30,174 @@ export interface Prediction {
   /** Počet použitých vzájemných zápasů. */
   h2hSample: number;
   basis: 'form+h2h' | 'form' | 'h2h';
+}
+
+
+export type XbFactorKey = 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'tip';
+
+export interface XbHistoryRow {
+  home: string;
+  away: string;
+  points: number;
+}
+
+export interface XbFactor {
+  key: XbFactorKey;
+  label: string;
+  value: number;
+  sample: number;
+  /** Normalizovaná váha faktoru ve výsledném xB (0–1). */
+  weight: number;
+  /** Srozumitelná vysvětlivka zobrazená přímo tipérovi. */
+  description: string;
+}
+
+export interface XbPrediction {
+  value: number;
+  low: number;
+  high: number;
+  confidence: number;
+  factors: XbFactor[];
+  explanation: string;
+  hasTip: boolean;
+}
+
+export interface PersonalXbInput {
+  home: string;
+  away: string;
+  archiveTips: XbHistoryRow[];
+  /** Průměr všech dostupných historických tipů – prior pro hráče bez historie. */
+  priorAverage?: number;
+  /** Body z dokončených zápasů aktuální sezony; vynechaný tip může být předán jako 0. */
+  seasonPoints?: number[];
+  /** Očekávané body konkrétního uloženého tipu podle modelu skóre. */
+  tipExpectedPoints?: number | null;
+  tipSample?: number;
+}
+
+const avgPoints = (rows: XbHistoryRow[]): number | null =>
+  rows.length ? rows.reduce((sum, row) => sum + row.points, 0) / rows.length : null;
+
+const clamp10 = (value: number) => Math.max(0, Math.min(10, value));
+
+/**
+ * Personalizované očekávané body tipéra pro jeden zápas.
+ *
+ * Výpočet je záměrně transparentní: každý faktor má hodnotu, počet vstupů,
+ * normalizovanou váhu a vysvětlení. Malé vzorky se stahují k dlouhodobému
+ * průměru, aby jeden povedený / nepovedený zápas nerozhodl celý odhad.
+ */
+export function computePersonalXb(input: PersonalXbInput): XbPrediction {
+  const home = canonTeam(input.home);
+  const away = canonTeam(input.away);
+  const pair = [home, away].sort().join('|');
+  const archiveTips = input.archiveTips.filter((row) => Number.isFinite(row.points));
+  const priorAverage = clamp10(input.priorAverage ?? 3.2);
+  const overallRaw = avgPoints(archiveTips) ?? priorAverage;
+  const pairRows = archiveTips.filter((row) => [canonTeam(row.home), canonTeam(row.away)].sort().join('|') === pair);
+  const homeRows = archiveTips.filter((row) => canonTeam(row.home) === home || canonTeam(row.away) === home);
+  const awayRows = archiveTips.filter((row) => canonTeam(row.home) === away || canonTeam(row.away) === away);
+  const seasonPoints = (input.seasonPoints ?? []).filter((value) => Number.isFinite(value)).map(clamp10);
+
+  const shrink = (raw: number | null, sample: number, priorMatches: number) =>
+    raw == null ? overallRaw : (raw * sample + overallRaw * priorMatches) / (sample + priorMatches);
+
+  const drafts: Omit<XbFactor, 'weight'>[] = [
+    {
+      key: 'overall',
+      label: 'Celková úspěšnost',
+      value: overallRaw,
+      sample: archiveTips.length,
+      description: archiveTips.length
+        ? 'Tvůj dlouhodobý průměr bodů ze všech dostupných ligových tipů. Slouží jako stabilní základ celého odhadu.'
+        : 'Pro tohoto tipéra zatím nemáme vlastní minulou sezonu, proto model používá průměr celé party jako neutrální základ.',
+    },
+    {
+      key: 'home',
+      label: `Jak ti sedí ${input.home}`,
+      value: shrink(avgPoints(homeRows), homeRows.length, 8),
+      sample: homeRows.length,
+      description: `Kolik bodů jsi historicky získával v zápasech, kde nastupoval ${input.home}, bez ohledu na soupeře a pořadí doma/venku.`,
+    },
+    {
+      key: 'away',
+      label: `Jak ti sedí ${input.away}`,
+      value: shrink(avgPoints(awayRows), awayRows.length, 8),
+      sample: awayRows.length,
+      description: `Kolik bodů jsi historicky získával v zápasech, kde nastupoval ${input.away}. Malý vzorek se tlumí tvým dlouhodobým průměrem.`,
+    },
+  ];
+
+  if (pairRows.length) {
+    drafts.unshift({
+      key: 'h2h',
+      label: 'Vzájemné zápasy',
+      value: shrink(avgPoints(pairRows), pairRows.length, 3),
+      sample: pairRows.length,
+      description: 'Tvoje body z minulých zápasů stejné dvojice soupeřů. Je to nejkonkrétnější faktor, ale u jednoho či dvou zápasů ho model záměrně nepřeceňuje.',
+    });
+  }
+
+  if (seasonPoints.length) {
+    const raw = seasonPoints.reduce((sum, value) => sum + value, 0) / seasonPoints.length;
+    drafts.push({
+      key: 'season',
+      label: 'Forma tipéra letos',
+      value: shrink(raw, seasonPoints.length, 5),
+      sample: seasonPoints.length,
+      description: 'Průměr bodů z dokončených zápasů aktuální sezony. Jeho vliv roste postupně, aby první kolo nerozhodlo celý rok.',
+    });
+  }
+
+  if (input.tipExpectedPoints != null && Number.isFinite(input.tipExpectedPoints)) {
+    drafts.push({
+      key: 'tip',
+      label: 'Tvůj uložený tip',
+      value: clamp10(input.tipExpectedPoints),
+      sample: input.tipSample ?? 0,
+      description: 'Očekávaný bodový zisk konkrétního uloženého skóre podle statistické predikce výsledku. Nejde o pravděpodobnost trefení přesného skóre.',
+    });
+  }
+
+  const hasTip = drafts.some((factor) => factor.key === 'tip');
+  const baseWeights: Record<XbFactorKey, number> = {
+    h2h: 0.30,
+    home: 0.16,
+    away: 0.14,
+    overall: 0.25,
+    season: Math.min(0.18, 0.04 + seasonPoints.length * 0.012),
+    tip: hasTip ? 0.28 : 0,
+  };
+  const activeWeight = drafts.reduce((sum, factor) => sum + baseWeights[factor.key], 0) || 1;
+  const factors: XbFactor[] = drafts.map((factor) => ({
+    ...factor,
+    value: clamp10(factor.value),
+    weight: baseWeights[factor.key] / activeWeight,
+  }));
+
+  const value = factors.reduce((sum, factor) => sum + factor.value * factor.weight, 0);
+  const evidence = archiveTips.length
+    + pairRows.length * 4
+    + homeRows.length * 0.4
+    + awayRows.length * 0.4
+    + seasonPoints.length * 5;
+  const confidence = Math.round(Math.max(36, Math.min(93, 41 + Math.log1p(evidence) * 8 + (hasTip ? 5 : 0))));
+  const spread = Math.max(1.1, 3.4 - confidence / 38);
+  const rounded = clamp10(value);
+  const strongest = [...factors].sort((a, b) => b.value - a.value)[0];
+  const weakest = [...factors].sort((a, b) => a.value - b.value)[0];
+
+  return {
+    value: Number(rounded.toFixed(1)),
+    low: Number(Math.max(0, rounded - spread).toFixed(1)),
+    high: Number(Math.min(10, rounded + spread).toFixed(1)),
+    confidence,
+    factors,
+    explanation: strongest.value - weakest.value >= 1.2
+      ? `${strongest.label} ti vychází nejlépe. Největší rezervu model vidí ve faktoru „${weakest.label}“.`
+      : 'Jednotlivé faktory jsou poměrně vyrovnané, takže odhad zůstává blízko tvého dlouhodobého průměru.',
+    hasTip,
+  };
 }
 
 function poisson(k: number, lambda: number): number {

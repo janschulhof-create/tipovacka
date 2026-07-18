@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { pointsBadgeClass } from '@/lib/points';
+import { pointsBadgeClass, qualityColor, qualitySoftClass } from '@/lib/points';
 import { Flag } from './Flag';
 
 interface MutualMatchRow {
@@ -31,6 +31,8 @@ interface XbFactor {
   label: string;
   value: number;
   sample: number;
+  weight: number;
+  description: string;
 }
 interface XbPrediction {
   value: number;
@@ -90,7 +92,7 @@ function Score({ hs, as }: { hs: number; as: number }) {
 function FormChain({ rows }: { rows: Form5Row[] }) {
   if (!rows.length) return <span className="text-[11px] text-slate-300/40">zatím nehrál</span>;
   const cls = (r: 'W' | 'D' | 'L') =>
-    r === 'W' ? 'bg-pitch text-white' : r === 'L' ? 'bg-flag text-white' : 'bg-slate-600 text-white';
+    r === 'W' ? 'bg-violet-500 text-white' : r === 'L' ? 'bg-state-danger text-white' : 'bg-state-info text-white';
   return (
     <span className="flex flex-wrap items-center gap-1">
       {rows.map((r, i) => (
@@ -269,143 +271,217 @@ export function Baroko({
   );
 }
 
-/** Záložka H2H: současná forma + maximálně šest vzájemných zápasů. */
+function MutualMatchesContent({
+  data,
+  integrated = false,
+}: {
+  data: InsightData;
+  integrated?: boolean;
+}) {
+  return (
+    <div>
+      <div className="mb-2">
+        <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-copy-secondary">
+          {integrated ? 'Vzájemné zápasy · vstup do xB' : 'Vzájemné zápasy'}
+        </div>
+        {integrated && (
+          <p className="mt-1 text-[11px] leading-relaxed text-copy-muted">
+            Z těchto zápasů model čte, jak ti konkrétní dvojice soupeřů seděla. Zobrazuje nejvýše šest posledních duelů z našich dat.
+          </p>
+        )}
+      </div>
+      {data.mutualMatches.length === 0 ? (
+        <Empty text="Pro tyto týmy zatím nemáme vzájemný zápas." />
+      ) : (
+        <div className="overflow-hidden rounded-2xl border border-line-subtle bg-surface-1/70">
+          {data.mutualMatches.slice(0, 6).map((r, i) => {
+            const hasTip = r.ph != null && r.pa != null;
+            const meta = r.round != null
+              ? `${r.round}. kolo${r.season ? ` · ${r.season}` : ''}`
+              : r.date
+                ? fmtDate(r.date)
+                : r.season ?? '';
+            return (
+              <div key={`${r.round ?? r.date ?? i}-${i}`} className="border-b border-line-subtle/70 px-3 py-3 last:border-0">
+                <div className="mb-1.5 flex items-center justify-between gap-2 text-[10.5px] text-copy-muted">
+                  <span>{meta}</span>
+                  {hasTip && (
+                    <span className={`rounded-full px-2 py-0.5 font-bold tabular-nums ${pointsBadgeClass(r.points ?? 0)}`}>
+                      {r.points == null ? '—' : `${r.points} b`}
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-[12.5px]">
+                  <span className="min-w-0 flex-1 font-medium text-copy-primary">{r.home} – {r.away}</span>
+                  {hasTip && (
+                    <span className="text-copy-muted">tvůj tip <strong className="tabular-nums text-copy-primary">{r.ph}:{r.pa}</strong></span>
+                  )}
+                  <span className="text-copy-muted">výsledek <strong className="tabular-nums text-copy-primary">{r.hs}:{r.as}</strong></span>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Záložka H2H pro ostatní soutěže. V Chance lize je začleněná přímo do xB. */
 export function H2HContent({ data, loading }: { data: InsightData | null; loading: boolean }) {
-  if (loading) return <p className="text-xs text-slate-300/45">Načítám…</p>;
+  if (loading) return <p className="text-xs text-copy-muted">Načítám…</p>;
   if (!data) return <Empty text="Data se nepodařilo načíst." />;
 
   return (
     <div className="space-y-4">
       <TeamFormContent data={data} />
+      <MutualMatchesContent data={data} />
+    </div>
+  );
+}
 
-      <div>
-        <div className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-          Vzájemné zápasy
-        </div>
-        {data.mutualMatches.length === 0 ? (
-          <Empty text="Pro tyto týmy zatím nemáme vzájemný zápas." />
-        ) : (
-          <div className="overflow-hidden rounded-xl border border-terrain-700 bg-terrain-900/40">
-            {data.mutualMatches.slice(0, 6).map((r, i) => {
-              const hasTip = r.ph != null && r.pa != null;
-              const meta = r.round != null
-                ? `${r.round}. kolo${r.season ? ` · ${r.season}` : ''}`
-                : r.date
-                  ? fmtDate(r.date)
-                  : r.season ?? '';
-              return (
-                <div key={`${r.round ?? r.date ?? i}-${i}`} className="border-b border-terrain-800/60 px-3 py-2.5 last:border-0">
-                  <div className="mb-1 flex items-center justify-between gap-2 text-[11px] text-slate-300/45">
-                    <span>{meta}</span>
-                    {hasTip && (
-                      <span className={`rounded px-1.5 py-0.5 font-bold tabular-nums ${pointsBadgeClass(r.points ?? 0)}`}>
-                        {r.points == null ? '—' : `${r.points} b`}
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px]">
-                    <span className="min-w-0 flex-1 text-slate-100/80">{r.home} – {r.away}</span>
-                    {hasTip && (
-                      <span className="text-slate-300/55">tvůj tip <strong className="text-white">{r.ph}:{r.pa}</strong></span>
-                    )}
-                    <span className="text-slate-300/55">výsledek <strong className="text-white">{r.hs}:{r.as}</strong></span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+function QualityLegend() {
+  return (
+    <div className="rounded-xl border border-line-subtle bg-app-deep/45 px-3 py-2.5">
+      <div className="h-1.5 rounded-full quality-gradient" />
+      <div className="mt-1.5 grid grid-cols-5 gap-1 text-center text-[9px] font-semibold uppercase tracking-wide">
+        <span className="text-state-danger">nejhorší</span>
+        <span className="text-state-warning">slabší</span>
+        <span className="text-state-info">střed</span>
+        <span className="text-state-success">dobré</span>
+        <span className="text-violet-300">nejlepší</span>
       </div>
     </div>
   );
 }
 
-/** Personalizované očekávané body tipera pro zápas Chance ligy. */
+/** Personalizovaná xB predikce + forma a H2H pro zápas Chance ligy. */
 export function XbContent({ data, loading }: { data: InsightData | null; loading: boolean }) {
-  if (loading) return <p className="text-xs text-slate-300/45">Počítám očekávané body…</p>;
-  if (!data?.loggedIn) return <Empty text="xB se zobrazí po přihlášení tipera." />;
-  const xb = data.xb;
-  if (!xb) return <Empty text="Pro tento zápas zatím nelze xB spočítat." />;
+  if (loading) return <p className="text-xs text-copy-muted">Počítám xB predikci…</p>;
+  if (!data) return <Empty text="Data se nepodařilo načíst." />;
 
+  const xb = data.xb;
   const factorIcon: Record<XbFactor['key'], string> = {
-    h2h: '🎯', home: '🟢', away: '🟠', overall: '📈', season: '🔥', tip: '🧠',
+    h2h: '🎯', home: '👕', away: '🛡️', overall: '📈', season: '🔥', tip: '🧠',
   };
-  const factorColor: Record<XbFactor['key'], string> = {
-    h2h: 'bg-violet-500', home: 'bg-pitch', away: 'bg-orange-500',
-    overall: 'bg-blue-500', season: 'bg-rose-500', tip: 'bg-cyan-400',
-  };
-  const label = xb.value >= 7.5 ? 'Vysoký potenciál bodů' : xb.value >= 5.5 ? 'Solidní bodový potenciál' : xb.value >= 3.5 ? 'Nejistý zápas' : 'Rizikový zápas';
-  const degrees = Math.round((xb.value / 10) * 360);
+
+  const label = !xb
+    ? ''
+    : xb.value >= 8
+      ? 'Výborný bodový potenciál'
+      : xb.value >= 6
+        ? 'Dobrý bodový potenciál'
+        : xb.value >= 4
+          ? 'Středně čitelný zápas'
+          : xb.value >= 2
+            ? 'Slabší vyhlídky'
+            : 'Rizikový zápas';
+  const degrees = xb ? Math.round((xb.value / 10) * 360) : 0;
+  const mainColor = xb ? qualityColor(xb.value) : '#7888a3';
 
   return (
-    <div className="space-y-4">
-      <div className="rounded-2xl border border-violet-500/25 bg-gradient-to-br from-violet-500/10 via-terrain-900/50 to-blue-500/5 p-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
-          <div
-            className="relative mx-auto flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[9px] sm:mx-0"
-            style={{ background: `conic-gradient(rgb(139 92 246) ${degrees}deg, rgb(30 41 59) ${degrees}deg)` }}
-            aria-label={`Očekávané body ${xb.value} z 10`}
-          >
-            <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-terrain-950 shadow-inner">
-              <span className="font-display text-4xl font-bold tabular-nums text-white">{xb.value.toFixed(1)}</span>
-              <span className="text-xs text-slate-300/45">/ 10</span>
-              <span className="mt-1 text-[10px] uppercase tracking-wide text-slate-300/45">očekávané body</span>
-            </div>
-          </div>
-
-          <div className="min-w-0 flex-1 text-center sm:text-left">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-violet-300/80">Očekávané body (xB)</div>
-            <h4 className="mt-1 font-display text-xl font-bold text-violet-300">{label}</h4>
-            <p className="mt-2 text-[12.5px] leading-relaxed text-slate-100/65">
-              Podle tvé historie tipování model očekává v tomto zápase přibližně {xb.value.toFixed(1)} bodu.
-            </p>
-            <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
-              <span className="rounded-full bg-violet-500/15 px-3 py-1 text-xs font-semibold text-violet-200">
-                {xb.low.toFixed(1)}–{xb.high.toFixed(1)} bodu
-              </span>
-              <span className="rounded-full border border-terrain-600 bg-terrain-900/60 px-3 py-1 text-xs text-slate-100/70">
-                Jistota {xb.confidence} %
-              </span>
-            </div>
-            {!xb.hasTip && (
-              <p className="mt-2 text-[11px] text-slate-300/45">Po uložení tipu se xB zpřesní podle zvoleného skóre.</p>
-            )}
-          </div>
-        </div>
+    <div className="space-y-5">
+      <div className="rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-copy-secondary">
+        <b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu v našem bodování 0–10. Není to procento ani slib výsledku; model odhaduje, jak dobře by právě tobě měl zápas sedět.
       </div>
 
-      <div>
-        <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">Faktory ovlivňující xB</div>
-        <div className="grid gap-2 sm:grid-cols-2">
-          {xb.factors.map((factor) => (
-            <div key={factor.key} className="rounded-xl border border-terrain-700 bg-terrain-900/40 p-3">
-              <div className="flex items-start gap-2">
-                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-terrain-800 text-sm">{factorIcon[factor.key]}</span>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-baseline justify-between gap-2">
-                    <span className="truncate text-[12px] font-medium text-slate-100/75">{factor.label}</span>
-                    <span className="font-display text-lg font-bold tabular-nums text-white">{factor.value.toFixed(1)}</span>
-                  </div>
-                  <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-terrain-800">
-                    <div className={`h-full rounded-full ${factorColor[factor.key]}`} style={{ width: `${Math.max(3, factor.value * 10)}%` }} />
-                  </div>
-                  <div className="mt-1 text-[10px] text-slate-300/40">
-                    {factor.key === 'tip' ? `model zápasu · ${factor.sample} vstupů` : `${factor.sample} historických tipů`}
-                  </div>
+      {!data.loggedIn ? (
+        <Empty text="Osobní xB se zobrazí po přihlášení tipera. H2H a forma týmů zůstávají níže." />
+      ) : !xb ? (
+        <Empty text="Pro tento zápas zatím nelze osobní xB spočítat." />
+      ) : (
+        <>
+          <div className="panel-premium p-4">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <div
+                className="relative mx-auto flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[9px] sm:mx-0"
+                style={{ background: `conic-gradient(${mainColor} ${degrees}deg, rgb(23 42 71) ${degrees}deg)` }}
+                aria-label={`Očekávané body ${xb.value} z 10`}
+              >
+                <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-app-deep shadow-inner">
+                  <span className="font-display text-4xl font-bold tabular-nums text-white">{xb.value.toFixed(1)}</span>
+                  <span className="text-xs text-copy-muted">/ 10</span>
+                  <span className="mt-1 text-[10px] uppercase tracking-wide text-copy-muted">očekávané body</span>
                 </div>
               </div>
+
+              <div className="min-w-0 flex-1 text-center sm:text-left">
+                <div className="text-[11px] font-bold uppercase tracking-[0.13em] text-violet-300">xB predikce</div>
+                <h4 className="mt-1 font-display text-xl font-bold" style={{ color: mainColor }}>{label}</h4>
+                <p className="mt-2 text-[12.5px] leading-relaxed text-copy-secondary">
+                  Podle tvé historie model očekává v tomto zápase přibližně <b className="tabular-nums text-copy-primary">{xb.value.toFixed(1)} bodu</b>.
+                </p>
+                <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+                  <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${qualitySoftClass(xb.value)}`}>
+                    interval {xb.low.toFixed(1)}–{xb.high.toFixed(1)} b
+                  </span>
+                  <span className="rounded-full border border-line-strong bg-surface-2 px-3 py-1 text-xs text-copy-secondary">
+                    jistota {xb.confidence} %
+                  </span>
+                </div>
+                {!xb.hasTip && (
+                  <p className="mt-2 text-[11px] text-copy-muted">Po uložení konkrétního tipu se odhad ještě zpřesní.</p>
+                )}
+              </div>
             </div>
-          ))}
-        </div>
+          </div>
+
+          <div className="space-y-3">
+            <div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-copy-secondary">Faktory ovlivňující xB</div>
+              <p className="mt-1 text-[11px] leading-relaxed text-copy-muted">
+                Hodnota říká, kolik bodů ti daný faktor historicky naznačuje. „Vliv“ ukazuje, jak silně je započtený do výsledku.
+              </p>
+            </div>
+            <QualityLegend />
+            <div className="grid gap-2.5 sm:grid-cols-2">
+              {xb.factors.map((factor) => {
+                const color = qualityColor(factor.value);
+                return (
+                  <div
+                    key={factor.key}
+                    className="rounded-2xl border bg-surface-1/70 p-3"
+                    style={{ borderColor: qualityColor(factor.value, 0, 10, false, 0.28) }}
+                  >
+                    <div className="flex items-start gap-2.5">
+                      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-surface-3 text-base">{factorIcon[factor.key]}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-2">
+                          <span className="text-[12px] font-semibold leading-tight text-copy-primary">{factor.label}</span>
+                          <span className="font-display text-xl font-bold tabular-nums" style={{ color }}>{factor.value.toFixed(1)}</span>
+                        </div>
+                        <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3">
+                          <div className="h-full rounded-full quality-gradient" style={{ width: `${Math.max(3, factor.value * 10)}%` }} />
+                        </div>
+                        <p className="mt-2 text-[10.5px] leading-relaxed text-copy-muted">{factor.description}</p>
+                        <div className="mt-2 flex flex-wrap gap-1.5 text-[9.5px] font-semibold uppercase tracking-wide text-copy-muted">
+                          <span className="rounded-full border border-line-subtle px-2 py-0.5">vliv {Math.round(factor.weight * 100)} %</span>
+                          <span className="rounded-full border border-line-subtle px-2 py-0.5">
+                            {factor.key === 'tip' ? `${factor.sample} vstupů modelu` : `${factor.sample} tipů`}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-r from-violet-500/10 to-state-info/5 p-3.5">
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-300">🤖 Shrnutí xB</div>
+            <p className="mt-1.5 text-[12.5px] leading-relaxed text-copy-secondary">{xb.explanation}</p>
+          </div>
+        </>
+      )}
+
+      <div className="space-y-4 border-t border-line-subtle pt-5">
+        <TeamFormContent data={data} />
+        <MutualMatchesContent data={data} integrated />
       </div>
 
-      <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-3">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-blue-300/80">🤖 Komentář xB</div>
-        <p className="mt-1.5 text-[12.5px] leading-relaxed text-slate-100/65">{xb.explanation}</p>
-      </div>
-
-      <p className="text-[10.5px] leading-snug text-slate-300/35">
-        xB je statistický odhad, ne garantovaný bodový zisk. Model se bude během sezony zpřesňovat podle tvých nových tipů a výsledků Chance ligy.
+      <p className="text-[10.5px] leading-snug text-copy-muted">
+        xB se během sezony průběžně přepočítává. Přípravné zápasy se do dlouhodobého hodnocení nezahrnují.
       </p>
     </div>
   );

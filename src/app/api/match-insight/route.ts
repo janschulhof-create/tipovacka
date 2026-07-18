@@ -4,7 +4,13 @@ import { getSessionPlayer } from '@/lib/auth';
 import h2hData from '@/data/h2h.json';
 import historie from '@/data/historie.json';
 import { canonTeam } from '@/lib/teamAliases';
-import { expectedPointsForTip, predictMatch, type TeamForm } from '@/lib/predict';
+import {
+  computePersonalXb,
+  expectedPointsForTip,
+  predictMatch,
+  type TeamForm,
+  type XbHistoryRow,
+} from '@/lib/predict';
 
 export const dynamic = 'force-dynamic';
 
@@ -40,29 +46,16 @@ interface ArchiveMatch {
 }
 
 interface PlayedMatch {
+  id: number;
   home_team: string;
   away_team: string;
   home_score: number;
   away_score: number;
   kickoff: string;
+  source_league: string | null;
+  round: number;
 }
 
-interface XbFactor {
-  key: 'h2h' | 'home' | 'away' | 'overall' | 'season' | 'tip';
-  label: string;
-  value: number;
-  sample: number;
-}
-
-interface XbPrediction {
-  value: number;
-  low: number;
-  high: number;
-  confidence: number;
-  factors: XbFactor[];
-  explanation: string;
-  hasTip: boolean;
-}
 
 export async function GET(req: Request) {
   const matchId = Number(new URL(req.url).searchParams.get('match'));
@@ -151,7 +144,7 @@ export async function GET(req: Request) {
 
   const { data: playedData } = await sb
     .from('matches')
-    .select('home_team, away_team, home_score, away_score, kickoff')
+    .select('id, home_team, away_team, home_score, away_score, kickoff, source_league, round')
     .eq('season_id', match.season_id)
     .eq('status', 'finished')
     .not('home_score', 'is', null)
@@ -214,67 +207,47 @@ export async function GET(req: Request) {
     away: formatForm(awayRecent, teams.away),
   };
 
-  // Personalizované očekávané body (xB) jsou zatím pouze pro řádné zápasy Chance ligy.
+  // Personalizované očekávané body (xB) jsou pouze pro řádné zápasy Chance ligy.
   // Příprava má jiný zdroj a do dlouhodobého modelu se nezapočítává.
-  let xb: XbPrediction | null = null;
+  let xb = null;
   if (player && match.source_league === 'cze.1' && Number(match.round) > 0) {
-    type ArchiveTipRow = { home: string; away: string; points: number };
-    const archiveTips: ArchiveTipRow[] = archive.rounds.flatMap((round) =>
+    const archiveTips: XbHistoryRow[] = archive.rounds.flatMap((round) =>
       round.matches.flatMap((m) => {
         const tip = m.tips[player.name];
         if (!tip || tip.pts == null || m.hs == null || m.as == null) return [];
-        return [{ home: canonTeam(m.home), away: canonTeam(m.away), points: tip.pts }];
+        return [{ home: m.home, away: m.away, points: tip.pts }];
       }),
     );
 
-    const avg = (rows: ArchiveTipRow[]) =>
-      rows.length ? rows.reduce((sum, row) => sum + row.points, 0) / rows.length : null;
-    const overallRaw = avg(archiveTips) ?? 3;
-    const pairRows = archiveTips.filter((row) => [row.home, row.away].sort().join('|') === currentPair);
-    const homeCanon = canonTeam(teams.home);
-    const awayCanon = canonTeam(teams.away);
-    const homeRows = archiveTips.filter((row) => row.home === homeCanon || row.away === homeCanon);
-    const awayRows = archiveTips.filter((row) => row.home === awayCanon || row.away === awayCanon);
+    const allArchivePoints = archive.rounds.flatMap((round) =>
+      round.matches.flatMap((m) =>
+        Object.values(m.tips)
+          .map((tip) => tip.pts)
+          .filter((points): points is number => points != null && Number.isFinite(points)),
+      ),
+    );
+    const priorAverage = allArchivePoints.length
+      ? allArchivePoints.reduce((sum, points) => sum + points, 0) / allArchivePoints.length
+      : 3.2;
 
-    const shrink = (raw: number | null, sample: number, priorMatches: number) =>
-      raw == null ? overallRaw : (raw * sample + overallRaw * priorMatches) / (sample + priorMatches);
-
-    const factors: XbFactor[] = [
-      { key: 'overall', label: 'Celková úspěšnost', value: overallRaw, sample: archiveTips.length },
-      { key: 'home', label: `Úspěšnost u ${teams.home}`, value: shrink(avg(homeRows), homeRows.length, 8), sample: homeRows.length },
-      { key: 'away', label: `Úspěšnost u ${teams.away}`, value: shrink(avg(awayRows), awayRows.length, 8), sample: awayRows.length },
-    ];
-    if (pairRows.length) {
-      factors.unshift({
-        key: 'h2h',
-        label: 'Historie vzájemných zápasů',
-        value: shrink(avg(pairRows), pairRows.length, 3),
-        sample: pairRows.length,
-      });
-    }
-
-    const { data: seasonPredictions } = await sb
-      .from('predictions')
-      .select('points, matches!inner(season_id, source_league, status, round)')
-      .eq('player_id', player.id)
-      .eq('matches.season_id', match.season_id)
-      .eq('matches.source_league', 'cze.1')
-      .eq('matches.status', 'finished')
-      .gt('matches.round', 0)
-      .not('points', 'is', null);
-
-    const seasonPoints = ((seasonPredictions as unknown as { points: number | null }[]) ?? [])
-      .map((row) => row.points)
-      .filter((points): points is number => points != null && Number.isFinite(points));
-    if (seasonPoints.length) {
-      const raw = seasonPoints.reduce((sum, points) => sum + points, 0) / seasonPoints.length;
-      factors.push({
-        key: 'season',
-        label: 'Forma tipera v této sezoně',
-        value: shrink(raw, seasonPoints.length, 5),
-        sample: seasonPoints.length,
-      });
-    }
+    const regularFinished = played.filter(
+      (playedMatch) => playedMatch.source_league === 'cze.1' && Number(playedMatch.round) > 0,
+    );
+    const regularIds = regularFinished.map((playedMatch) => playedMatch.id);
+    const { data: seasonPredictions } = regularIds.length
+      ? await sb
+          .from('predictions')
+          .select('match_id, points')
+          .eq('player_id', player.id)
+          .in('match_id', regularIds)
+      : { data: [] };
+    const seasonPointMap = new Map(
+      (((seasonPredictions as unknown as { match_id: number; points: number | null }[]) ?? []))
+        .filter((row) => row.points != null && Number.isFinite(row.points))
+        .map((row) => [row.match_id, row.points as number]),
+    );
+    // Chybějící tip na dohraném ligovém zápase je skutečných 0 bodů.
+    const seasonPoints = regularFinished.map((playedMatch) => seasonPointMap.get(playedMatch.id) ?? 0);
 
     const { data: currentPrediction } = await sb
       .from('predictions')
@@ -283,47 +256,24 @@ export async function GET(req: Request) {
       .eq('match_id', matchId)
       .maybeSingle();
 
+    let tipExpectedPoints: number | null = null;
     if (prediction && currentPrediction) {
       const ph = Number(currentPrediction.predicted_home);
       const pa = Number(currentPrediction.predicted_away);
       if (Number.isFinite(ph) && Number.isFinite(pa)) {
-        factors.push({
-          key: 'tip',
-          label: `Tvůj tip ${ph}:${pa}`,
-          value: expectedPointsForTip(prediction.lambdaHome, prediction.lambdaAway, ph, pa),
-          sample: prediction.sample,
-        });
+        tipExpectedPoints = expectedPointsForTip(prediction.lambdaHome, prediction.lambdaAway, ph, pa);
       }
     }
 
-    const baseWeights: Record<XbFactor['key'], number> = {
-      h2h: 0.30,
-      home: 0.16,
-      away: 0.14,
-      overall: 0.25,
-      season: Math.min(0.18, 0.04 + seasonPoints.length * 0.012),
-      tip: factors.some((factor) => factor.key === 'tip') ? 0.28 : 0,
-    };
-    const activeWeight = factors.reduce((sum, factor) => sum + baseWeights[factor.key], 0);
-    const value = factors.reduce((sum, factor) => sum + factor.value * baseWeights[factor.key], 0) / activeWeight;
-    const evidence = archiveTips.length + pairRows.length * 4 + homeRows.length * 0.4 + awayRows.length * 0.4 + seasonPoints.length * 5;
-    const confidence = Math.round(Math.max(38, Math.min(92, 42 + Math.log1p(evidence) * 8 + (factors.some((f) => f.key === 'tip') ? 5 : 0))));
-    const spread = Math.max(1.2, 3.4 - confidence / 38);
-    const rounded = Math.max(0, Math.min(10, value));
-    const strongest = [...factors].sort((a, b) => b.value - a.value)[0];
-    const weakest = [...factors].sort((a, b) => a.value - b.value)[0];
-
-    xb = {
-      value: Number(rounded.toFixed(1)),
-      low: Number(Math.max(0, rounded - spread).toFixed(1)),
-      high: Number(Math.min(10, rounded + spread).toFixed(1)),
-      confidence,
-      factors,
-      explanation: strongest.value - weakest.value >= 1.2
-        ? `${strongest.label} ti historicky sedí nejlépe. Největší rezervu máš v oblasti „${weakest.label}“.`
-        : 'Jednotlivé historické faktory jsou vyrovnané, model proto čeká výkon blízko tvého dlouhodobého průměru.',
-      hasTip: factors.some((factor) => factor.key === 'tip'),
-    };
+    xb = computePersonalXb({
+      home: teams.home,
+      away: teams.away,
+      archiveTips,
+      priorAverage,
+      seasonPoints,
+      tipExpectedPoints,
+      tipSample: prediction?.sample ?? 0,
+    });
   }
 
   return NextResponse.json({

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import type { RankRow } from '@/lib/seasonStats';
+import { qualityColor } from '@/lib/points';
 
 /** Zkrátí hodnotu na úvodní metriku (např. "63× jen vítěz (4 b)" → "63×"). */
 function shortVal(val: string): string {
@@ -21,7 +22,7 @@ export function StatCard({
   label: string;
   rows: RankRow[];
   accent: string;
-  /** Obarví hodnotu každého řádku škálou min→max (červená→zelená) podle r.n. */
+  /** Obarví hodnotu škálou červená → žlutá → modrá → zelená → fialová podle r.n. */
   scale?: boolean;
   /** Obrátí škálu – 1. místo červené, poslední zelené (pro „špatná" prvenství). */
   scaleInvert?: boolean;
@@ -35,10 +36,7 @@ export function StatCard({
   const worst = scale ? rows[rows.length - 1]?.n : undefined;
   const scaleColor = (n?: number): string | undefined => {
     if (!scale || typeof n !== 'number' || typeof best !== 'number' || typeof worst !== 'number') return undefined;
-    if (best === worst) return 'hsl(140, 64%, 56%)';
-    let t = Math.max(0, Math.min(1, (n - worst) / (best - worst))); // 1 = 1. místo, 0 = poslední
-    if (scaleInvert) t = 1 - t; // špatné prvenství: 1. místo červené
-    return `hsl(${Math.round(t * 140)}, 70%, 56%)`;
+    return qualityColor(n, worst, best, scaleInvert);
   };
 
   return (

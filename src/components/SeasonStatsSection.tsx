@@ -1,9 +1,11 @@
 import { StatsCards } from '@/components/StatsCards';
+import { SeasonXbTable } from '@/components/StandingsTable';
 import { SeasonStats } from '@/components/SeasonStats';
 import {
   getGoalStats,
   getMisses,
   getSeasonTipRounds,
+  getSeasonXbProjection,
   getStoppageStats,
   getWizardAndContinentStats,
 } from '@/lib/pageQueries';
@@ -56,6 +58,32 @@ export function SeasonStatsSkeleton() {
       {Array.from({ length: 8 }).map((_, i) => (
         <div key={i} className="h-28 animate-pulse rounded-2xl border border-terrain-700 bg-terrain-900/40" />
       ))}
+    </div>
+  );
+}
+
+
+/** Projekci konce sezony streamujeme samostatně, aby nezpomalovala první vykreslení zápasů. */
+export async function SeasonXbSection({
+  seasonId,
+  currentPlayerId,
+}: {
+  seasonId: number;
+  currentPlayerId?: number;
+}) {
+  const rows = await getSeasonXbProjection(seasonId);
+  return <SeasonXbTable rows={rows} currentPlayerId={currentPlayerId} />;
+}
+
+export function SeasonXbSkeleton() {
+  return (
+    <div className="panel-flush overflow-hidden">
+      <div className="h-16 animate-pulse border-b border-line-subtle bg-surface-2/60" />
+      <div className="space-y-2 p-3">
+        {Array.from({ length: 5 }).map((_, index) => (
+          <div key={index} className="h-16 animate-pulse rounded-xl bg-surface-2/55" />
+        ))}
+      </div>
     </div>
   );
 }

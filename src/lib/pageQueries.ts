@@ -11,6 +11,7 @@ import {
   getRoundLabels as readRoundLabels,
   getRoundMatches as readRoundMatches,
   getSeasonChartData as readSeasonChartData,
+  getSeasonXbProjection as readSeasonXbProjection,
   getSeasonRounds as readSeasonRounds,
   getSeasonTipRounds as readSeasonTipRounds,
   getStandings as readStandings,
@@ -50,6 +51,12 @@ export const getRoundMatches = unstable_cache(
   async (seasonId: number, round: number) => readRoundMatches(seasonId, round),
   ['page-round-matches-v1'],
   { revalidate: 10 },
+);
+
+export const getSeasonXbProjection = unstable_cache(
+  async (seasonId: number) => readSeasonXbProjection(seasonId),
+  ['page-season-xb-v1'],
+  { revalidate: 60 },
 );
 
 export const getStandings = unstable_cache(

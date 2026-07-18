@@ -20,7 +20,7 @@ import { getCompetition } from '@/lib/competitions';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { Suspense } from 'react';
-import { SeasonStatsSection, SeasonStatsSkeleton } from '@/components/SeasonStatsSection';
+import { SeasonStatsSection, SeasonStatsSkeleton, SeasonXbSection, SeasonXbSkeleton } from '@/components/SeasonStatsSection';
 import { LiveRefresh } from '@/components/LiveRefresh';
 import Link from 'next/link';
 import { getSessionPlayer } from '@/lib/auth';
@@ -145,6 +145,14 @@ export default async function Home({
           <section>
             <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
           </section>
+
+          {competition.key === 'liga' && (
+            <section>
+              <Suspense fallback={<SeasonXbSkeleton />}>
+                <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} />
+              </Suspense>
+            </section>
+          )}
 
           {chart.matches.length > 0 && (
             <section className="space-y-3">

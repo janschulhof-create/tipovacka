@@ -1,6 +1,7 @@
 'use client';
 
 import { useRef, useState } from 'react';
+import { qualityColor } from '@/lib/points';
 
 type MatchPoint = { round: number; kickoff?: string; pts: Record<string, number> };
 type View = 'lineDay' | 'lineRound' | 'bar';
@@ -20,11 +21,8 @@ const wdIdxOf = (iso: string) => {
   return dow === 0 ? 7 : dow;
 };
 
-// barevná škála dle pořadí: nejlepší (i=0) zelená … nejhorší (i=n-1) červená
-const rankColor = (i: number, n: number) => {
-  const r = n <= 1 ? 0 : i / (n - 1);
-  return `hsl(${Math.round((1 - r) * 130)},66%,46%)`;
-};
+// barevná škála dle pořadí: nejlepší fialová → zelená → modrá → žlutá → červená.
+const rankColor = (i: number, n: number) => qualityColor(n - 1 - i, 0, Math.max(1, n - 1));
 
 export function StandingsChart({
   matches,

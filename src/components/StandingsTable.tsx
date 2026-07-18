@@ -3,6 +3,8 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import type { StandingRow } from '@/lib/types';
+import type { SeasonXbRow } from '@/lib/queries';
+import { qualityColor } from '@/lib/points';
 
 export function StandingsTable({
   rows,
@@ -20,14 +22,13 @@ export function StandingsTable({
   const liveData = rows.map((r) => ({ r, inc: liveInc[r.name] ?? 0, total: r.points + (liveInc[r.name] ?? 0) }));
   const sorted = showLive ? [...liveData].sort((a, b) => b.total - a.total) : liveData;
 
-  // Barevná škála bodů: nejvíc = zelená, nejmíň = červená (stejná logika jako karty statistik).
+  // Barevná škála bodů: nejlepší fialová → zelená → modrá → žlutá → červená.
   const totalsArr = sorted.map((d) => (showLive ? d.total : d.r.points));
   const maxPts = totalsArr.length ? Math.max(...totalsArr) : 0;
   const minPts = totalsArr.length ? Math.min(...totalsArr) : 0;
   const ptsColor = (v: number): string | undefined => {
-    if (totalsArr.length < 2 || maxPts === minPts) return undefined;
-    const t = Math.max(0, Math.min(1, (v - minPts) / (maxPts - minPts)));
-    return `hsl(${Math.round(t * 140)}, 70%, 56%)`;
+    if (totalsArr.length < 2) return undefined;
+    return qualityColor(v, minPts, maxPts);
   };
 
   return (
@@ -118,6 +119,100 @@ export function StandingsTable({
           })}
         </ol>
       )}
+    </div>
+  );
+}
+
+
+/** Projekce konečných bodů pro celou Chance ligu (bez kola Příprava). */
+export function SeasonXbTable({
+  rows,
+  currentPlayerId,
+}: {
+  rows: SeasonXbRow[];
+  currentPlayerId?: number;
+}) {
+  if (!rows.length) return null;
+
+  const min = Math.min(...rows.map((row) => row.projected_points));
+  const max = Math.max(...rows.map((row) => row.projected_points));
+  const maxExpected = Math.max(1, ...rows.map((row) => row.projected_points));
+  const finished = rows[0]?.finished_matches ?? 0;
+  const total = rows[0]?.total_matches ?? 0;
+
+  return (
+    <div className="panel-flush">
+      <div className="border-b border-line-subtle px-4 py-3">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="eyebrow">
+              <span className="flag-chip" /> xB na konci sezony
+            </h2>
+            <p className="mt-1 text-[11px] leading-snug text-copy-muted">
+              Odhad konečných bodů podle celého ligového rozpisu.
+            </p>
+          </div>
+          <span className="shrink-0 rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-200">
+            {finished}/{total}
+          </span>
+        </div>
+      </div>
+
+      <ol className="space-y-1.5 p-3">
+        {rows.map((row, index) => {
+          const mine = currentPlayerId === row.player_id;
+          const color = qualityColor(row.projected_points, min, max);
+          const width = Math.max(8, (row.projected_points / maxExpected) * 100);
+          return (
+            <li key={row.player_id}>
+              <Link
+                prefetch={false}
+                href={`/hrac/${row.player_id}`}
+                className={`group block rounded-xl border px-3 py-2.5 transition ${
+                  mine
+                    ? 'border-violet-400/30 bg-violet-500/10 shadow-[0_10px_30px_-20px_rgba(164,106,247,.9)]'
+                    : 'border-transparent hover:border-line-subtle hover:bg-surface-2/55'
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <span className={`control-badge h-7 w-7 text-xs ${index < 3 ? `control-badge--${index + 1}` : ''}`}>
+                    {index + 1}
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5">
+                      <span className="truncate text-sm font-semibold text-copy-primary">{row.name}</span>
+                      {mine && <span className="text-[9px] font-bold uppercase tracking-wide text-violet-300">ty</span>}
+                    </div>
+                    <div className="mt-0.5 text-[10.5px] text-copy-muted">
+                      dosud <b className="tabular-nums text-copy-secondary">{row.actual_points}</b> · zbývá {row.remaining_matches} zápasů · Ø xB {row.avg_xb_remaining.toFixed(1)}
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <div className="font-display text-xl font-bold tabular-nums leading-none" style={{ color }}>
+                      {row.projected_points}
+                    </div>
+                    <div className="mt-0.5 text-[9px] uppercase tracking-[0.12em] text-copy-muted">bodů</div>
+                  </div>
+                </div>
+                <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3">
+                  <div
+                    className="h-full rounded-full quality-gradient transition-[width] duration-300"
+                    style={{ width: `${width}%` }}
+                  />
+                </div>
+                <div className="mt-1.5 flex items-center justify-between text-[9.5px] text-copy-muted">
+                  <span>+{row.expected_remaining.toFixed(1)} xB do konce</span>
+                  <span>jistota {row.confidence} %</span>
+                </div>
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className="border-t border-line-subtle px-4 py-3 text-[10.5px] leading-relaxed text-copy-muted">
+        <b className="text-copy-secondary">Jak to číst:</b> odehrané ligové zápasy používají skutečné body, zbytek rozpisu osobní xB. Kolo Příprava se nepočítá. Tajné tipy před výkopem tabulka neprozrazuje.
+      </div>
     </div>
   );
 }

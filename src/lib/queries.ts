@@ -3,6 +3,8 @@ import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player 
 import { calculatePoints } from './scoring';
 import { CONTINENTS, matchContinents, type ContinentKey } from './continents';
 import type { CompetitionKey } from './competitions';
+import historie from '@/data/historie.json';
+import { computePersonalXb, type XbHistoryRow } from './predict';
 
 export interface ActiveSeason {
   id: number;
@@ -143,6 +145,158 @@ export async function getRoundMatches(seasonId: number, round: number): Promise<
     .eq('round', round)
     .order('kickoff', { ascending: true });
   return (data as Match[]) ?? [];
+}
+
+
+export interface SeasonXbRow {
+  player_id: number;
+  name: string;
+  actual_points: number;
+  finished_matches: number;
+  remaining_matches: number;
+  total_matches: number;
+  expected_remaining: number;
+  projected_points: number;
+  avg_xb_remaining: number;
+  confidence: number;
+}
+
+/**
+ * Odhad konečného bodového zisku v Chance lize.
+ *
+ * - Příprava (round 0) se zcela ignoruje.
+ * - Odehrané zápasy používají skutečné body, včetně 0 za chybějící tip.
+ * - Zbývající rozpis se odhaduje zápas po zápasu podle osobní historie hráče,
+ *   konkrétních týmů, H2H a postupně i podle formy tipéra v aktuální sezoně.
+ * - Neodehrané tajné tipy se do veřejného pořadí záměrně nezapočítávají.
+ */
+export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbRow[]> {
+  const sb = createServerReadClient();
+  const [{ data: playerData }, { data: matchData }] = await Promise.all([
+    sb.from('players').select('id, name, is_active').eq('is_active', true).order('name'),
+    sb
+      .from('matches')
+      .select('id, round, home_team, away_team, status')
+      .eq('season_id', seasonId)
+      .eq('source_league', 'cze.1')
+      .gt('round', 0)
+      .neq('status', 'cancelled')
+      .order('kickoff', { ascending: true }),
+  ]);
+
+  const players = (playerData as Player[]) ?? [];
+  type ProjectionMatch = {
+    id: number;
+    round: number;
+    home_team: string;
+    away_team: string;
+    status: Match['status'];
+  };
+  const matches = (matchData as ProjectionMatch[]) ?? [];
+  if (!players.length || !matches.length) return [];
+
+  // PostgREST může mít limit 1000 řádků. Predikce proto čteme stránkovaně,
+  // aby projekce fungovala i na konci sezony (240 × 8 tipů = 1920 řádků).
+  type ProjectionTip = { player_id: number; match_id: number; points: number | null };
+  const predictionRows: ProjectionTip[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data } = await sb
+      .from('predictions')
+      .select('player_id, match_id, points')
+      .in('match_id', matches.map((match) => match.id))
+      .order('match_id', { ascending: true })
+      .order('player_id', { ascending: true })
+      .range(from, from + pageSize - 1);
+    const page = (data as ProjectionTip[]) ?? [];
+    predictionRows.push(...page);
+    if (page.length < pageSize) break;
+  }
+
+  const archive = historie as unknown as {
+    rounds: {
+      matches: {
+        home: string;
+        away: string;
+        hs: number | null;
+        as: number | null;
+        tips: Record<string, { h: number; a: number; pts: number | null }>;
+      }[];
+    }[];
+  };
+
+  const allArchivePoints = archive.rounds.flatMap((round) =>
+    round.matches.flatMap((match) =>
+      Object.values(match.tips)
+        .map((tip) => tip.pts)
+        .filter((points): points is number => points != null && Number.isFinite(points)),
+    ),
+  );
+  const priorAverage = allArchivePoints.length
+    ? allArchivePoints.reduce((sum, points) => sum + points, 0) / allArchivePoints.length
+    : 3.2;
+
+  const tipsByPlayerMatch = new Map<string, number>();
+  for (const row of predictionRows) {
+    if (row.points != null && Number.isFinite(row.points)) {
+      tipsByPlayerMatch.set(`${row.player_id}:${row.match_id}`, row.points);
+    }
+  }
+
+  const finished = matches.filter((match) => match.status === 'finished');
+  const remaining = matches.filter((match) => match.status !== 'finished');
+
+  const rows: SeasonXbRow[] = players.map((player) => {
+    const archiveTips: XbHistoryRow[] = archive.rounds.flatMap((round) =>
+      round.matches.flatMap((match) => {
+        const tip = match.tips[player.name];
+        if (!tip || tip.pts == null || match.hs == null || match.as == null) return [];
+        return [{ home: match.home, away: match.away, points: tip.pts }];
+      }),
+    );
+
+    // Chybějící tip na dohraném zápase je reálně 0 bodů a má být součástí formy.
+    const seasonPoints = finished.map(
+      (match) => tipsByPlayerMatch.get(`${player.id}:${match.id}`) ?? 0,
+    );
+    const actualPoints = seasonPoints.reduce((sum, points) => sum + points, 0);
+
+    let expectedRemaining = 0;
+    let confidenceSum = 0;
+    for (const match of remaining) {
+      const xb = computePersonalXb({
+        home: match.home_team,
+        away: match.away_team,
+        archiveTips,
+        priorAverage,
+        seasonPoints,
+      });
+      expectedRemaining += xb.value;
+      confidenceSum += xb.confidence;
+    }
+
+    const avgXbRemaining = remaining.length ? expectedRemaining / remaining.length : 0;
+    const confidence = remaining.length
+      ? Math.round(confidenceSum / remaining.length)
+      : Math.min(99, 80 + Math.min(19, finished.length));
+
+    return {
+      player_id: player.id,
+      name: player.name,
+      actual_points: actualPoints,
+      finished_matches: finished.length,
+      remaining_matches: remaining.length,
+      total_matches: matches.length,
+      expected_remaining: Number(expectedRemaining.toFixed(1)),
+      projected_points: Math.round(actualPoints + expectedRemaining),
+      avg_xb_remaining: Number(avgXbRemaining.toFixed(1)),
+      confidence,
+    };
+  });
+
+  return rows.sort(
+    (a, b) => b.projected_points - a.projected_points || b.actual_points - a.actual_points || a.name.localeCompare(b.name, 'cs'),
+  );
 }
 
 export async function getStandings(seasonId: number): Promise<StandingRow[]> {

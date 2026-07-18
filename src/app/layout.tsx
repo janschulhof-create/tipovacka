@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from 'next';
 import Link from 'next/link';
-import { Inter, Oswald } from 'next/font/google';
 import './globals.css';
 import { SideRail, BottomNav } from '@/components/Nav';
 import { BrandMark } from '@/components/Brand';
@@ -8,23 +7,7 @@ import { AuthStatus } from '@/components/AuthStatus';
 import { getSessionPlayer } from '@/lib/auth';
 import { ServiceWorkerRegister } from '@/components/ServiceWorkerRegister';
 
-// Jen řezy, které se opravdu používají → místo velkých variabilních souborů
-// (jeden měl 85 kB) se stáhnou malé statické. Šetří ~100 kB při startu.
-const inter = Inter({
-  subsets: ['latin', 'latin-ext'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-sans',
-  display: 'swap',
-});
-// Nadpisový font nepreloadujeme – text se díky display:swap vykreslí hned
-// náhradním fontem a Oswald se doplní, jakmile dorazí.
-const oswald = Oswald({
-  subsets: ['latin', 'latin-ext'],
-  weight: ['600', '700'],
-  variable: '--font-display',
-  display: 'swap',
-  preload: false,
-});
+// Fonty používají rychlý systémový stack z Tailwindu; žádný externí požadavek při startu PWA.
 
 export const metadata: Metadata = {
   title: 'Tipovačka',
@@ -41,7 +24,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: '#0b1220',
+  themeColor: '#07101d',
   width: 'device-width',
   initialScale: 1,
   // maximumScale záměrně NEnastavujeme – blokovalo by přiblížení dvěma prsty.
@@ -50,7 +33,7 @@ export const viewport: Viewport = {
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const player = await getSessionPlayer();
   return (
-    <html lang="cs" className={`${inter.variable} ${oswald.variable}`}>
+    <html lang="cs">
       <body className="min-h-dvh font-sans antialiased">
         <ServiceWorkerRegister />
         <SideRail />

@@ -591,7 +591,7 @@ function MatchExpanded({
   const hasLineups = !!lu && lu.home.starters.length + lu.away.starters.length > 0;
   const hasRoast = m.status === 'finished' && (!!m.roast || (locked && preds.some((p) => p.points != null)));
 
-  // H2H i predikce dávají smysl jen PŘED zápasem (když se tipuje).
+  // Predikce dává smysl hlavně PŘED zápasem. U Chance ligy je H2H součástí xB predikce.
   // Jakmile se hraje / je dohráno, mají přednost Průběh, Statistiky a Hodnocení.
   const showPrediction = m.status === 'scheduled';
 
@@ -602,8 +602,8 @@ function MatchExpanded({
     [
       { id: 'tipy' as const, label: 'Tipy' },
       hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení' } : null,
-      showPrediction ? { id: 'h2h' as const, label: 'H2H' } : null,
-      showPrediction && isChanceLeague ? { id: 'xb' as const, label: 'xB' } : null,
+      showPrediction && !isChanceLeague ? { id: 'h2h' as const, label: 'H2H' } : null,
+      showPrediction && isChanceLeague ? { id: 'xb' as const, label: 'xB predikce' } : null,
       showPrediction && !isChanceLeague ? { id: 'predikce' as const, label: 'Predikce' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
       hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
@@ -614,7 +614,7 @@ function MatchExpanded({
   const [tab, setTab] = useState<TabId>('tipy');
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
-  // data pro H2H/Predikci se načtou až při otevření příslušné záložky
+  // Data pro H2H / xB / predikci se načtou až při otevření příslušné záložky.
   const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce' || active === 'xb');
 
   return (
