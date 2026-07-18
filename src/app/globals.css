@@ -307,3 +307,36 @@ textarea {
     height: calc(100dvh - 64px);
   }
 }
+
+/* Profil — pracovní AI analytický dashboard podle dodaného návrhu. */
+.ai-analysis-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 12px;
+}
+
+.ai-analysis-card {
+  min-height: 330px;
+}
+
+@media (min-width: 680px) {
+  .ai-analysis-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1180px) {
+  .ai-analysis-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1600px) {
+  .ai-analysis-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
+  .ai-analysis-card {
+    min-height: 350px;
+  }
+}

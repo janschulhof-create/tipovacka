@@ -3,6 +3,7 @@ import { getActiveSeasonId, getPlayerProfile, getStandings, getH2H } from '@/lib
 import { getSessionPlayer } from '@/lib/auth';
 import { createServerAuthClient } from '@/lib/supabase/server';
 import { ProfileView } from '@/components/ProfileView';
+import { AIAnalysisSection } from '@/components/AIAnalysisSection';
 import { EmailForm } from '@/components/EmailForm';
 import { ChangePasswordForm } from '@/components/ChangePasswordForm';
 import { signOutAction } from '@/app/ucet/actions';
@@ -64,7 +65,10 @@ export default async function ProfilPage({
   return (
     <main className="pb-10">
       {profile ? (
-        <ProfileView profile={profile} h2h={h2h} others={others} vsId={vsId} basePath="/profil" title="Můj profil" />
+        <>
+          <AIAnalysisSection profile={profile} />
+          <ProfileView profile={profile} h2h={h2h} others={others} vsId={vsId} basePath="/profil" title="Můj profil" />
+        </>
       ) : (
         <p className="px-1 py-6 text-sm text-slate-100/50">Zatím žádné statistiky — začni tipovat.</p>
       )}
