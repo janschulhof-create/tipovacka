@@ -342,12 +342,6 @@ textarea {
 }
 
 
-@media (min-width: 1600px) {
-  .ai-analysis-card--xb {
-    grid-column: span 2;
-  }
-}
-
 /* AI profil — desktopový UX audit: čitelnost, kontrast a pohodlné ovládání.
    Mobilní typografie zůstává beze změny. */
 @media (min-width: 1024px) {

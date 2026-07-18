@@ -806,7 +806,7 @@ export function AIAnalysisSection({
         </div>
 
       <div key={selectedMatch.id} className="ai-analysis-grid">
-        <AnalysisCard className="ai-analysis-card--xb">
+        <AnalysisCard>
           <CardHeader number={1} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} tone={xbTone} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
             <div className="mb-2 flex items-end justify-between gap-3">
@@ -840,11 +840,11 @@ export function AIAnalysisSection({
               </Link>
             </div>
             {xbImpactFactors.length > 0 ? (
-              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <div className="mt-3 space-y-2">
                 {xbImpactFactors.slice(0, 2).map((factor) => {
                   const impact = factor.impact ?? 0;
                   return (
-                    <div key={factor.key} className="rounded-lg border border-line-subtle/70 bg-app-deep/40 px-3 py-2.5">
+                    <div key={factor.key} className="rounded-lg border border-line-subtle/70 bg-app-deep/40 px-3 py-2">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0 text-[9px] leading-relaxed text-copy-primary">{factorImpactLabel(factor.key, selectedMatch.homeTeam, selectedMatch.awayTeam, selectedLabel)}</div>
                         <strong className={`shrink-0 font-display text-lg tabular-nums ${impact > 0 ? 'text-state-success' : impact < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{impact > 0 ? '+' : ''}{impact.toFixed(1)}<span className="text-[11px]"> b</span></strong>
