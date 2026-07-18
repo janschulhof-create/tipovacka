@@ -652,7 +652,6 @@ export function AIAnalysisSection({
   const selectedConfidence = selectedXbData?.confidence ?? 0;
   const currentConfidence = currentXbData?.confidence ?? 0;
   const xbDelta = selectedXbData && currentXbData ? selectedXb - currentXb : null;
-  const confidenceDelta = selectedXbData && currentXbData ? selectedConfidence - currentConfidence : null;
   const scoreDistance = Math.abs(selected.home - crowd.avgHome) + Math.abs(selected.away - crowd.avgAway);
   const outcomeAgainstCrowd = outcome(selected) !== model.dominant.key;
   const crowdDifference = Math.round(clamp(scoreDistance * 27 + (outcomeAgainstCrowd ? 16 : 0), 0, 100));
@@ -742,12 +741,8 @@ export function AIAnalysisSection({
     ? xBTimeline[xBTimeline.length - 1] - xBTimeline[xBTimeline.length - 2]
     : 0;
   const xbTrendPositive = xbTrendDelta >= 0;
-  const contextFactor = xbFactorValue('context', model.readability);
-  const overallFactor = xbFactorValue('overall', model.success);
   const xbTone = selectedXbData ? scoreTone(selectedXb) : 'violet';
-  const confidenceSemanticTone = selectedXbData ? confidenceTone(selectedConfidence) : 'violet';
   const crowdSemanticTone = riskTone(crowdDifference);
-  const xbBaseline = selectedXbData?.factors.find((factor) => factor.key === 'overall')?.value ?? overallFactor;
   const xbImpactFactors = (selectedXbData?.factors ?? [])
     .filter((factor) => factor.key !== 'overall' && Math.abs(factor.impact ?? 0) >= 0.05)
     .sort((a, b) => Math.abs(b.impact ?? 0) - Math.abs(a.impact ?? 0))
@@ -811,7 +806,7 @@ export function AIAnalysisSection({
         </div>
 
       <div key={selectedMatch.id} className="ai-analysis-grid">
-        <AnalysisCard>
+        <AnalysisCard className="ai-analysis-card--xb">
           <CardHeader number={1} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} tone={xbTone} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
             <div className="mb-2 flex items-end justify-between gap-3">
@@ -831,53 +826,36 @@ export function AIAnalysisSection({
               <div><span className="block text-copy-muted">Tip</span><strong className="text-copy-secondary">{selectedLabel}</strong></div>
             </div>
           </div>
-          <div className={`mt-3 rounded-lg border p-3 ${toneSoftClass[xbTone]}`}>
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div className="min-w-0 flex-1">
-                <b className={toneTextClass[xbTone]}>Proč vychází xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
-                <p className="mt-1 text-[9px] leading-relaxed text-copy-muted">
-                  Základ tvoří tvoje základní hodnota xB {xbBaseline.toFixed(1)} b. Níže jsou hlavní signály, které ji pro duel {matchName} a tip {selectedLabel} posouvají nahoru nebo dolů.
-                </p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-3">
-                  <div className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2">
-                    <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Základní xB</div>
-                    <div className={`mt-1 font-display text-lg tabular-nums ${toneTextClass[scoreTone(overallFactor)]}`}>{xbBaseline.toFixed(1)}<span className="text-[11px]"> b</span></div>
-                    <div className="text-[8px] text-copy-muted">dlouhodobý profil</div>
-                  </div>
-                  <div className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2">
-                    <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Čitelnost duelu</div>
-                    <div className={`mt-1 font-display text-lg tabular-nums ${toneTextClass[scoreTone(contextFactor)]}`}>{contextFactor.toFixed(1)}<span className="text-[11px]"> / 10</span></div>
-                    <div className="text-[8px] text-copy-muted">forma + data zápasu</div>
-                  </div>
-                  <div className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2">
-                    <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Odlišnost od davu</div>
-                    <div className={`mt-1 font-display text-lg tabular-nums ${toneTextClass[crowdSemanticTone]}`}>{crowdDifference}<span className="text-[11px]"> %</span></div>
-                    <div className="text-[8px] text-copy-muted">míra rizika tipu</div>
-                  </div>
-                </div>
-                {xbImpactFactors.length > 0 && (
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-                    {xbImpactFactors.map((factor) => {
-                      const impact = factor.impact ?? 0;
-                      return (
-                        <div key={factor.key} className="rounded-lg border border-line-subtle/70 bg-app-deep/35 px-3 py-2.5">
-                          <div className="text-[8px] uppercase tracking-[0.14em] text-copy-muted">Faktor</div>
-                          <div className="mt-1 text-[9px] leading-relaxed text-copy-primary">{factorImpactLabel(factor.key, selectedMatch.homeTeam, selectedMatch.awayTeam, selectedLabel)}</div>
-                          <div className={`mt-2 font-display text-lg tabular-nums ${impact > 0 ? 'text-state-success' : impact < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{impact > 0 ? '+' : ''}{impact.toFixed(1)}<span className="text-[11px]"> b</span></div>
-                          <div className="text-[8px] text-copy-muted">posun výsledného xB</div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+          <div className={`mt-3 rounded-xl border p-3 ${toneSoftClass[xbTone]}`}>
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <b className={toneTextClass[xbTone]}>Co nejvíc mění xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
+                <p className="mt-1 text-[9px] leading-relaxed text-copy-muted">Nejsilnější vlivy pro duel {matchName} a tip {selectedLabel}. Zelená xB zvyšuje, červená ho snižuje.</p>
               </div>
               <Link
                 href={`/?soutez=liga&kolo=${selectedMatch.round}&zapas=${selectedMatch.id}#xb-predikce`}
                 className="shrink-0 rounded-lg border border-line-strong bg-app-deep/45 px-3 py-2 text-[9px] font-semibold text-violet-200 transition hover:border-violet-400/60 hover:bg-violet-500/10"
               >
-                Detail faktorů →
+                Detail →
               </Link>
             </div>
+            {xbImpactFactors.length > 0 ? (
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {xbImpactFactors.slice(0, 2).map((factor) => {
+                  const impact = factor.impact ?? 0;
+                  return (
+                    <div key={factor.key} className="rounded-lg border border-line-subtle/70 bg-app-deep/40 px-3 py-2.5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 text-[9px] leading-relaxed text-copy-primary">{factorImpactLabel(factor.key, selectedMatch.homeTeam, selectedMatch.awayTeam, selectedLabel)}</div>
+                        <strong className={`shrink-0 font-display text-lg tabular-nums ${impact > 0 ? 'text-state-success' : impact < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{impact > 0 ? '+' : ''}{impact.toFixed(1)}<span className="text-[11px]"> b</span></strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="mt-3 text-[9px] text-copy-muted">Pro tento duel zatím není dost dat pro rozpad hlavních vlivů.</p>
+            )}
           </div>
           {xbError && <div className="mt-2 text-[9px] text-state-danger">Jednotný xB model se nepodařilo načíst. Zkus stránku obnovit.</div>}
         </AnalysisCard>
@@ -941,13 +919,13 @@ export function AIAnalysisSection({
         </AnalysisCard>
 
         <AnalysisCard>
-          <CardHeader number={5} title="AI confidence" subtitle={`Jistota modelu pro ${matchName}.`} tone={confidenceSemanticTone} />
-          <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3 text-center">
-            <ConfidenceShield value={selectedXbData ? selectedConfidence : 0} tone={confidenceSemanticTone} />
-            <div className={`mx-auto mt-2 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${confidenceDelta == null || confidenceDelta === 0 ? 'bg-surface-3 text-copy-muted' : confidenceDelta > 0 ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{confidenceDelta != null ? `${confidenceDelta > 0 ? '+' : ''}${confidenceDelta}%` : xbLoading ? 'počítám' : 'bez dat'}</div>
-            <p className="mx-auto mt-2 max-w-[220px] text-[10px] leading-relaxed text-copy-secondary"><b className="text-white">Jistota neříká šanci na výsledek.</b> Vyjadřuje, jak silný a početný datový základ má osobní xB: tvoji historii, zkušenost s oběma týmy, H2H, sezonní formu a dostupná data k zápasu.</p>
-            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${toneBarClass[confidenceSemanticTone]}`} style={{ width: `${selectedXbData ? selectedConfidence : 0}%` }} /></div>
-            <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Nízká</span><span>Střední</span><span>Vysoká</span></div>
+          <CardHeader number={5} title="AI confidence" subtitle={`Síla datového základu pro ${matchName}.`} tone="violet" />
+          <div className="rounded-xl border border-violet-400/25 bg-[linear-gradient(160deg,rgba(139,78,235,.13),rgba(7,16,29,.55))] p-3 text-center">
+            <ConfidenceShield value={selectedXbData ? selectedConfidence : 0} tone="violet" />
+            <div className="mx-auto mt-1 inline-flex rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[9px] font-semibold text-violet-200">Kvalita podkladů</div>
+            <p className="mx-auto mt-2 max-w-[220px] text-[10px] leading-relaxed text-copy-secondary"><b className="text-violet-200">Není to šance, že tip vyjde.</b> Číslo pouze říká, jak silná a úplná data má model pro výpočet osobního xB.</p>
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3"><div className="h-full rounded-full bg-[linear-gradient(90deg,#6d5dfc,#a46af7,#c48cff)]" style={{ width: `${selectedXbData ? selectedConfidence : 0}%` }} /></div>
+            <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Málo dat</span><span>Dost dat</span><span>Silný základ</span></div>
           </div>
         </AnalysisCard>
 
