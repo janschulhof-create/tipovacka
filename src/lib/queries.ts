@@ -512,6 +512,7 @@ export interface PlayerProfile {
   most_common_tip: TipCount | null;
   most_successful_tip: TipCount | null;
   matchPoints: Record<number, number>;
+  recent_match_points: number[];
 }
 
 export interface H2HSide {
@@ -534,10 +535,10 @@ export async function getPlayerProfile(seasonId: number, playerId: number): Prom
   if (!pl) return null;
   const { data } = await sb
     .from('predictions')
-    .select('predicted_home, predicted_away, points, matches!inner(id, round, status, season_id, home_score, away_score)')
+    .select('predicted_home, predicted_away, points, matches!inner(id, round, kickoff, status, season_id, home_score, away_score)')
     .eq('player_id', playerId)
     .eq('matches.season_id', seasonId);
-  type M = { id: number; round: number; status: string; home_score: number | null; away_score: number | null };
+  type M = { id: number; round: number; kickoff: string; status: string; home_score: number | null; away_score: number | null };
   type Row = { predicted_home: number; predicted_away: number; points: number | null; matches: M | M[] | null };
   const rows = ((data as Row[]) ?? []).map((r) => ({
     ph: r.predicted_home, pa: r.predicted_away, points: r.points,
@@ -553,6 +554,7 @@ export async function getPlayerProfile(seasonId: number, playerId: number): Prom
 
   const fin = rows.filter((r) => r.m && r.m.status === 'finished' && r.points != null) as
     { ph: number; pa: number; points: number; m: M }[];
+  fin.sort((a, b) => new Date(a.m.kickoff).getTime() - new Date(b.m.kickoff).getTime());
   const dist = { p10: 0, p6: 0, p4: 0, p2: 0, p0: 0 };
   const byRound = new Map<number, number>();
   const matchPoints: Record<number, number> = {};
@@ -596,7 +598,7 @@ export async function getPlayerProfile(seasonId: number, playerId: number): Prom
     zeros: dist.p0, unlucky,
     avg_goals: rows.length ? Math.round((predGoals / rows.length) * 100) / 100 : 0,
     most_common_tip: topTip(tipCount), most_successful_tip: topTip(exactTip),
-    matchPoints,
+    matchPoints, recent_match_points: fin.slice(-10).map((row) => row.points),
   };
 }
 

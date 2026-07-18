@@ -57,6 +57,7 @@ export function HistorieView({
   const knockout = isKnockoutSeason(data.season);
   const ranked = [...data.players].sort((a, b) => data.stats[b].points - data.stats[a].points);
   const winner = ranked[0];
+  const [chartTab, setChartTab] = useState<'points' | 'positions'>('points');
 
   // Karty ze sdíleného zdroje → shodné se Síní slávy i dashboardem.
   const cards = buildStatCards({
@@ -116,28 +117,50 @@ export function HistorieView({
         </div>
       </section>
 
-      {/* Vývoj bodů po kolech */}
-      <section className="space-y-2">
-        <h2 className="eyebrow"><span className="flag-chip" /> Vývoj bodů po kolech</h2>
-        <StandingsChart
-          matches={data.rounds.flatMap((r) =>
-            r.matches.map((m) => ({
-              round: r.round,
-              pts: Object.fromEntries(
-                Object.entries(m.tips)
-                  .filter(([, t]) => t.pts != null)
-                  .map(([name, t]) => [name, t.pts as number])
-              ),
-            }))
+      {/* Jeden kompaktní graf s přepínačem bodů a pořadí. */}
+      <section className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h2 className="eyebrow"><span className="flag-chip" /> Vývoj sezóny po kolech</h2>
+          <div className="inline-flex rounded-xl border border-line-subtle bg-app-deep/45 p-1" role="tablist" aria-label="Typ historického grafu">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={chartTab === 'points'}
+              onClick={() => setChartTab('points')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${chartTab === 'points' ? 'bg-violet-500/20 text-violet-200 shadow-violet' : 'text-copy-muted hover:text-copy-primary'}`}
+            >
+              Body
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={chartTab === 'positions'}
+              onClick={() => setChartTab('positions')}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition ${chartTab === 'positions' ? 'bg-violet-500/20 text-violet-200 shadow-violet' : 'text-copy-muted hover:text-copy-primary'}`}
+            >
+              Pořadí
+            </button>
+          </div>
+        </div>
+        <div className="mx-auto w-full lg:w-1/2 lg:max-w-[720px]">
+          {chartTab === 'points' ? (
+            <StandingsChart
+              matches={data.rounds.flatMap((r) =>
+                r.matches.map((m) => ({
+                  round: r.round,
+                  pts: Object.fromEntries(
+                    Object.entries(m.tips)
+                      .filter(([, t]) => t.pts != null)
+                      .map(([name, t]) => [name, t.pts as number])
+                  ),
+                }))
+              )}
+              players={data.players}
+            />
+          ) : (
+            <PositionsChart rounds={data.rounds} players={data.players} />
           )}
-          players={data.players}
-        />
-      </section>
-
-      {/* Vývoj pořadí po kolech – hned pod body, stejné barvy */}
-      <section className="space-y-2">
-        <h2 className="eyebrow"><span className="flag-chip" /> Vývoj pořadí po kolech</h2>
-        <PositionsChart rounds={data.rounds} players={data.players} />
+        </div>
       </section>
 
       {/* Statistiky sezóny — hráčské karty i zajímavosti pohromadě */}

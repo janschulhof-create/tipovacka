@@ -218,7 +218,7 @@ export default async function Home({
           <span className="flag-chip" /> Statistiky sezóny
         </h2>
         <Suspense fallback={<SeasonStatsSkeleton />}>
-          <SeasonStatsSection seasonId={seasonId} standings={standings} activeNames={activeNames} />
+          <SeasonStatsSection seasonId={seasonId} standings={standings} activeNames={activeNames} showLeagueRegions={competition.key === 'liga'} />
         </Suspense>
       </section>
     </main>

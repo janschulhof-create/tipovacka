@@ -383,3 +383,34 @@ textarea {
     padding: 18px !important;
   }
 }
+
+/* Desktopová xB predikce na dashboardu používá stejnou čitelnou typografickou škálu jako AI profil. */
+@media (min-width: 1200px) {
+  .xb-content .text-\[8px\] {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+
+  .xb-content .text-\[9px\],
+  .xb-content .text-\[9\.5px\] {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+  }
+
+  .xb-content .text-\[10px\],
+  .xb-content .text-\[10\.5px\] {
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+  }
+
+  .xb-content .text-\[11px\] {
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+
+  .xb-content .text-\[12px\],
+  .xb-content .text-\[12\.5px\] {
+    font-size: 15px !important;
+    line-height: 1.5 !important;
+  }
+}

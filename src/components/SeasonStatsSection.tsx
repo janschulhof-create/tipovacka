@@ -10,6 +10,7 @@ import {
   getWizardAndContinentStats,
 } from '@/lib/pageQueries';
 import type { StandingRow } from '@/lib/types';
+import { LEAGUE_REGIONS } from '@/lib/leagueRegions';
 
 /**
  * Statistiky sezóny = nejtěžší dotazy na stránce (načítají VŠECHNY zápasy
@@ -20,10 +21,12 @@ export async function SeasonStatsSection({
   seasonId,
   standings,
   activeNames,
+  showLeagueRegions = false,
 }: {
   seasonId: number;
   standings: StandingRow[];
   activeNames: string[];
+  showLeagueRegions?: boolean;
 }) {
   const [goals, misses, stoppage, wizCont, tipRounds] = await Promise.all([
     getGoalStats(seasonId),
@@ -46,7 +49,7 @@ export async function SeasonStatsSection({
         spodina={hasResults ? wizCont.spodina : []}
         misses={hasResults ? misses : []}
         continents={hasResults ? wizCont.continents : []}
-        regions={hasResults ? wizCont.regions : []}
+        regions={showLeagueRegions ? (wizCont.regions.length ? wizCont.regions : LEAGUE_REGIONS.map((region) => ({ ...region, rows: [] }))) : []}
       />
     </>
   );

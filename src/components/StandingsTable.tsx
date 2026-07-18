@@ -161,7 +161,7 @@ export function SeasonXbTable({
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <h2 className="eyebrow">
-                <span className="flag-chip" /> xB na konci sezony
+                <span className="flag-chip" /> <span className="normal-case">xB</span> na konci sezony
               </h2>
               <p className="mt-1 text-[10.5px] leading-snug text-copy-muted">
                 Odhad konečných bodů podle celého ligového rozpisu.
@@ -234,7 +234,7 @@ export function SeasonXbTable({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="eyebrow">
-              <span className="flag-chip" /> xB na konci sezony
+              <span className="flag-chip" /> <span className="normal-case">xB</span> na konci sezony
             </h2>
             <p className="mt-1 text-[11px] leading-snug text-copy-muted">
               Odhad konečných bodů podle celého ligového rozpisu.

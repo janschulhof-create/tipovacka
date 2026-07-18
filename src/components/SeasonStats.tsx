@@ -44,10 +44,27 @@ export function SeasonStats({
     ];
 
     return (
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {emptyCards.map((card) => (
-          <StatCard key={card.label} {...card} rows={[]} />
-        ))}
+      <div className="space-y-4">
+        {regions.length > 0 && (
+          <section id="regiony-chance-ligy" className="space-y-3 rounded-2xl border border-violet-400/20 bg-violet-500/5 p-3 sm:p-4">
+            <div>
+              <h2 className="eyebrow"><span className="flag-chip" /> Regionální liga tipérů</h2>
+              <p className="mt-1 text-[11px] leading-relaxed text-slate-100/50">
+                Sudety, Pražská kavárna, Velkomoravská říše a Český rybníček jsou připravené. Po prvních dohraných zápasech se zde objeví regionální pořadí.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+              {regions.map((region) => (
+                <StatCard key={region.key} icon={region.icon} label={region.label} accent="text-pitch-light" scale rows={[]} />
+              ))}
+            </div>
+          </section>
+        )}
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {emptyCards.map((card) => (
+            <StatCard key={card.label} {...card} rows={[]} />
+          ))}
+        </div>
       </div>
     );
   }
@@ -87,6 +104,34 @@ export function SeasonStats({
 
   return (
     <div className="space-y-4">
+      {regions.length > 0 && (
+        <section id="regiony-chance-ligy" className="space-y-3 rounded-2xl border border-violet-400/20 bg-violet-500/5 p-3 sm:p-4">
+          <div>
+            <h2 className="eyebrow">
+              <span className="flag-chip" /> Regionální liga tipérů
+            </h2>
+            <p className="mt-1 text-[11px] leading-relaxed text-slate-100/50">
+              Chance liga po našem: Sudety, Pražská kavárna, Velkomoravská říše a Český rybníček. Body se počítají z duelů klubů daného regionu; meziregionální zápas patří do obou tabulek.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            {regions.map((region) => (
+              <StatCard
+                key={region.key}
+                icon={region.icon}
+                label={region.label}
+                accent="text-pitch-light"
+                scale
+                rows={region.rows.map((row) => ({
+                  name: row.name,
+                  val: `${row.points} b · ${row.matches} z.`,
+                  n: row.points,
+                }))}
+              />
+            ))}
+          </div>
+        </section>
+      )}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         {cards.map((c) => (
           <StatCard key={c.label} {...c} />
@@ -114,34 +159,6 @@ export function SeasonStats({
       )}
 
 
-      {regions.length > 0 && (
-        <section className="space-y-3">
-          <div>
-            <h2 className="eyebrow">
-              <span className="flag-chip" /> 🗺️ Pořadí podle regionů
-            </h2>
-            <p className="mt-1 text-[11px] leading-relaxed text-slate-100/40">
-              Body z utkání týmů daného regionu. Meziregionální zápas se započítá do obou regionů.
-            </p>
-          </div>
-          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-            {regions.map((region) => (
-              <StatCard
-                key={region.key}
-                icon={region.icon}
-                label={region.label}
-                accent="text-pitch-light"
-                scale
-                rows={region.rows.map((row) => ({
-                  name: row.name,
-                  val: `${row.points} b · ${row.matches} z.`,
-                  n: row.points,
-                }))}
-              />
-            ))}
-          </div>
-        </section>
-      )}
     </div>
   );
 }

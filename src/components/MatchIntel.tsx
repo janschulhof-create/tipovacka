@@ -605,7 +605,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
               </div>
 
               <div className="min-w-0 flex-1 text-center sm:text-left">
-                <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-violet-300">{desktop ? 'Očekávané body (xB)' : 'xB predikce'}</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-violet-300">{desktop ? <>Očekávané body (<span className="normal-case">xB</span>)</> : <><span className="normal-case">xB</span> predikce</>}</div>
                 <h4 className={`${desktop ? 'text-[18px] 2xl:text-xl' : 'text-xl'} mt-1 font-display font-bold`} style={{ color: mainColor }}>{label}</h4>
                 <p className="mt-2 text-[12.5px] leading-relaxed text-copy-secondary">
                   Podle tvé historie model očekává v tomto zápase přibližně <b className="tabular-nums text-copy-primary">{xb.value.toFixed(1)} bodu</b>.
@@ -637,7 +637,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
 
           <div className="space-y-3">
             <div>
-              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-copy-secondary">Faktory ovlivňující xB</div>
+              <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-copy-secondary">Faktory ovlivňující <span className="normal-case">xB</span></div>
               <p className="mt-1 text-[11px] leading-relaxed text-copy-muted">
                 Hodnota říká, kolik bodů ti daný faktor historicky naznačuje. „Vliv“ ukazuje, jak silně je započtený do výsledku.
               </p>
@@ -678,7 +678,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
           </div>
 
           <div className="rounded-2xl border border-violet-400/20 bg-gradient-to-r from-violet-500/10 to-state-info/5 p-3.5">
-            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-300">🤖 AI komentář xB</div>
+            <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-violet-300">AI komentář <span className="normal-case">xB</span></div>
             <p className="mt-1.5 text-[12.5px] leading-relaxed text-copy-secondary">{xb.explanation}</p>
           </div>
         </>

@@ -18,7 +18,7 @@ export const LEAGUE_REGIONS: { key: LeagueRegionKey; label: string; icon: string
   { key: 'SUDETY', label: 'Sudety', icon: '🏔️' },
   { key: 'PRAHA', label: 'Pražská kavárna', icon: '☕' },
   { key: 'MORAVA', label: 'Velkomoravská říše', icon: '👑' },
-  { key: 'CECHY', label: 'Čechy', icon: '🦁' },
+  { key: 'CECHY', label: 'Český rybníček', icon: '🐟' },
 ];
 
 /** Kanonický název týmu → region. */
@@ -43,7 +43,7 @@ export const TEAM_LEAGUE_REGION: Record<string, LeagueRegionKey> = {
   Baník: 'MORAVA',
   Karviná: 'MORAVA',
 
-  // Čechy
+  // Český rybníček
   Plzeň: 'CECHY',
   Táborsko: 'CECHY',
   'Hradec Králové': 'CECHY',

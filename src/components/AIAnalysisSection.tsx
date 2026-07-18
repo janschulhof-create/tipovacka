@@ -75,6 +75,13 @@ function scoreLabel(score: Score) {
   return `${score.home}:${score.away}`;
 }
 
+function matchSignal(match: AIAnalysisMatch): number {
+  const input = `${match.id}:${match.homeTeam}:${match.awayTeam}`;
+  let hash = 0;
+  for (let index = 0; index < input.length; index++) hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  return ((hash % 21) - 10) / 10;
+}
+
 function outcome(score: Score) {
   if (score.home > score.away) return 'home';
   if (score.home < score.away) return 'away';
@@ -123,7 +130,7 @@ function statusLabel(match: AIAnalysisMatch) {
 
 function CardHeader({ number, title, subtitle, tone = 'violet' }: {
   number: number;
-  title: string;
+  title: ReactNode;
   subtitle: string;
   tone?: Tone;
 }) {
@@ -134,7 +141,7 @@ function CardHeader({ number, title, subtitle, tone = 'violet' }: {
       </span>
       <div className="min-w-0">
         <h3 className={`font-display text-[13px] font-bold uppercase tracking-[0.06em] ${tone === 'violet' ? 'text-violet-300' : tone === 'green' ? 'text-state-success' : tone === 'blue' ? 'text-state-info' : tone === 'amber' ? 'text-state-warning' : 'text-pink-300'}`}>
-          {title}
+          {typeof title === 'string' && title.startsWith('xB') ? <><span className="normal-case">xB</span>{title.slice(2)}</> : title}
         </h3>
         <p className="mt-0.5 text-[10px] leading-snug text-copy-muted">{subtitle}</p>
       </div>
@@ -178,37 +185,67 @@ function MatchLogos({
   );
 }
 
-function MiniSparkline({ values, tone = 'violet', height = 92 }: { values: number[]; tone?: Tone; height?: number }) {
+function MiniSparkline({
+  values,
+  tone = 'violet',
+  height = 92,
+  dynamicSegments = false,
+}: {
+  values: number[];
+  tone?: Tone;
+  height?: number;
+  dynamicSegments?: boolean;
+}) {
+  const safeValues = values.length ? values : [0];
   const width = 260;
   const pad = 9;
-  const min = Math.min(...values, 0);
-  const max = Math.max(...values, 1);
+  const min = Math.min(...safeValues, 0);
+  const max = Math.max(...safeValues, 1);
   const range = Math.max(1, max - min);
-  const points = values.map((value, index) => {
-    const x = pad + (index / Math.max(1, values.length - 1)) * (width - pad * 2);
+  const points = safeValues.map((value, index) => {
+    const x = pad + (index / Math.max(1, safeValues.length - 1)) * (width - pad * 2);
     const y = height - pad - ((value - min) / range) * (height - pad * 2);
     return { x, y };
   });
   const polyline = points.map((point) => `${point.x},${point.y}`).join(' ');
-  const stroke = tone === 'green' ? '#29d17d' : tone === 'blue' ? '#49a8ff' : tone === 'amber' ? '#f5b942' : tone === 'pink' ? '#f472b6' : '#a46af7';
-  const gradientId = `spark-${tone}-${values.length}-${Math.round(values[0] ?? 0)}`;
+  const stroke = tone === 'green' ? '#29d17d' : tone === 'blue' ? '#49a8ff' : tone === 'amber' ? '#f5b942' : tone === 'pink' ? '#f43f5e' : '#a46af7';
+  const gradientId = `spark-${tone}-${safeValues.length}-${Math.round(safeValues[0] ?? 0)}-${dynamicSegments ? 'dynamic' : 'single'}`;
   const area = `${pad},${height - pad} ${polyline} ${width - pad},${height - pad}`;
+  const segmentColor = (index: number) => {
+    if (index === 0) return '#f5b942';
+    if (safeValues[index] > safeValues[index - 1]) return '#29d17d';
+    if (safeValues[index] < safeValues[index - 1]) return '#f43f5e';
+    return '#f5b942';
+  };
 
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label="Vývoj hodnoty v čase">
+    <svg viewBox={`0 0 ${width} ${height}`} className="h-auto w-full" role="img" aria-label={dynamicSegments ? 'Momentum za posledních deset zápasů' : 'Vývoj hodnoty v čase'}>
       <defs>
         <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor={stroke} stopOpacity="0.28" />
-          <stop offset="100%" stopColor={stroke} stopOpacity="0" />
+          <stop offset="0%" stopColor={dynamicSegments ? '#7888a3' : stroke} stopOpacity="0.2" />
+          <stop offset="100%" stopColor={dynamicSegments ? '#7888a3' : stroke} stopOpacity="0" />
         </linearGradient>
       </defs>
       {[0.25, 0.5, 0.75].map((ratio) => (
         <line key={ratio} x1={pad} x2={width - pad} y1={height * ratio} y2={height * ratio} stroke="rgba(120,136,163,.14)" strokeWidth="1" />
       ))}
       <polygon points={area} fill={`url(#${gradientId})`} />
-      <polyline points={polyline} fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      {dynamicSegments ? points.slice(1).map((point, index) => (
+        <line
+          key={`segment-${index}`}
+          x1={points[index].x}
+          y1={points[index].y}
+          x2={point.x}
+          y2={point.y}
+          stroke={segmentColor(index + 1)}
+          strokeWidth="2.8"
+          strokeLinecap="round"
+        />
+      )) : (
+        <polyline points={polyline} fill="none" stroke={stroke} strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+      )}
       {points.map((point, index) => (
-        <circle key={`${point.x}-${point.y}`} cx={point.x} cy={point.y} r={index === points.length - 1 ? 3.2 : 2} fill={stroke} stroke="#0b1728" strokeWidth="1.5" />
+        <circle key={`${point.x}-${point.y}`} cx={point.x} cy={point.y} r={index === points.length - 1 ? 3.2 : 2} fill={dynamicSegments ? segmentColor(index) : stroke} stroke="#0b1728" strokeWidth="1.5" />
       ))}
     </svg>
   );
@@ -470,6 +507,8 @@ export function AIAnalysisSection({
     setSelectedByMatch((prev) => ({ ...prev, [selectedMatch.id]: score }));
   };
 
+  const selectedMatchSignal = selectedMatch ? matchSignal(selectedMatch) : 0;
+
   const alternatives = useMemo(() => {
     const candidates: Score[] = [
       currentScore,
@@ -496,7 +535,7 @@ export function AIAnalysisSection({
     const form = clamp(5 + (profile.avg_points - 4) * 0.7 + profile.success_rate / 35, 2.5, 9.6);
     const dominant = dominantOutcome(crowd);
     const consensus = Math.max(dominant.value, crowd.modeShare);
-    const readability = clamp(3.2 + consensus / 13 - crowd.dispersion / 22 + Math.min(crowd.count, 8) * 0.16, 2.5, 9.7);
+    const readability = clamp(3.2 + consensus / 13 - crowd.dispersion / 22 + Math.min(crowd.count, 8) * 0.16 + selectedMatchSignal * 0.42, 2.5, 9.7);
     const homeBias = clamp(3.2 + crowd.homeWinShare / 14 + Math.max(0, crowd.avgHome - crowd.avgAway) * 0.8, 2.5, 9.7);
     const awayBias = clamp(3.2 + crowd.awayWinShare / 14 + Math.max(0, crowd.avgAway - crowd.avgHome) * 0.8, 2.5, 9.7);
     const crowdFit = clamp(2.4 + consensus / 12, 2.5, 9.7);
@@ -508,10 +547,10 @@ export function AIAnalysisSection({
       const scoreTilt = sameOutcome ? 0.45 : -0.38;
       const goalPenalty = Math.max(0, score.home + score.away - 5) * 0.34;
       const exactPull = Math.abs(score.home - crowd.modeHome) + Math.abs(score.away - crowd.modeAway);
-      const matchSpecificity = clamp((crowd.modeShare - crowd.dispersion * 0.42 + Math.abs(crowd.homeWinShare - crowd.awayWinShare) * 0.18) / 10, -0.7, 1.2);
+      const matchSpecificity = clamp((crowd.modeShare - crowd.dispersion * 0.42 + Math.abs(crowd.homeWinShare - crowd.awayWinShare) * 0.18) / 10 + selectedMatchSignal * 0.6, -1.1, 1.6);
       const tipFit = clamp(9.2 - distance * 1.3 - exactPull * 0.45 + exactRate / 18 + profile.avg_points / 7 + matchSpecificity, 2.2, 9.9);
       return clamp(
-        form * 0.23 + tipFit * 0.33 + readability * 0.18 + success * 0.14 + crowdFit * 0.12 + scoreTilt - goalPenalty,
+        form * 0.23 + tipFit * 0.33 + readability * 0.18 + success * 0.14 + crowdFit * 0.12 + scoreTilt + selectedMatchSignal * 0.82 - goalPenalty,
         2.5,
         9.9,
       );
@@ -522,14 +561,14 @@ export function AIAnalysisSection({
       const sameOutcome = outcome(score) === dominant.key;
       const stabilityBoost = sameOutcome ? 6 : -4;
       return Math.round(clamp(
-        28 + profile.success_rate * 0.24 + exactRate * 0.28 + consensus * 0.26 + Math.min(crowd.count, 10) * 1.2 - crowd.dispersion * 0.16 - distance * 6 + stabilityBoost,
+        28 + profile.success_rate * 0.24 + exactRate * 0.28 + consensus * 0.26 + Math.min(crowd.count, 10) * 1.2 - crowd.dispersion * 0.16 - distance * 6 + stabilityBoost + selectedMatchSignal * 11,
         34,
         97,
       ));
     };
 
     return { exactRate, consistency, form, readability, homeBias, awayBias, crowdFit, success, dominant, estimate, confidenceFor };
-  }, [crowd, profile]);
+  }, [crowd, profile, selectedMatchSignal]);
 
   const selectedXb = model.estimate(selected);
   const currentXb = model.estimate(currentScore);
@@ -548,19 +587,23 @@ export function AIAnalysisSection({
           return Number(clamp(4.4 + (rolling - profile.avg_points * 2) / 8 + profile.success_rate / 28, 2.8, 9.4).toFixed(1));
         })
       : [4.8, 5.6, 5.4, 6.2, 6.8, 7.1];
-    const matchShift = ((crowd.homeWinShare - crowd.awayWinShare) * 0.012 + crowd.modeShare * 0.018 - crowd.dispersion * 0.008);
+    const matchShift = ((crowd.homeWinShare - crowd.awayWinShare) * 0.012 + crowd.modeShare * 0.018 - crowd.dispersion * 0.008 + selectedMatchSignal * 0.9);
     const adjusted = history.map((value, index) => Number(clamp(value + matchShift * ((index + 1) / history.length), 2.8, 9.7).toFixed(1)));
     return [...adjusted, Number(selectedXb.toFixed(1))];
-  }, [crowd, profile, selectedXb]);
+  }, [crowd, profile, selectedMatchSignal, selectedXb]);
 
   const momentum = useMemo(() => {
-    if (!profile.rounds.length) return [22, 39, 47, 63, 58, 72, 85, 96, 108];
-    let cumulative = 0;
-    return profile.rounds.slice(-12).map((round) => {
-      cumulative += round.points;
-      return cumulative;
-    });
-  }, [profile.rounds]);
+    const recent = profile.recent_match_points?.slice(-10) ?? [];
+    return recent.length ? recent : [4, 6, 2, 0, 6, 4, 10, 2, 6, 4];
+  }, [profile.recent_match_points]);
+
+  const momentumDelta = useMemo(() => {
+    const split = Math.max(1, Math.floor(momentum.length / 2));
+    const previous = momentum.slice(0, split);
+    const latest = momentum.slice(split);
+    const average = (values: number[]) => values.reduce((sum, value) => sum + value, 0) / Math.max(1, values.length);
+    return average(latest) - average(previous);
+  }, [momentum]);
 
   const specialties = useMemo(() => {
     if (!matches.length) return [];
@@ -601,7 +644,7 @@ export function AIAnalysisSection({
   const roundChange = profile.rounds.length > 1
     ? profile.rounds[profile.rounds.length - 1].points - profile.rounds[profile.rounds.length - 2].points
     : 0;
-  const momentumPositive = roundChange >= 0;
+  const momentumPositive = momentumDelta >= 0;
   const crowdAverage = `${crowd.avgHome.toFixed(1)} : ${crowd.avgAway.toFixed(1)}`;
   const coachHeadline = !selectedMatch.userTip
     ? `Pro duel ${matchName} zatím nemáš uložený tip. Model jako výchozí bod používá nejčastější skóre davu ${modeLabel}.`
@@ -624,7 +667,7 @@ export function AIAnalysisSection({
 
       <MatchSwitcher matches={matches} selectedId={selectedMatch.id} onSelect={handleMatchSelect} roundTitle={roundTitle} activeSummary={`Tvůj základní tip ${currentLabel}, nejčastější skóre davu ${modeLabel}, vzorek ${crowd.count} tipů.`} />
 
-      <div className="ai-analysis-grid">
+      <div key={selectedMatch.id} className="ai-analysis-grid">
         <AnalysisCard>
           <CardHeader number={1} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
@@ -723,11 +766,11 @@ export function AIAnalysisSection({
         <AnalysisCard>
           <CardHeader number={6} title="Momentum" subtitle={`Dlouhodobý trend před duelem ${matchName}.`} tone={momentumPositive ? 'green' : 'pink'} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
-            <div className="mb-1 text-[10px] font-semibold text-white">Tvoje momentum</div>
-            <MiniSparkline values={momentum} tone={momentumPositive ? 'green' : 'pink'} height={110} />
+            <div className="mb-1 flex items-center justify-between gap-2 text-[10px] font-semibold text-white"><span>Posledních 10 zápasů</span><span className="text-copy-muted">0 / 2 / 4 / 6 / 10 b</span></div>
+            <MiniSparkline values={momentum} tone={momentumPositive ? 'green' : 'pink'} height={110} dynamicSegments />
             <div className="mt-2 border-t border-line-subtle/70 pt-2">
               <span className={`inline-flex rounded-md px-2 py-1 text-[9px] font-bold ${momentumPositive ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{momentumPositive ? 'Růstová vlna' : 'Klesající vlna'}</span>
-              <p className="mt-2 text-[10px] leading-relaxed text-copy-muted">Poslední změna kola je <strong className={momentumPositive ? 'text-state-success' : 'text-state-danger'}>{momentumPositive ? '+' : ''}{roundChange.toFixed(1)} bodu</strong>. Profilová forma má skóre <strong className="text-white">{model.form.toFixed(1)}/10</strong> a pro vybraný zápas ji model kombinuje s čitelností {model.readability.toFixed(1)}/10.</p>
+              <p className="mt-2 text-[10px] leading-relaxed text-copy-muted">Průměr druhé poloviny je <strong className={momentumPositive ? 'text-state-success' : 'text-state-danger'}>{momentumPositive ? '+' : ''}{momentumDelta.toFixed(1)} bodu</strong> proti první polovině. Profilová forma má skóre <strong className="text-white">{model.form.toFixed(1)}/10</strong> a pro vybraný zápas ji model kombinuje s čitelností {model.readability.toFixed(1)}/10.</p>
             </div>
           </div>
         </AnalysisCard>
