@@ -21,6 +21,7 @@ export function LigaDesktopBoard({
   selectedRound,
   knockout,
   roundLabels,
+  initialMatchId,
 }: {
   matches: Match[];
   players: Player[];
@@ -33,6 +34,7 @@ export function LigaDesktopBoard({
   selectedRound: number;
   knockout: boolean;
   roundLabels: Record<number, string>;
+  initialMatchId?: number;
 }) {
   const [now, setNow] = useState(() => Date.now());
 
@@ -44,8 +46,8 @@ export function LigaDesktopBoard({
   // Vždy zobrazujeme celé vybrané kolo. Jako výchozí detail preferujeme
   // nejbližší otevřený zápas, jinak první zápas v pořadí.
   const preferred = useMemo(
-    () => matches.find((match) => isOpen(match, now)) ?? matches[0],
-    [matches, now],
+    () => matches.find((match) => match.id === initialMatchId) ?? matches.find((match) => isOpen(match, now)) ?? matches[0],
+    [initialMatchId, matches, now],
   );
   const [selectedMatchId, setSelectedMatchId] = useState<number | undefined>(preferred?.id);
 
@@ -93,7 +95,7 @@ export function LigaDesktopBoard({
         />
       </section>
 
-      <div className="xb-detail-container min-w-0">
+      <div id="xb-predikce" className="xb-detail-container min-w-0 scroll-mt-4">
         {selected ? (
           <DesktopMatchDetail
             key={selected.id}

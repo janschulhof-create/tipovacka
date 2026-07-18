@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic';
 export default async function Home({
   searchParams,
 }: {
-  searchParams: Promise<{ kolo?: string; soutez?: string }>;
+  searchParams: Promise<{ kolo?: string; soutez?: string; zapas?: string }>;
 }) {
   const sp = await searchParams;
   const competition = getCompetition(sp?.soutez);
@@ -64,6 +64,7 @@ export default async function Home({
     ? currentRound
     : rounds[0] ?? null;
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
+  const zapasParam = sp?.zapas ? parseInt(sp.zapas, 10) : NaN;
   const selectedRound =
     !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : fallbackRound;
   // Kritická cesta = jen to, co je vidět hned (zápasy, tabulka, graf).
@@ -138,6 +139,7 @@ export default async function Home({
               selectedRound={selectedRound ?? currentRound ?? rounds[0] ?? 0}
               knockout={knockout}
               roundLabels={roundLabels}
+              initialMatchId={!Number.isNaN(zapasParam) ? zapasParam : undefined}
             />
 
             <aside className="chance-right-rail min-w-0 space-y-3">

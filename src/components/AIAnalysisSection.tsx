@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Flag } from '@/components/Flag';
 import type { PlayerProfile } from '@/lib/queries';
@@ -96,13 +97,6 @@ function riskTone(value: number): Tone {
   if (value <= 50) return 'blue';
   if (value <= 70) return 'amber';
   return 'pink';
-}
-
-function scoreLevel(value: number): string {
-  if (value >= 8) return 'silný bodový potenciál';
-  if (value >= 6) return 'dobrý bodový potenciál';
-  if (value >= 4) return 'střední bodový potenciál';
-  return 'slabý bodový potenciál';
 }
 
 const emptyCrowd: AICrowdSummary = {
@@ -743,12 +737,6 @@ export function AIAnalysisSection({
   const xbTone = selectedXbData ? scoreTone(selectedXb) : 'violet';
   const confidenceSemanticTone = selectedXbData ? confidenceTone(selectedConfidence) : 'violet';
   const crowdSemanticTone = riskTone(crowdDifference);
-  const factorEffects = (selectedXbData?.factors ?? []).map((factor) => ({
-    ...factor,
-    effect: factor.key === 'overall' ? 0 : (factor.value - overallFactor) * factor.weight,
-  }));
-  const positiveFactor = factorEffects.filter((factor) => factor.key !== 'overall').sort((a, b) => b.effect - a.effect)[0];
-  const negativeFactor = factorEffects.filter((factor) => factor.key !== 'overall').sort((a, b) => a.effect - b.effect)[0];
 
   return (
     <section className="ai-analysis-section mb-6" aria-labelledby="ai-analysis-title">
@@ -833,55 +821,21 @@ export function AIAnalysisSection({
             <div className="flex justify-between"><span className="text-copy-muted">Odlišnost od davu</span><span className={toneTextClass[crowdSemanticTone]}>{crowdDifference}%</span></div>
           </div>
           <div className={`mt-3 rounded-lg border p-3 ${toneSoftClass[xbTone]}`}>
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <b className={toneTextClass[xbTone]}>Co znamená xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
-              {selectedXbData && <span className={`rounded-full border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${toneClass[xbTone]}`}>{scoreLevel(selectedXb)}</span>}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="min-w-0">
+                <b className={toneTextClass[xbTone]}>Co znamená xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
+                <p className="mt-1 text-[9px] leading-relaxed text-copy-muted">
+                  Očekávaný bodový zisk 0–10 pro tento tip. Barva ukazuje sílu odhadu; nejde o procento šance ani garanci výsledku.
+                </p>
+              </div>
+              <Link
+                href={`/?soutez=liga&kolo=${selectedMatch.round}&zapas=${selectedMatch.id}#xb-predikce`}
+                className="shrink-0 rounded-lg border border-line-strong bg-app-deep/45 px-3 py-2 text-[9px] font-semibold text-violet-200 transition hover:border-violet-400/60 hover:bg-violet-500/10"
+              >
+                Detail faktorů na dashboardu →
+              </Link>
             </div>
-            <p className="mt-1.5 text-[9px] leading-relaxed text-copy-muted">xB je očekávaný bodový zisk na škále 0–10. {selectedXbData ? <>Hodnota <b className={toneTextClass[xbTone]}>{selectedXb.toFixed(1)}</b> spadá do pásma „{scoreLevel(selectedXb)}“.</> : 'Hodnota se právě načítá.'} Nejde o procento šance. Barva odpovídá kvalitě odhadu: červená 0–3,9, žlutá 4–5,9, modrá 6–7,9 a zelená 8–10.</p>
           </div>
-          {selectedXbData && (
-            <div className="mt-3 rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-[10px] font-semibold text-white">Co hodnotu mění</div>
-                  <p className="mt-0.5 text-[9px] leading-relaxed text-copy-muted">Výchozím bodem je dlouhodobý průměr {overallFactor.toFixed(1)} b. Každý další faktor ho podle své hodnoty a váhy zvyšuje nebo snižuje.</p>
-                </div>
-                <span className={`shrink-0 rounded-lg px-2 py-1 font-display text-sm font-bold ${toneClass[xbTone]}`}>{selectedXb.toFixed(1)} b</span>
-              </div>
-              <div className="mt-3 space-y-2.5">
-                {factorEffects.map((factor) => {
-                  const factorTone = scoreTone(factor.value);
-                  const neutral = Math.abs(factor.effect) < 0.05;
-                  const effectText = factor.key === 'overall'
-                    ? 'základ modelu'
-                    : neutral
-                      ? 'téměř neutrální'
-                      : `${factor.effect > 0 ? 'zvyšuje' : 'snižuje'} ${factor.effect > 0 ? '+' : ''}${factor.effect.toFixed(1)} b`;
-                  return (
-                    <div key={factor.key} title={factor.description}>
-                      <div className="flex items-center justify-between gap-2 text-[9px]">
-                        <span className="min-w-0 truncate text-copy-secondary">{factor.label}</span>
-                        <span className="flex shrink-0 items-center gap-2">
-                          <b className={toneTextClass[factorTone]}>{factor.value.toFixed(1)}/10</b>
-                          <span className="text-copy-muted">váha {Math.round(factor.weight * 100)} %</span>
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center gap-2">
-                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${toneBarClass[factorTone]}`} style={{ width: `${clamp(factor.value * 10)}%` }} /></div>
-                        <span className={`w-[86px] text-right text-[8px] font-semibold ${factor.key === 'overall' || neutral ? 'text-copy-muted' : factor.effect > 0 ? 'text-state-success' : 'text-state-danger'}`}>{effectText}</span>
-                      </div>
-                      <p className="mt-1 text-[8px] leading-relaxed text-copy-muted">{factor.description}</p>
-                    </div>
-                  );
-                })}
-              </div>
-              <div className="mt-3 border-t border-line-subtle/70 pt-2 text-[9px] leading-relaxed text-copy-muted">
-                {positiveFactor && positiveFactor.effect > 0.04 ? <><b className="text-state-success">Nejvíc pomáhá:</b> {positiveFactor.label} (+{positiveFactor.effect.toFixed(1)} b). </> : null}
-                {negativeFactor && negativeFactor.effect < -0.04 ? <><b className="text-state-danger">Nejvíc brzdí:</b> {negativeFactor.label} ({negativeFactor.effect.toFixed(1)} b).</> : null}
-                {(!positiveFactor || positiveFactor.effect <= 0.04) && (!negativeFactor || negativeFactor.effect >= -0.04) ? selectedXbData.explanation : null}
-              </div>
-            </div>
-          )}
           {xbError && <div className="mt-2 text-[9px] text-state-danger">Jednotný xB model se nepodařilo načíst. Zkus stránku obnovit.</div>}
         </AnalysisCard>
 
