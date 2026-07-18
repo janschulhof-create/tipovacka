@@ -3,9 +3,13 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Flag } from '@/components/Flag';
 import type { PlayerProfile } from '@/lib/queries';
+import type { XbPrediction } from '@/lib/predict';
 
 type Score = { home: number; away: number };
 type Tone = 'violet' | 'green' | 'blue' | 'amber' | 'pink';
+
+type XbVariant = { home: number; away: number; xb: XbPrediction };
+type ProfileInsightResponse = { xb: XbPrediction | null; xbVariants?: XbVariant[] };
 
 export interface AICrowdSummary {
   count: number;
@@ -334,7 +338,7 @@ function RadarChart({ values }: { values: number[] }) {
     const r = radius * (value / 10);
     return `${center + Math.cos(angle) * r},${center + Math.sin(angle) * r}`;
   };
-  const labels = ['Forma', 'Tip', 'Domácí', 'Hosté', 'Dav', 'Úspěch'];
+  const labels = ['Forma', 'Tip', 'Domácí', 'Hosté', 'Kontext', 'Průměr'];
 
   return (
     <div className="relative mx-auto max-w-[230px]">
@@ -446,9 +450,13 @@ export function AIAnalysisSection({
   const [selectedMatchId, setSelectedMatchId] = useState(matches[0]?.id ?? 0);
   const profileFallback = useMemo(() => parseScore(profile.most_common_tip?.tip), [profile.most_common_tip?.tip]);
   const [selectedByMatch, setSelectedByMatch] = useState<Record<number, Score>>({});
+  const [officialXb, setOfficialXb] = useState<XbPrediction | null>(null);
+  const [xbVariants, setXbVariants] = useState<Record<string, XbPrediction>>({});
+  const [xbLoading, setXbLoading] = useState(false);
+  const [xbError, setXbError] = useState(false);
   const selectedMatch = matches.find((match) => match.id === selectedMatchId) ?? matches[0];
   const crowd = selectedMatch?.crowd ?? emptyCrowd;
-  const currentScore = defaultScoreForMatch(selectedMatch, profileFallback);
+  const currentScore = useMemo(() => defaultScoreForMatch(selectedMatch, profileFallback), [profileFallback, selectedMatch]);
   const selected = selectedMatch ? selectedByMatch[selectedMatch.id] ?? currentScore : currentScore;
 
   useEffect(() => {
@@ -496,6 +504,38 @@ export function AIAnalysisSection({
     return Array.from(unique.values()).slice(0, 6);
   }, [crowd, currentScore]);
 
+  useEffect(() => {
+    if (!selectedMatch) return;
+    const controller = new AbortController();
+    const scores = alternatives.map((score) => `${score.home}-${score.away}`).join(',');
+    setXbLoading(true);
+    setXbError(false);
+    fetch(`/api/match-insight?match=${selectedMatch.id}&scores=${encodeURIComponent(scores)}`, {
+      signal: controller.signal,
+      cache: 'no-store',
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`xB API ${response.status}`);
+        return response.json() as Promise<ProfileInsightResponse>;
+      })
+      .then((data) => {
+        setOfficialXb(data.xb ?? null);
+        const next: Record<string, XbPrediction> = {};
+        for (const variant of data.xbVariants ?? []) next[`${variant.home}:${variant.away}`] = variant.xb;
+        setXbVariants(next);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setXbError(true);
+        setOfficialXb(null);
+        setXbVariants({});
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setXbLoading(false);
+      });
+    return () => controller.abort();
+  }, [alternatives, selectedMatch]);
+
   const model = useMemo(() => {
     const exactRate = profile.scored_matches ? (profile.exact_hits / profile.scored_matches) * 100 : 0;
     const averageRound = profile.points / Math.max(1, profile.rounds.length);
@@ -540,27 +580,23 @@ export function AIAnalysisSection({
     return { exactRate, consistency, form, readability, homeBias, awayBias, crowdFit, success, dominant, estimate, confidenceFor };
   }, [crowd, profile, selectedMatchSignal]);
 
-  const selectedXb = model.estimate(selected);
-  const currentXb = model.estimate(currentScore);
-  const selectedConfidence = model.confidenceFor(selected);
-  const currentConfidence = model.confidenceFor(currentScore);
+  const selectedXbData = xbVariants[scoreLabel(selected)] ?? (scoreLabel(selected) === scoreLabel(currentScore) ? officialXb : null);
+  const currentXbData = xbVariants[scoreLabel(currentScore)] ?? officialXb;
+  const selectedXb = selectedXbData?.value ?? 0;
+  const currentXb = currentXbData?.value ?? 0;
+  const selectedConfidence = selectedXbData?.confidence ?? 0;
+  const currentConfidence = currentXbData?.confidence ?? 0;
   const scoreDistance = Math.abs(selected.home - crowd.avgHome) + Math.abs(selected.away - crowd.avgAway);
   const outcomeAgainstCrowd = outcome(selected) !== model.dominant.key;
   const crowdDifference = Math.round(clamp(scoreDistance * 27 + (outcomeAgainstCrowd ? 16 : 0), 0, 100));
   const tipFit = clamp(9.1 - scoreDistance * 1.25 + model.exactRate / 20 + profile.avg_points / 7, 2.3, 9.8);
 
   const xBTimeline = useMemo(() => {
-    const history = profile.rounds.length
-      ? profile.rounds.slice(-10).map((round, index, source) => {
-          const slice = source.slice(Math.max(0, index - 2), index + 1);
-          const rolling = slice.reduce((sum, item) => sum + item.points, 0) / Math.max(1, slice.length);
-          return Number(clamp(4.4 + (rolling - profile.avg_points * 2) / 8 + profile.success_rate / 28, 2.8, 9.4).toFixed(1));
-        })
-      : [4.8, 5.6, 5.4, 6.2, 6.8, 7.1];
-    const matchShift = ((crowd.homeWinShare - crowd.awayWinShare) * 0.012 + crowd.modeShare * 0.018 - crowd.dispersion * 0.008 + selectedMatchSignal * 0.9);
-    const adjusted = history.map((value, index) => Number(clamp(value + matchShift * ((index + 1) / history.length), 2.8, 9.7).toFixed(1)));
-    return [...adjusted, Number(selectedXb.toFixed(1))];
-  }, [crowd, profile, selectedMatchSignal, selectedXb]);
+    const historical = (selectedXbData?.trend ?? officialXb?.trend ?? []).slice(-9).map((point) => point.value);
+    if (historical.length) return [...historical, selectedXb || historical[historical.length - 1]];
+    return selectedXb ? [selectedXb] : [];
+  }, [officialXb, selectedXb, selectedXbData]);
+
 
   const momentum = useMemo(() => {
     const recent = profile.recent_match_points?.slice(-10) ?? [];
@@ -611,9 +647,6 @@ export function AIAnalysisSection({
   const currentLabel = scoreLabel(currentScore);
   const modeLabel = scoreLabel(crowdMode(crowd));
   const matchName = `${selectedMatch.homeTeam} – ${selectedMatch.awayTeam}`;
-  const roundChange = profile.rounds.length > 1
-    ? profile.rounds[profile.rounds.length - 1].points - profile.rounds[profile.rounds.length - 2].points
-    : 0;
   const momentumPositive = momentumDelta >= 0;
   const crowdAverage = `${crowd.avgHome.toFixed(1)} : ${crowd.avgAway.toFixed(1)}`;
   const coachHeadline = !selectedMatch.userTip
@@ -621,7 +654,7 @@ export function AIAnalysisSection({
     : crowdDifference >= 65
       ? `Tip ${currentLabel} na ${matchName} jde výrazně proti davu. Potenciál je vyšší, ale roste i riziko nuly.`
       : `Tip ${currentLabel} na ${matchName} odpovídá průběhu kola a dobře navazuje na tvůj dlouhodobý profil.`;
-  const recommendation = selectedXb >= 7.8
+  const recommendation = selectedXbData && selectedXb >= 7.8
     ? `Varianta ${selectedLabel} má pro tento zápas silné xB. Před výkopem zkontroluj sestavy a případné absence.`
     : `Konzervativnější skóre ${modeLabel} má v tomto duelu lepší oporu v tipech kola a nižší rozptyl.`;
   const scenario = model.dominant.key === 'home'
@@ -629,7 +662,21 @@ export function AIAnalysisSection({
     : model.dominant.key === 'away'
       ? `Dav nejvíc věří hostům ${selectedMatch.awayTeam}.`
       : 'Kolo v tomto duelu nejčastěji čeká remízový scénář.';
-  const radarValues = [model.form, tipFit, model.homeBias, model.awayBias, model.crowdFit, model.success];
+  const xbFactorValue = (key: string, fallback: number) => selectedXbData?.factors.find((factor) => factor.key === key)?.value ?? fallback;
+  const radarValues = [
+    xbFactorValue('season', model.form),
+    xbFactorValue('tip', tipFit),
+    xbFactorValue('home', model.homeBias),
+    xbFactorValue('away', model.awayBias),
+    xbFactorValue('context', model.crowdFit),
+    xbFactorValue('overall', model.success),
+  ];
+  const xbTrendDelta = xBTimeline.length > 1
+    ? xBTimeline[xBTimeline.length - 1] - xBTimeline[xBTimeline.length - 2]
+    : 0;
+  const xbTrendPositive = xbTrendDelta >= 0;
+  const contextFactor = xbFactorValue('context', model.readability);
+  const overallFactor = xbFactorValue('overall', model.success);
 
   return (
     <section className="ai-analysis-section mb-6" aria-labelledby="ai-analysis-title">
@@ -666,8 +713,9 @@ export function AIAnalysisSection({
             {alternatives.map((score) => {
               const label = scoreLabel(score);
               const isSelected = label === selectedLabel;
-              const simulated = model.estimate(score);
-              const delta = simulated - currentXb;
+              const variant = xbVariants[label] ?? (label === currentLabel ? officialXb : null);
+              const simulated = variant?.value ?? null;
+              const delta = simulated != null && currentXbData ? simulated - currentXb : null;
               return (
                 <button
                   key={label}
@@ -677,13 +725,14 @@ export function AIAnalysisSection({
                   aria-pressed={isSelected}
                 >
                   <div className={`font-display text-2xl font-bold tabular-nums ${isSelected ? 'text-violet-200' : 'text-white'}`}>{label}</div>
-                  <div className="mt-1 text-[9px] text-copy-muted">xB <strong className="font-display text-sm text-copy-secondary">{simulated.toFixed(1)}</strong></div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${delta >= -0.2 ? 'bg-violet-400' : delta >= -1.4 ? 'bg-state-info' : 'bg-state-danger'}`} style={{ width: `${clamp(simulated * 10)}%` }} /></div>
-                  <div className={`mt-2 text-[9px] font-semibold ${isSelected ? 'text-violet-300' : delta >= 0 ? 'text-state-success' : 'text-state-danger'}`}>{isSelected ? 'Vybraná simulace' : `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} xB`}</div>
+                  <div className="mt-1 text-[9px] text-copy-muted"><span className="normal-case">xB</span> <strong className="font-display text-sm text-copy-secondary">{simulated != null ? simulated.toFixed(1) : xbLoading ? '…' : '—'}</strong></div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${delta == null || delta >= -0.2 ? 'bg-violet-400' : delta >= -1.4 ? 'bg-state-info' : 'bg-state-danger'}`} style={{ width: `${simulated != null ? clamp(simulated * 10) : 0}%` }} /></div>
+                  <div className={`mt-2 text-[9px] font-semibold ${isSelected ? 'text-violet-300' : delta == null ? 'text-copy-muted' : delta >= 0 ? 'text-state-success' : 'text-state-danger'}`}>{isSelected ? 'Vybraná simulace' : delta != null ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} xB` : xbLoading ? 'Přepočítávám…' : 'xB není dostupné'}</div>
                 </button>
               );
             })}
           </div>
+          <p className="mt-3 text-[9px] leading-relaxed text-copy-muted"><b className="text-violet-200">Jednotný výpočet:</b> hodnoty xB v simulátoru pocházejí ze stejného modelu jako xB predikce na dashboardu. Kliknutí pouze přepočítá variantu, skutečný tip se nezmění.</p>
         </div>
 
       <div key={selectedMatch.id} className="ai-analysis-grid">
@@ -693,24 +742,26 @@ export function AIAnalysisSection({
             <div className="mb-2 flex items-end justify-between gap-3">
               <div>
                 <div className="text-[10px] text-copy-secondary">xB pro vybraný tip</div>
-                <div className="mt-1 font-display text-3xl font-bold tabular-nums text-violet-300">{selectedXb.toFixed(1)}</div>
+                <div className="mt-1 font-display text-3xl font-bold tabular-nums text-violet-300">{selectedXbData ? selectedXb.toFixed(1) : xbLoading ? '…' : '—'}</div>
               </div>
-              <div className={`rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${selectedXb >= currentXb ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>
-                {selectedXb >= currentXb ? '+' : ''}{(selectedXb - currentXb).toFixed(1)}
+              <div className={`rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${!selectedXbData || !currentXbData ? 'bg-surface-3 text-copy-muted' : selectedXb >= currentXb ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>
+                {selectedXbData && currentXbData ? `${selectedXb >= currentXb ? '+' : ''}${(selectedXb - currentXb).toFixed(1)}` : xbLoading ? 'počítám' : 'bez dat'}
               </div>
             </div>
             <MiniSparkline values={xBTimeline} />
             <div className="mt-2 grid grid-cols-3 gap-2 border-t border-line-subtle/60 pt-2 text-[9px]">
-              <div><span className="block text-copy-muted">Zápas</span><strong className="font-display text-base text-violet-300">{selectedXb.toFixed(1)}</strong></div>
-              <div><span className="block text-copy-muted">Trend</span><strong className={roundChange >= 0 ? 'text-state-success' : 'text-state-danger'}>{roundChange >= 0 ? 'Roste' : 'Klesá'}</strong></div>
+              <div><span className="block text-copy-muted">Zápas</span><strong className="font-display text-base text-violet-300">{selectedXbData ? selectedXb.toFixed(1) : '—'}</strong></div>
+              <div><span className="block text-copy-muted">Trend xB</span><strong className={xbTrendPositive ? 'text-state-success' : 'text-state-danger'}>{xBTimeline.length > 1 ? xbTrendPositive ? 'Roste' : 'Klesá' : 'Bez historie'}</strong></div>
               <div><span className="block text-copy-muted">Tip</span><strong className="text-copy-secondary">{selectedLabel}</strong></div>
             </div>
           </div>
           <div className="mt-3 space-y-1.5 text-[10px]">
-            <div className="flex justify-between"><span className="text-copy-muted">Forma profilu</span><span className="text-state-success">{model.form.toFixed(1)}/10</span></div>
-            <div className="flex justify-between"><span className="text-copy-muted">Čitelnost zápasu</span><span className="text-state-info">{model.readability.toFixed(1)}/10</span></div>
-            <div className="flex justify-between"><span className="text-copy-muted">Riziko tipu</span><span className="text-state-danger">{crowdDifference}%</span></div>
+            <div className="flex justify-between"><span className="text-copy-muted">Dlouhodobý průměr</span><span className="text-state-success">{overallFactor.toFixed(1)}/10</span></div>
+            <div className="flex justify-between"><span className="text-copy-muted">Čitelnost zápasu</span><span className="text-state-info">{contextFactor.toFixed(1)}/10</span></div>
+            <div className="flex justify-between"><span className="text-copy-muted">Odlišnost od davu</span><span className="text-state-danger">{crowdDifference}%</span></div>
           </div>
+          <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-500/8 p-2.5 text-[9px] leading-relaxed text-copy-muted"><b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu na škále 0–10. Je to stejná hodnota jako na dashboardu, nikoli procento šance na správný výsledek.</div>
+          {xbError && <div className="mt-2 text-[9px] text-state-danger">Jednotný xB model se nepodařilo načíst. Zkus stránku obnovit.</div>}
         </AnalysisCard>
 
         <AnalysisCard>
@@ -774,9 +825,9 @@ export function AIAnalysisSection({
         <AnalysisCard>
           <CardHeader number={5} title="AI confidence" subtitle={`Jistota modelu pro ${matchName}.`} tone="green" />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3 text-center">
-            <ConfidenceShield value={selectedConfidence} />
-            <div className={`mx-auto mt-2 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${selectedConfidence >= currentConfidence ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{selectedConfidence >= currentConfidence ? '+' : ''}{selectedConfidence - currentConfidence}%</div>
-            <p className="mx-auto mt-2 max-w-[210px] text-[10px] leading-relaxed text-copy-secondary">Jistota vychází z tvé historické úspěšnosti, shody zvoleného tipu s průběhem kola a z rozptylu výsledků právě tohoto duelu.</p>
+            <ConfidenceShield value={selectedXbData ? selectedConfidence : 0} />
+            <div className={`mx-auto mt-2 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${!selectedXbData || !currentXbData ? 'bg-surface-3 text-copy-muted' : selectedConfidence >= currentConfidence ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{selectedXbData && currentXbData ? `${selectedConfidence >= currentConfidence ? '+' : ''}${selectedConfidence - currentConfidence}%` : xbLoading ? 'počítám' : 'bez dat'}</div>
+            <p className="mx-auto mt-2 max-w-[220px] text-[10px] leading-relaxed text-copy-secondary"><b className="text-white">Jistota neříká šanci na výsledek.</b> Vyjadřuje, jak silný a početný datový základ má osobní xB: tvoji historii, zkušenost s oběma týmy, H2H, sezonní formu a dostupná data k zápasu.</p>
             <div className="mt-3 h-2 rounded-full quality-gradient" />
             <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Nízká</span><span>Střední</span><span>Vysoká</span></div>
           </div>
@@ -824,10 +875,11 @@ export function AIAnalysisSection({
         </AnalysisCard>
 
         <AnalysisCard>
-          <CardHeader number={8} title="xB radar" subtitle={`Faktory vybraného duelu ${matchName}.`} tone="green" />
+          <CardHeader number={8} title="xB radar" subtitle={`Stejné osobní faktory, ze kterých vzniká xB pro ${matchName}.`} tone="green" />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-2">
             <RadarChart values={radarValues} />
             <div className="mt-1 flex justify-between border-t border-line-subtle/70 px-2 pt-2 text-[8px] text-copy-muted"><span>0 = slabé</span><span>10 = výborné</span></div>
+            <p className="mt-2 px-2 text-[9px] leading-relaxed text-copy-muted">Domácí a hosté znamenají, jak ti historicky sedí jednotlivé týmy. Kontext je čitelnost utkání z formy a H2H, průměr je tvůj dlouhodobý bodový základ.</p>
           </div>
         </AnalysisCard>
 
@@ -850,13 +902,13 @@ export function AIAnalysisSection({
         <AnalysisCard>
           <CardHeader number={10} title="Jak se to počítá?" subtitle={`Co stojí za doporučením pro ${matchName}.`} tone="pink" />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
-            <p className="text-[10px] leading-relaxed text-copy-secondary">Model po každé změně zápasu nebo simulovaného skóre znovu vyhodnotí čtyři hlavní signály:</p>
+            <p className="text-[10px] leading-relaxed text-copy-secondary">Dashboard i profil používají jeden centrální osobní xB model. Jednotlivé metriky ale odpovídají na různé otázky:</p>
             <div className="mt-3 space-y-2.5">
               {[
-                { title: 'Shoda s kolem', text: `Jak blízko je skóre ${selectedLabel} průměru ${crowdAverage} a nejčastějšímu tipu ${modeLabel}.` },
-                { title: 'Tvůj profil', text: `Historická úspěšnost ${profile.success_rate.toFixed(1)} % a dlouhodobá forma ${model.form.toFixed(1)}/10.` },
-                { title: 'Čitelnost duelu', text: `Rozptyl tipů ${Math.round(crowd.dispersion)} % a síla hlavního scénáře tohoto zápasu.` },
-                { title: 'Riziko skóre', text: `Odlišnost ${crowdDifference} %, výsledek proti směru davu a počet očekávaných gólů.` },
+                { title: 'xB · očekávané body', text: `Odhad bodového zisku 0–10 pro tip ${selectedLabel}. Kombinuje tvoji historii, zkušenost s týmy, H2H, sezonní formu, čitelnost duelu a konkrétní skóre.` },
+                { title: 'AI confidence · jistota dat', text: `Hodnota ${selectedXbData ? `${selectedConfidence} %` : 'se načítá'} vyjadřuje sílu vzorku a dostupných podkladů. Není to pravděpodobnost, že tip vyjde.` },
+                { title: 'Dav a heatmapa', text: `Průměr ${crowdAverage}, nejčastější tip ${modeLabel} a odlišnost ${crowdDifference} % popisují ostatní tipéry v tomto kole. Nejsou samy o sobě xB.` },
+                { title: 'Simulátor', text: `Přepočítává stejné xB pro alternativní skóre. Vybraná varianta se propíše do analýzy, ale neukládá ani nepřepisuje tvůj skutečný tip.` },
               ].map((item, index) => (
                 <div key={item.title} className="grid grid-cols-[24px_1fr] gap-2.5 rounded-lg border border-line-subtle/60 bg-surface-1/55 p-2.5">
                   <span className="flex h-6 w-6 items-center justify-center rounded-full bg-violet-500/15 font-display text-[10px] font-bold text-violet-300">{index + 1}</span>
@@ -867,7 +919,12 @@ export function AIAnalysisSection({
                 </div>
               ))}
             </div>
-            <p className="mt-3 border-t border-line-subtle/70 pt-3 text-[9px] leading-relaxed text-copy-muted">Výsledkem není kurz ani garantovaná predikce. xB a jistota modelu jsou orientační skóre, která pomáhají porovnat varianty tipu v rámci jednoho zápasu.</p>
+            {selectedXbData && (
+              <div className="mt-3 border-t border-line-subtle/70 pt-3 text-[9px] leading-relaxed text-copy-muted">
+                <b className="text-violet-200">Aktuální výpočet:</b> {selectedXbData.explanation} Interval odhadu je {selectedXbData.low.toFixed(1)}–{selectedXbData.high.toFixed(1)} bodu.
+              </div>
+            )}
+            <p className="mt-2 text-[9px] leading-relaxed text-copy-muted">Výsledkem není kurz ani garance. xB slouží k porovnání očekávaného bodového potenciálu, zatímco jistota popisuje kvalitu datového základu.</p>
           </div>
         </AnalysisCard>
       </div>

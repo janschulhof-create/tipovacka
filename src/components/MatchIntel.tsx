@@ -578,11 +578,9 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
 
   return (
     <div className={desktop ? 'xb-content space-y-4' : 'space-y-5'}>
-      {!desktop && (
-        <div className="rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-copy-secondary">
-          <b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu v našem bodování 0–10. Není to procento ani slib výsledku; model odhaduje, jak dobře by právě tobě měl zápas sedět.
-        </div>
-      )}
+      <div className={`rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 leading-relaxed text-copy-secondary ${desktop ? 'text-[11.5px]' : 'text-[11px]'}`}>
+        <b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu v našem bodování 0–10. Stejný osobní výpočet se používá také v profilu a simulátoru. xB není procento ani slib výsledku. <b className="text-copy-primary">Jistota</b> vedle odhadu popisuje sílu a množství dat, nikoli pravděpodobnost, že konkrétní skóre vyjde.
+      </div>
 
       {!data.loggedIn ? (
         <Empty text="Osobní xB se zobrazí po přihlášení tipera. H2H a forma týmů zůstávají níže." />

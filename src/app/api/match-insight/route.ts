@@ -58,7 +58,15 @@ interface PlayedMatch {
 
 
 export async function GET(req: Request) {
-  const matchId = Number(new URL(req.url).searchParams.get('match'));
+  const url = new URL(req.url);
+  const matchId = Number(url.searchParams.get('match'));
+  const requestedScores = (url.searchParams.get('scores') ?? '')
+    .split(',')
+    .map((value) => value.match(/^(\d+)-(\d+)$/))
+    .filter((match): match is RegExpMatchArray => Boolean(match))
+    .map((match) => ({ home: Number(match[1]), away: Number(match[2]) }))
+    .filter((score) => Number.isFinite(score.home) && Number.isFinite(score.away))
+    .slice(0, 10);
   if (!matchId) return NextResponse.json({ error: 'bad request' }, { status: 400 });
 
   const sb = await createServerAuthClient();
@@ -217,6 +225,7 @@ export async function GET(req: Request) {
   // Osobní xB počítáme pouze pro ostré zápasy Chance ligy. Kolo Příprava
   // je z uživatelského rozhraní odstraněné a do modelu se nezapočítává.
   let xb = null;
+  let xbVariants: { home: number; away: number; xb: ReturnType<typeof computePersonalXb> }[] = [];
   if (player && isCurrentChanceMatch) {
     const archiveTips: XbHistoryRow[] = [...archive.rounds]
       .sort((a, b) => a.round - b.round)
@@ -260,15 +269,6 @@ export async function GET(req: Request) {
       .eq('match_id', matchId)
       .maybeSingle();
 
-    let tipExpectedPoints: number | null = null;
-    if (prediction && currentPrediction) {
-      const ph = Number(currentPrediction.predicted_home);
-      const pa = Number(currentPrediction.predicted_away);
-      if (Number.isFinite(ph) && Number.isFinite(pa)) {
-        tipExpectedPoints = expectedPointsForTip(prediction.lambdaHome, prediction.lambdaAway, ph, pa);
-      }
-    }
-
     const contextValue = prediction
       ? Math.max(0, Math.min(10, Math.max(prediction.pHome, prediction.pDraw, prediction.pAway) * 6 + prediction.bestTip.ev * 0.4))
       : null;
@@ -276,21 +276,35 @@ export async function GET(req: Request) {
       ? `Čitelnost zápasu z aktuální formy a H2H. Model doporučuje ${prediction.bestTip.h}:${prediction.bestTip.a}; používá ${prediction.formSample} vstupů formy a ${prediction.h2hSample} vzájemných zápasů.`
       : 'Současná forma ani vzájemné zápasy zatím nestačí na samostatné vyhodnocení čitelnosti utkání.';
 
-    xb = computePersonalXb({
-      home: teams.home,
-      away: teams.away,
-      archiveTips,
-      priorAverage,
-      seasonPoints,
-      tipExpectedPoints,
-      tipSample: prediction?.sample ?? 0,
-      contextValue,
-      contextSample: prediction?.sample ?? 0,
-      contextDescription,
-      // Pro přepínač 5 / 10 / 20 / 35 posíláme kompletní chronologickou
-      // historii minulé ligové sezony; výpočet vrátí posledních max. 35 bodů.
-      trendPoints: archiveTips.map((row) => row.points),
-    });
+    const computeForScore = (score: { home: number; away: number } | null) => {
+      const tipExpectedPoints = prediction && score
+        ? expectedPointsForTip(prediction.lambdaHome, prediction.lambdaAway, score.home, score.away)
+        : null;
+      return computePersonalXb({
+        home: teams.home,
+        away: teams.away,
+        archiveTips,
+        priorAverage,
+        seasonPoints,
+        tipExpectedPoints,
+        tipSample: score ? prediction?.sample ?? 0 : 0,
+        contextValue,
+        contextSample: prediction?.sample ?? 0,
+        contextDescription,
+        // Pro přepínač 5 / 10 / 20 / 35 posíláme kompletní chronologickou
+        // historii minulé ligové sezony; výpočet vrátí posledních max. 35 bodů.
+        trendPoints: archiveTips.map((row) => row.points),
+      });
+    };
+
+    const storedScore = currentPrediction
+      ? { home: Number(currentPrediction.predicted_home), away: Number(currentPrediction.predicted_away) }
+      : null;
+    const validStoredScore = storedScore && Number.isFinite(storedScore.home) && Number.isFinite(storedScore.away)
+      ? storedScore
+      : null;
+    xb = computeForScore(validStoredScore);
+    xbVariants = requestedScores.map((score) => ({ ...score, xb: computeForScore(score) }));
   }
 
   return NextResponse.json({
@@ -299,6 +313,7 @@ export async function GET(req: Request) {
     form5,
     prediction,
     xb,
+    xbVariants,
     loggedIn: !!player,
   });
 }
