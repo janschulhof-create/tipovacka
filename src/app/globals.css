@@ -256,8 +256,14 @@ textarea {
 
 @container (min-width: 760px) {
   .xb-hero-grid {
-    grid-template-columns: clamp(124px, 17%, 144px) minmax(180px, 0.78fr) minmax(300px, 1.22fr);
+    grid-template-columns: clamp(124px, 17%, 144px) minmax(0, 1fr);
     gap: 16px;
+  }
+}
+
+@container (min-width: 1080px) {
+  .xb-hero-grid {
+    grid-template-columns: clamp(124px, 17%, 144px) minmax(220px, 0.84fr) minmax(280px, 1.16fr);
   }
 
   .xb-hero-chart {
