@@ -21,8 +21,8 @@ function isActive(pathname: string, href: string) {
 export function SideRail() {
   const pathname = usePathname();
   return (
-    <aside className="fixed inset-y-0 left-0 z-30 hidden w-60 flex-col border-r border-terrain-700 bg-terrain-900/70 px-4 py-6 backdrop-blur lg:flex">
-      <Link prefetch={false} href="/" className="mb-8 flex items-center gap-3">
+    <aside className="fixed inset-y-0 left-0 z-30 hidden w-[208px] flex-col border-r border-terrain-700 bg-terrain-900/82 px-3 py-4 backdrop-blur lg:flex">
+      <Link prefetch={false} href="/" className="mb-7 flex items-center gap-2.5 px-1">
         <BrandMark className="h-10 w-10" />
         <div className="leading-tight">
           <div className="font-display text-lg font-semibold tracking-wide text-white">Tipovačka</div>
@@ -37,10 +37,10 @@ export function SideRail() {
             <Link prefetch={false}
               key={it.href}
               href={it.href}
-              className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm transition ${
+              className={`relative flex items-center gap-3 rounded-xl border px-3 py-2.5 text-sm transition ${
                 active
-                  ? 'bg-terrain-800 font-semibold text-white'
-                  : 'text-slate-100/70 hover:bg-terrain-800/60 hover:text-white'
+                  ? 'border-violet-400/25 bg-gradient-to-r from-violet-500/18 to-surface-2/70 font-semibold text-white shadow-[inset_3px_0_0_#a46af7]'
+                  : 'border-transparent text-slate-100/65 hover:border-line-subtle hover:bg-terrain-800/60 hover:text-white'
               }`}
             >
               <span className="text-base">{it.icon}</span>

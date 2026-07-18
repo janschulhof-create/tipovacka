@@ -80,10 +80,10 @@ export function CompetitionSwitcher({ current }: { current: CompetitionKey }) {
             prefetch={false}
             key={c.key}
             href={href(c.key)}
-            className={`flex shrink-0 items-center gap-1.5 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+            className={`flex shrink-0 items-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold transition lg:px-4 lg:py-2.5 ${
               on
-                ? 'bg-pitch text-white shadow'
-                : 'border border-terrain-600 bg-terrain-900/60 text-slate-100/60 hover:text-white'
+                ? 'border-violet-300/40 bg-gradient-violet text-white shadow-violet'
+                : 'border-line-strong bg-surface-1/72 text-copy-muted hover:border-violet-400/35 hover:bg-surface-2 hover:text-white'
             }`}
           >
             <CompetitionIcon compKey={c.key} className={c.key === 'liga' ? 'h-4 w-6' : 'h-5 w-5'} />

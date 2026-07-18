@@ -39,7 +39,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <SideRail />
 
         {/* přihlašovací stav – desktop (vpravo nahoře) */}
-        <div className="fixed right-4 top-4 z-40 hidden lg:flex">
+        <div className="fixed right-4 top-3 z-40 hidden lg:flex">
           <AuthStatus player={player} />
         </div>
 
@@ -54,8 +54,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
           <AuthStatus player={player} className="ml-auto" />
         </header>
 
-        <div className="relative z-10 lg:pl-60">
-          <div className="mx-auto max-w-[1680px] px-4 pb-28 pt-4 lg:px-8 lg:pb-12 lg:pt-16">
+        <div className="relative z-10 lg:pl-[208px]">
+          <div className="mx-auto max-w-[1900px] px-4 pb-28 pt-4 lg:px-4 lg:pb-12 lg:pt-3 2xl:px-5">
             {children}
           </div>
         </div>

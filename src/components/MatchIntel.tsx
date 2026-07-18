@@ -419,7 +419,7 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
 }
 
 /** Personalizovaná xB predikce + forma a H2H pro zápas Chance ligy. */
-export function XbContent({ data, loading }: { data: InsightData | null; loading: boolean }) {
+export function XbContent({ data, loading, desktop = false }: { data: InsightData | null; loading: boolean; desktop?: boolean }) {
   if (loading) return <p className="text-xs text-copy-muted">Počítám xB predikci…</p>;
   if (!data) return <Empty text="Data se nepodařilo načíst." />;
 
@@ -443,10 +443,12 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
   const mainColor = xb ? qualityColor(xb.value) : '#7888a3';
 
   return (
-    <div className="space-y-5">
-      <div className="rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-copy-secondary">
-        <b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu v našem bodování 0–10. Není to procento ani slib výsledku; model odhaduje, jak dobře by právě tobě měl zápas sedět.
-      </div>
+    <div className={desktop ? 'space-y-4' : 'space-y-5'}>
+      {!desktop && (
+        <div className="rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 text-[11px] leading-relaxed text-copy-secondary">
+          <b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu v našem bodování 0–10. Není to procento ani slib výsledku; model odhaduje, jak dobře by právě tobě měl zápas sedět.
+        </div>
+      )}
 
       {!data.loggedIn ? (
         <Empty text="Osobní xB se zobrazí po přihlášení tipera. H2H a forma týmů zůstávají níže." />
@@ -454,23 +456,23 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
         <Empty text="Pro tento zápas zatím nelze osobní xB spočítat." />
       ) : (
         <>
-          <div className="panel-premium p-4">
-            <div className="grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center lg:grid-cols-[9rem_minmax(0,1fr)_18rem]">
+          <div className={`panel-premium ${desktop ? 'p-3.5 2xl:p-4' : 'p-4'}`}>
+            <div className={desktop ? 'xb-hero-grid' : 'grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center lg:grid-cols-[9rem_minmax(0,1fr)_18rem]'}>
               <div
-                className="relative mx-auto flex h-36 w-36 shrink-0 items-center justify-center rounded-full p-[9px] sm:mx-0"
+                className={`${desktop ? 'h-[124px] w-[124px] p-[8px] 2xl:h-36 2xl:w-36 2xl:p-[9px]' : 'h-36 w-36 p-[9px]'} relative mx-auto flex shrink-0 items-center justify-center rounded-full sm:mx-0`}
                 style={{ background: `conic-gradient(${mainColor} ${degrees}deg, rgb(23 42 71) ${degrees}deg)` }}
                 aria-label={`Očekávané body ${xb.value} z 10`}
               >
                 <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-app-deep shadow-inner">
-                  <span className="font-display text-4xl font-bold tabular-nums text-white">{xb.value.toFixed(1)}</span>
+                  <span className={`${desktop ? 'text-[34px] 2xl:text-4xl' : 'text-4xl'} font-display font-bold tabular-nums text-white`}>{xb.value.toFixed(1)}</span>
                   <span className="text-xs text-copy-muted">/ 10</span>
                   <span className="mt-1 text-[10px] uppercase tracking-wide text-copy-muted">očekávané body</span>
                 </div>
               </div>
 
               <div className="min-w-0 flex-1 text-center sm:text-left">
-                <div className="text-[11px] font-bold uppercase tracking-[0.13em] text-violet-300">xB predikce</div>
-                <h4 className="mt-1 font-display text-xl font-bold" style={{ color: mainColor }}>{label}</h4>
+                <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-violet-300">{desktop ? 'Očekávané body (xB)' : 'xB predikce'}</div>
+                <h4 className={`${desktop ? 'text-[18px] 2xl:text-xl' : 'text-xl'} mt-1 font-display font-bold`} style={{ color: mainColor }}>{label}</h4>
                 <p className="mt-2 text-[12.5px] leading-relaxed text-copy-secondary">
                   Podle tvé historie model očekává v tomto zápase přibližně <b className="tabular-nums text-copy-primary">{xb.value.toFixed(1)} bodu</b>.
                 </p>
@@ -487,15 +489,17 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
                 )}
               </div>
 
-              <div className="hidden lg:block">
+              <div className={desktop ? 'xb-hero-chart' : 'hidden lg:block'}>
                 <XbTrendChart rows={xb.trend ?? []} />
               </div>
             </div>
           </div>
 
-          <div className="lg:hidden">
-            <XbTrendChart rows={xb.trend ?? []} />
-          </div>
+          {!desktop && (
+            <div className="lg:hidden">
+              <XbTrendChart rows={xb.trend ?? []} />
+            </div>
+          )}
 
           <div className="space-y-3">
             <div>
@@ -504,14 +508,14 @@ export function XbContent({ data, loading }: { data: InsightData | null; loading
                 Hodnota říká, kolik bodů ti daný faktor historicky naznačuje. „Vliv“ ukazuje, jak silně je započtený do výsledku.
               </p>
             </div>
-            <QualityLegend />
-            <div className="grid gap-2.5 sm:grid-cols-2">
+            {!desktop && <QualityLegend />}
+            <div className={`grid sm:grid-cols-2 ${desktop ? 'gap-2' : 'gap-2.5'}`}>
               {xb.factors.map((factor) => {
                 const color = qualityColor(factor.value);
                 return (
                   <div
                     key={factor.key}
-                    className="rounded-2xl border bg-surface-1/70 p-3"
+                    className={`rounded-2xl border bg-surface-1/70 ${desktop ? 'p-2.5 2xl:p-3' : 'p-3'}`}
                     style={{ borderColor: qualityColor(factor.value, 0, 10, false, 0.28) }}
                   >
                     <div className="flex items-start gap-2.5">

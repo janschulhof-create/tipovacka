@@ -59,6 +59,8 @@ export function RoundPanel({
   desktopListOnly = false,
   selectedMatchId,
   onMatchSelect,
+  embedded = false,
+  visibleMatchIds,
 }: {
   matches: Match[];
   players: Player[];
@@ -74,6 +76,10 @@ export function RoundPanel({
   desktopListOnly?: boolean;
   selectedMatchId?: number;
   onMatchSelect?: (matchId: number) => void;
+  /** Odstraní vlastní panelový obal, když je seznam vložený do desktopového shellu. */
+  embedded?: boolean;
+  /** Volitelný filtr pouze pro vykreslení; ukládání dál pracuje se všemi zápasy kola. */
+  visibleMatchIds?: number[];
 }) {
   // Supabase klient (~200 kB JS) se stáhne až ve chvíli, kdy je fakt potřeba
   // (načtení/uložení tipů) – ne při startu stránky. Výrazně zrychlí první vykreslení.
@@ -262,6 +268,8 @@ export function RoundPanel({
 
   const openCount = matches.filter((m) => !isLocked(m)).length;
   const anyPlayed = matches.some((m) => m.status === 'finished' || m.status === 'live');
+  const visibleIdSet = useMemo(() => visibleMatchIds ? new Set(visibleMatchIds) : null, [visibleMatchIds]);
+  const renderedMatches = visibleIdSet ? matches.filter((match) => visibleIdSet.has(match.id)) : matches;
 
   // bodování za kolo
   const roundScores = players
@@ -275,7 +283,7 @@ export function RoundPanel({
 
   return (
     <>
-    <div className="panel-flush divide-y divide-terrain-700">
+    <div className={embedded ? 'divide-y divide-line-subtle/80' : 'panel-flush divide-y divide-terrain-700'}>
       {/* výběr hráče (jen editovatelné kolo) */}
       {editable && showSelector && (
         <div className="flex flex-col gap-2 p-4 sm:flex-row sm:items-center">
@@ -302,8 +310,8 @@ export function RoundPanel({
 
       {/* zápasy */}
       <ul className="divide-y divide-terrain-700">
-        {matches.map((m, index) => {
-          const previous = matches[index - 1];
+        {renderedMatches.map((m, index) => {
+          const previous = renderedMatches[index - 1];
           const showGroup = groupBySource && (!previous || europeanCompetitionKey(previous.source_league) !== europeanCompetitionKey(m.source_league));
           return (
             <Fragment key={m.id}>
@@ -601,6 +609,7 @@ function MatchExpanded({
   preds,
   selectedName,
   preferXb = false,
+  desktopDetail = false,
 }: {
   m: Match;
   locked: boolean;
@@ -608,6 +617,7 @@ function MatchExpanded({
   preds: RoundPrediction[];
   selectedName?: string;
   preferXb?: boolean;
+  desktopDetail?: boolean;
 }) {
   const myTip = selectedName ? preds.find((p) => p.name === selectedName) : undefined;
   const d = m.detail;
@@ -622,19 +632,19 @@ function MatchExpanded({
   const showPrediction = m.status === 'scheduled';
 
   const sourceKey = String(m.source_league ?? '').toLowerCase();
-  const isChanceLeague = Number(m.round) > 0 && (
+  const isChanceLeague = desktopDetail || (Number(m.round) > 0 && (
     sourceKey === 'cze.1'
     || sourceKey.includes('czech-liga')
     || sourceKey.includes('chance-liga')
-  );
+  ));
 
   type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'xb' | 'prubeh' | 'staty' | 'sestavy';
   const tabs = (
     [
       { id: 'tipy' as const, label: 'Tipy' },
+      isChanceLeague ? { id: 'xb' as const, label: 'xB predikce' } : null,
       hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení' } : null,
       showPrediction && !isChanceLeague ? { id: 'h2h' as const, label: 'H2H' } : null,
-      showPrediction && isChanceLeague ? { id: 'xb' as const, label: 'xB predikce' } : null,
       showPrediction && !isChanceLeague ? { id: 'predikce' as const, label: 'Predikce' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
       hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
@@ -649,9 +659,9 @@ function MatchExpanded({
   const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce' || active === 'xb');
 
   return (
-    <div className="min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40">
+    <div className={`min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40 ${desktopDetail ? 'desktop-match-expanded' : ''}`}>
       {tabs.length > 1 && (
-        <div className="flex gap-1 overflow-x-auto px-2 pt-2 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:px-3">
+        <div className={`flex gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${desktopDetail ? 'border-b border-line-subtle bg-app-deep/28 px-3 pt-1.5 2xl:px-4' : 'px-2 pt-2 sm:px-3'}`}>
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -659,10 +669,10 @@ function MatchExpanded({
                 e.stopPropagation();
                 setTab(t.id);
               }}
-              className={`shrink-0 whitespace-nowrap rounded-t-md px-3 py-1.5 text-xs font-semibold transition ${
-                active === t.id
-                  ? 'bg-terrain-800 text-white'
-                  : 'text-slate-300/50 hover:text-slate-100/80'
+              className={`shrink-0 whitespace-nowrap px-3 text-xs font-semibold transition ${
+                desktopDetail
+                  ? `border-b-2 py-3 ${active === t.id ? 'border-violet-400 text-white' : 'border-transparent text-copy-muted hover:text-copy-primary'}`
+                  : `rounded-t-md py-1.5 ${active === t.id ? 'bg-terrain-800 text-white' : 'text-slate-300/50 hover:text-slate-100/80'}`
               }`}
             >
               {t.label}
@@ -670,7 +680,7 @@ function MatchExpanded({
           ))}
         </div>
       )}
-      <div className={tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}>
+      <div className={desktopDetail ? 'bg-app-deep/18 px-3.5 py-3.5 2xl:px-4 2xl:py-4' : tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}>
         {active === 'tipy' && (
           <div className="space-y-3">
             <TipsContent m={m} locked={locked} live={live} preds={preds} />
@@ -687,7 +697,7 @@ function MatchExpanded({
         )}
         {active === 'hodnoceni' && <RoastContent m={m} preds={preds} />}
         {active === 'h2h' && <H2HContent data={intel} loading={intelLoading} />}
-        {active === 'xb' && <XbContent data={intel} loading={intelLoading} />}
+        {active === 'xb' && <XbContent data={intel} loading={intelLoading} desktop={desktopDetail} />}
         {active === 'predikce' && (
           <PredictionContent data={intel} loading={intelLoading} home={m.home_team} away={m.away_team} />
         )}
@@ -710,39 +720,57 @@ export function DesktopMatchDetail({
 }) {
   const locked = match.status !== 'scheduled' || new Date(match.kickoff).getTime() <= Date.now();
   const live = match.status === 'live';
+  const matchPredictions = predictions.filter((prediction) => prediction.match_id === match.id);
+  const myTip = selectedName ? matchPredictions.find((prediction) => prediction.name === selectedName) : undefined;
+  const status = live ? `živě${match.clock ? ` ${match.clock}` : match.minute != null ? ` ${match.minute}′` : ''}` : match.status === 'finished' ? 'konec' : 'otevřeno';
+
   return (
     <section className="panel-flush overflow-hidden shadow-elevated">
-      <div className="border-b border-line-subtle bg-gradient-to-r from-violet-500/10 via-surface-2/80 to-surface-1 px-5 py-4">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex min-w-0 flex-1 items-center justify-end gap-3">
-            <span className="truncate font-display text-lg font-bold text-copy-primary">{match.home_team}</span>
-            <Flag team={match.home_team} className="h-8 w-8" />
+      <div className="border-b border-line-subtle bg-gradient-to-br from-violet-500/10 via-surface-2/75 to-surface-1 px-4 py-3.5 2xl:px-5">
+        <div className="mb-3 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-muted">
+          <span className={live ? 'text-state-live' : ''}>{status}</span>
+          <span>{dt(match.kickoff)}</span>
+        </div>
+
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 2xl:gap-5">
+          <div className="flex min-w-0 items-center justify-end gap-2.5 text-right">
+            <span className="truncate font-display text-[17px] font-bold text-copy-primary 2xl:text-xl">{match.home_team}</span>
+            <Flag team={match.home_team} className="h-8 w-8 2xl:h-9 2xl:w-9" />
           </div>
+
           <div className="shrink-0 text-center">
             {locked ? (
-              <div className={`rounded-xl px-4 py-2 font-display text-2xl font-bold tabular-nums ${live ? 'bg-state-live/15 text-state-live' : 'bg-app-deep/65 text-white'}`}>
+              <div className={`rounded-xl border px-3.5 py-1.5 font-display text-[25px] font-bold tabular-nums leading-none 2xl:px-4 2xl:py-2 2xl:text-[28px] ${live ? 'border-state-live/35 bg-state-live/12 text-state-live' : 'border-line-subtle bg-app-deep/68 text-white'}`}>
                 {match.home_score ?? '–'} <span className="text-copy-muted">:</span> {match.away_score ?? '–'}
               </div>
             ) : (
-              <div className="rounded-xl border border-line-strong bg-app-deep/45 px-4 py-2 font-display text-base text-copy-muted">vs</div>
+              <div className="rounded-xl border border-line-strong bg-app-deep/48 px-4 py-2 font-display text-base text-copy-muted">vs</div>
             )}
-            <div className="mt-1.5 text-[10px] uppercase tracking-[0.12em] text-copy-muted">
-              {live ? `živě ${match.clock ?? match.minute ?? ''}` : match.status === 'finished' ? 'konec' : dt(match.kickoff)}
-            </div>
           </div>
-          <div className="flex min-w-0 flex-1 items-center gap-3">
-            <Flag team={match.away_team} className="h-8 w-8" />
-            <span className="truncate font-display text-lg font-bold text-copy-primary">{match.away_team}</span>
+
+          <div className="flex min-w-0 items-center gap-2.5">
+            <Flag team={match.away_team} className="h-8 w-8 2xl:h-9 2xl:w-9" />
+            <span className="truncate font-display text-[17px] font-bold text-copy-primary 2xl:text-xl">{match.away_team}</span>
           </div>
         </div>
+
+        {myTip && (
+          <div className="mt-2.5 text-center text-[11px] text-copy-muted">
+            tvůj tip <strong className="tabular-nums text-copy-primary">{myTip.predicted_home}:{myTip.predicted_away}</strong>
+            {myTip.points != null && (
+              <span className={`ml-1.5 rounded px-1.5 py-0.5 font-bold ${pointsBadgeClass(myTip.points)}`}>{myTip.points} b</span>
+            )}
+          </div>
+        )}
       </div>
       <MatchExpanded
         m={match}
         locked={locked}
         live={live}
-        preds={predictions.filter((prediction) => prediction.match_id === match.id)}
+        preds={matchPredictions}
         selectedName={selectedName}
         preferXb
+        desktopDetail
       />
     </section>
   );

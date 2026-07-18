@@ -40,7 +40,7 @@ export default async function Home({
   if (!season) {
     const players = await getPlayers();
     return (
-      <main className="space-y-6">
+      <main className={competition.key === 'liga' ? 'chance-page space-y-4' : 'space-y-6'}>
         <CompetitionSwitcher current={competition.key} />
         <ComingSoonPanel competition={competition} players={players} />
       </main>
@@ -97,12 +97,12 @@ export default async function Home({
   const activeNames = players.map((p) => p.name);
 
   return (
-    <main className="space-y-6">
+    <main className={competition.key === 'liga' ? 'chance-page space-y-4' : 'space-y-6'}>
       <CompetitionSwitcher current={competition.key} />
       <LiveRefresh hasLive={liveMatches.length > 0} />
 
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}
-      <header className="flex items-center justify-between gap-3">
+      <header className={`flex items-center justify-between gap-3 ${competition.key === 'liga' ? 'min-[1200px]:hidden' : ''}`}>
         <h1 className="font-display text-2xl font-bold tracking-wide text-white sm:text-3xl">
           {selectedRound != null ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
           <span className="ml-2 hidden align-middle text-sm font-normal text-slate-300/50 sm:inline">
@@ -117,35 +117,32 @@ export default async function Home({
       {competition.key === 'liga' ? (
         <>
           {/* Chance liga: desktopové třísloupcové rozložení podle schváleného návrhu. */}
-          <div className="hidden min-w-0 grid-cols-[minmax(0,2.2fr)_320px] items-start gap-4 xl:grid">
+          <div className="chance-desktop-layout hidden min-w-0 items-start min-[1200px]:grid">
             <LigaDesktopBoard
               matches={matches}
               players={players}
               predictions={predictions}
               editable={!!sessionPlayer}
               playerId={sessionPlayer?.id ?? ''}
+              roundTitle={selectedRound != null ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
+              seasonName={season.name}
+              rounds={rounds}
+              selectedRound={selectedRound ?? currentRound ?? rounds[0] ?? 0}
+              knockout={knockout}
+              roundLabels={roundLabels}
             />
 
-            <aside className="min-w-0 space-y-4 xl:sticky xl:top-20">
-              <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
-
-              {chart.matches.length > 0 && (
-                <section className="space-y-2">
-                  <h2 className="eyebrow px-1">
-                    <span className="flag-chip" /> Vývoj bodů
-                  </h2>
-                  <StandingsChart matches={chart.matches} players={chart.players} />
-                </section>
-              )}
+            <aside className="chance-right-rail min-w-0 space-y-3 min-[1200px]:sticky min-[1200px]:top-[74px]">
+              <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} compact />
 
               <Suspense fallback={<SeasonXbSkeleton />}>
-                <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} />
+                <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} compact />
               </Suspense>
             </aside>
           </div>
 
           {/* Mobilní Chance liga zůstává funkčně i prostorově stejná. */}
-          <div className="space-y-6 xl:hidden">
+          <div className="space-y-6 min-[1200px]:hidden">
             <section className="space-y-3">
               {roundOpen && !sessionPlayer && (
                 <p className="px-1 text-center text-[13px] text-slate-300/60">
@@ -169,12 +166,6 @@ export default async function Home({
             <Suspense fallback={<SeasonXbSkeleton />}>
               <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} />
             </Suspense>
-            {chart.matches.length > 0 && (
-              <section className="space-y-3">
-                <h2 className="eyebrow"><span className="flag-chip" /> Vývoj bodů</h2>
-                <StandingsChart matches={chart.matches} players={chart.players} />
-              </section>
-            )}
           </div>
         </>
       ) : (
@@ -214,7 +205,7 @@ export default async function Home({
       )}
 
       {/* ---------- STATISTIKY SEZÓNY: pod zápasy, na celou šířku (desktop); na mobilu stejné pořadí ---------- */}
-      <section className="mt-6 space-y-4 lg:mt-8">
+      <section id="statistiky-sezony" className="mt-6 space-y-4 lg:mt-8">
         <h2 className="eyebrow">
           <span className="flag-chip" /> Statistiky sezóny
         </h2>

@@ -207,10 +207,11 @@ export async function GET(req: Request) {
     away: formatForm(awayRecent, teams.away),
   };
 
-  // Personalizované očekávané body (xB) jsou pouze pro řádné zápasy Chance ligy.
-  // Příprava má jiný zdroj a do dlouhodobého modelu se nezapočítává.
+  // Osobní xB zobrazujeme i v kole Příprava, aby desktopový detail nezůstal prázdný.
+  // Přípravné zápasy se ale nadále NEpřidávají do historie ani do sezonní projekce.
   let xb = null;
-  if (player && match.source_league === 'cze.1' && Number(match.round) > 0) {
+  const isChanceMatch = match.source_league === 'cze.1' || Number(match.round) === 0;
+  if (player && isChanceMatch) {
     const archiveTips: XbHistoryRow[] = archive.rounds.flatMap((round) =>
       round.matches.flatMap((m) => {
         const tip = m.tips[player.name];

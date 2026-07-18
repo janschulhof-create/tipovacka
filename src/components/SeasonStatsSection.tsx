@@ -67,12 +67,14 @@ export function SeasonStatsSkeleton() {
 export async function SeasonXbSection({
   seasonId,
   currentPlayerId,
+  compact = false,
 }: {
   seasonId: number;
   currentPlayerId?: number;
+  compact?: boolean;
 }) {
   const rows = await getSeasonXbProjection(seasonId);
-  return <SeasonXbTable rows={rows} currentPlayerId={currentPlayerId} />;
+  return <SeasonXbTable rows={rows} currentPlayerId={currentPlayerId} compact={compact} />;
 }
 
 export function SeasonXbSkeleton() {
