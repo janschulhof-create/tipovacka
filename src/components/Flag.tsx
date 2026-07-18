@@ -1,7 +1,14 @@
 'use client';
 
+import Image from 'next/image';
 import { useEffect, useMemo, useState } from 'react';
-import { clubLogoId, clubLogoSearchName, flagCode } from '@/lib/teamFlags';
+import {
+  clubLogoId,
+  clubLogoSearchName,
+  clubSpriteIndex,
+  flagCode,
+  flagSpriteIndex,
+} from '@/lib/teamFlags';
 
 type SportsDbTeam = {
   strTeam?: string | null;
@@ -17,6 +24,10 @@ type SportsDbResponse = {
 
 const badgeCache = new Map<string, string | null>();
 const badgeRequests = new Map<string, Promise<string | null>>();
+const STORAGE_PREFIX = 'tipovacka-club-badge-v1:';
+const SPRITE_COLUMNS = 8;
+const SPRITE_ROWS = 8;
+const DISPLAY_CELL = 24;
 
 function normalized(value: string): string {
   return value
@@ -35,10 +46,36 @@ function alternativeNames(value: string | null | undefined): string[] {
     .filter(Boolean);
 }
 
+function readStoredBadge(key: string): string | null | undefined {
+  if (typeof window === 'undefined') return undefined;
+  try {
+    const value = window.localStorage.getItem(`${STORAGE_PREFIX}${key}`);
+    if (value === null) return undefined;
+    return value === '-' ? null : value;
+  } catch {
+    return undefined;
+  }
+}
+
+function storeBadge(key: string, value: string | null) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(`${STORAGE_PREFIX}${key}`, value ?? '-');
+  } catch {
+    // Safari může úložiště v soukromém režimu odmítnout; logo funguje i bez něj.
+  }
+}
+
 async function lookupBadge(searchName: string): Promise<string | null> {
   const key = normalized(searchName);
   if (!key) return null;
   if (badgeCache.has(key)) return badgeCache.get(key) ?? null;
+
+  const stored = readStoredBadge(key);
+  if (stored !== undefined) {
+    badgeCache.set(key, stored);
+    return stored;
+  }
 
   const active = badgeRequests.get(key);
   if (active) return active;
@@ -69,7 +106,33 @@ async function lookupBadge(searchName: string): Promise<string | null> {
   const result = await request;
   badgeRequests.delete(key);
   badgeCache.set(key, result);
+  storeBadge(key, result);
   return result;
+}
+
+function SpriteIcon({
+  index,
+  team,
+  className,
+}: {
+  index: number;
+  team: string;
+  className: string;
+}) {
+  const column = index % SPRITE_COLUMNS;
+  const row = Math.floor(index / SPRITE_COLUMNS);
+  return (
+    <span
+      role="img"
+      aria-label={`Logo nebo vlajka ${team}`}
+      className={`inline-block h-6 w-6 shrink-0 bg-no-repeat ${className}`}
+      style={{
+        backgroundImage: 'url(/team-sprite-v1.webp)',
+        backgroundSize: `${SPRITE_COLUMNS * DISPLAY_CELL}px ${SPRITE_ROWS * DISPLAY_CELL}px`,
+        backgroundPosition: `-${column * DISPLAY_CELL}px -${row * DISPLAY_CELL}px`,
+      }}
+    />
+  );
 }
 
 function RemoteClubLogo({ team, className }: { team: string; className: string }) {
@@ -81,7 +144,15 @@ function RemoteClubLogo({ team, className }: { team: string; className: string }
 
   useEffect(() => {
     let cancelled = false;
-    setBadge(badgeCache.has(cacheKey) ? badgeCache.get(cacheKey) : undefined);
+    const stored = badgeCache.has(cacheKey) ? badgeCache.get(cacheKey) : readStoredBadge(cacheKey);
+    if (stored !== undefined) {
+      badgeCache.set(cacheKey, stored);
+      setBadge(stored);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setBadge(undefined);
     lookupBadge(searchName).then((url) => {
       if (!cancelled) setBadge(url);
     });
@@ -92,18 +163,18 @@ function RemoteClubLogo({ team, className }: { team: string; className: string }
 
   if (badge) {
     return (
-      // TheSportsDB vrací přímo transparentní klubové badge. Plain img je zde
-      // záměrně: seznam klubů se mění s losem a nelze jej předem uvést v
-      // next/image remotePatterns.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img
+      <Image
         src={badge}
         alt={`Logo ${team}`}
+        width={24}
+        height={24}
+        sizes="24px"
+        quality={65}
         loading="lazy"
-        referrerPolicy="no-referrer"
         className={`inline-block h-6 w-6 shrink-0 object-contain ${className}`}
         onError={() => {
           badgeCache.set(cacheKey, null);
+          storeBadge(cacheKey, null);
           setBadge(null);
         }}
       />
@@ -128,39 +199,18 @@ function RemoteClubLogo({ team, className }: { team: string; className: string }
   );
 }
 
-/**
- * Lokální logo českého klubu, vlajka reprezentace nebo automaticky dohledaný
- * znak evropského klubu z bezplatného TheSportsDB API.
- */
+/** Lokální komprimovaná ikona nebo automaticky dohledaný znak evropského klubu. */
 export function Flag({ team, className = '' }: { team: string; className?: string }) {
   const clubId = clubLogoId(team);
-
   if (clubId) {
-    return (
-      <svg
-        viewBox="0 0 96 96"
-        preserveAspectRatio="xMidYMid meet"
-        role="img"
-        aria-label={`Logo ${team}`}
-        className={`inline-block h-6 w-6 shrink-0 overflow-visible ${className}`}
-      >
-        <use href={`/flags.svg#c-${clubId}`} />
-      </svg>
-    );
+    const index = clubSpriteIndex(clubId);
+    if (index != null) return <SpriteIcon index={index} team={team} className={className} />;
   }
 
   const code = flagCode(team);
   if (code) {
-    return (
-      <svg
-        viewBox="0 0 640 480"
-        preserveAspectRatio="xMidYMid slice"
-        aria-hidden
-        className={`inline-block h-3.5 w-5 shrink-0 overflow-hidden rounded-[2px] ring-1 ring-black/25 ${className}`}
-      >
-        <use href={`/flags.svg#f-${code}`} />
-      </svg>
-    );
+    const index = flagSpriteIndex(code);
+    if (index != null) return <SpriteIcon index={index} team={team} className={className} />;
   }
 
   return <RemoteClubLogo team={team} className={className} />;

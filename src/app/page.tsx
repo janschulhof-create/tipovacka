@@ -5,12 +5,12 @@ import {
   getRoundMatches,
   getStandings,
   getPlayers,
-  getRoundPredictions,
   getSeasonChartData,
   getLiveMatches,
   getLivePointsByPlayer,
   getRoundLabels,
-} from '@/lib/queries';
+} from '@/lib/pageQueries';
+import { getRoundPredictions } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
 import { roundLabel } from '@/lib/roundLabel';

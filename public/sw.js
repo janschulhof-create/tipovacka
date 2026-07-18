@@ -1,7 +1,7 @@
 /* Tipovačka – jednoduchý service worker (instalovatelnost + offline fallback).
    Záměrně NEcachuje HTML stránek ani API (kvůli přihlášení/RLS a aktuálnosti dat) –
    pouze statické assety a v offline režimu ukáže náhradní obrazovku. */
-const VERSION = 'tipovacka-v3';
+const VERSION = 'tipovacka-v4';
 const STATIC_CACHE = `static-${VERSION}`;
 
 const OFFLINE_HTML = `<!doctype html><html lang="cs"><head><meta charset="utf-8">

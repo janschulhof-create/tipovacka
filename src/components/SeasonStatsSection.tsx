@@ -6,7 +6,7 @@ import {
   getSeasonTipRounds,
   getStoppageStats,
   getWizardAndContinentStats,
-} from '@/lib/queries';
+} from '@/lib/pageQueries';
 import type { StandingRow } from '@/lib/types';
 
 /**

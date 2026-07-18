@@ -1,7 +1,7 @@
 /**
  * Ikony týmů používané v UI.
  *
- * - reprezentační týmy používají vlajky ze sprite souboru /flags.svg
+ * - reprezentační týmy používají vlajky ze sprite souboru /team-sprite-v1.webp
  * - kluby Chance ligy používají loga vložená ve stejném sprite souboru
  *
  * Názvy klubů jsou mapované přes přesné aliasy, aby se například Slavia Praha
@@ -142,4 +142,37 @@ export function flagCode(name: string): string | null {
   if (k.includes('bosn')) return 'ba';
   if (k.includes('verde') || k.includes('kapverd')) return 'cv';
   return null;
+}
+
+
+/** Pozice ikon v komprimovaném sprite souboru /team-sprite-v1.webp. */
+const FLAG_SPRITE_ORDER = [
+  'ar', 'at', 'au', 'ba', 'be', 'br', 'ca', 'cd',
+  'ch', 'ci', 'co', 'cv', 'cw', 'cz', 'de', 'dz',
+  'ec', 'eg', 'es', 'fr', 'gb-eng', 'gb-sct', 'gh', 'hr',
+  'ht', 'iq', 'ir', 'jo', 'jp', 'kr', 'ma', 'mx',
+  'nl', 'no', 'nz', 'pa', 'pt', 'py', 'qa', 'sa',
+  'se', 'sn', 'tn', 'tr', 'us', 'uy', 'uz', 'za',
+] as const;
+
+const CLUB_SPRITE_ORDER = [
+  'artis-brno', 'banik', 'bohemians', 'hradec-kralove',
+  'jablonec', 'boleslav', 'pardubice', 'olomouc',
+  'slavia', 'slovacko', 'liberec', 'sparta',
+  'teplice', 'plzen', 'zbrojovka-brno', 'zlin',
+] as const;
+
+const FLAG_SPRITE_INDEX = new Map<string, number>(
+  FLAG_SPRITE_ORDER.map((code, index) => [code, index]),
+);
+const CLUB_SPRITE_INDEX = new Map<string, number>(
+  CLUB_SPRITE_ORDER.map((id, index) => [id, index + FLAG_SPRITE_ORDER.length]),
+);
+
+export function flagSpriteIndex(code: string): number | null {
+  return FLAG_SPRITE_INDEX.get(code) ?? null;
+}
+
+export function clubSpriteIndex(id: string): number | null {
+  return CLUB_SPRITE_INDEX.get(id) ?? null;
 }

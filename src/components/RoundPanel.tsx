@@ -1,7 +1,7 @@
 'use client';
 
-import { Fragment, useEffect, useState, useCallback, useRef } from 'react';
-import type { Match, Player, Prediction, RoundPrediction } from '@/lib/types';
+import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import type { Match, Player, RoundPrediction } from '@/lib/types';
 import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
@@ -26,6 +26,25 @@ function dt(iso: string) {
     day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit',
     timeZone: 'Europe/Prague',
   });
+}
+
+
+function scoresFromPredictions(
+  matches: Match[],
+  predictions: RoundPrediction[],
+  selectedName: string | undefined,
+): Scores {
+  const next: Scores = {};
+  for (const match of matches) next[match.id] = { h: '', a: '' };
+  if (!selectedName) return next;
+  for (const prediction of predictions) {
+    if (prediction.name !== selectedName) continue;
+    next[prediction.match_id] = {
+      h: String(prediction.predicted_home),
+      a: String(prediction.predicted_away),
+    };
+  }
+  return next;
 }
 
 export function RoundPanel({
@@ -61,14 +80,29 @@ export function RoundPanel({
   const [localPlayerId, setLocalPlayerId] = useState<number | ''>('');
   const playerId = playerIdProp !== undefined ? playerIdProp : localPlayerId;
   const setPlayerId = onPlayerChange ?? setLocalPlayerId;
-  const [scores, setScores] = useState<Scores>({});
+  const selectedName = players.find((p) => p.id === playerId)?.name;
+
+  const scoresFromServer = useMemo(
+    () => scoresFromPredictions(matches, predictions, selectedName),
+    [matches, predictions, selectedName],
+  );
+  const serverScoresKey = useMemo(() => JSON.stringify(scoresFromServer), [scoresFromServer]);
+  const [scores, setScores] = useState<Scores>(() => scoresFromServer);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [tipping, setTipping] = useState(false);
   // poslední stav, o kterém víme, že je v DB (na hlídání neuložených změn)
-  const savedRef = useRef<Scores>({});
+  const savedRef = useRef<Scores>(scoresFromServer);
   const [dirtyCount, setDirtyCount] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState<Date | null>(null);
+
+  // Tipy už přišly v serverovém renderu. Načtení Supabase klienta a další API
+  // dotaz proto odkládáme až na skutečné ukládání změn.
+  useEffect(() => {
+    if (dirtyCount > 0) return;
+    setScores(scoresFromServer);
+    savedRef.current = JSON.parse(JSON.stringify(scoresFromServer)) as Scores;
+  }, [serverScoresKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const [now, setNow] = useState(() => Date.now());
   // zámek musí "tikat" i bez reloadu – jinak by šlo vyplnit tip do zápasu,
@@ -80,30 +114,6 @@ export function RoundPanel({
 
   const isLocked = (m: Match) =>
     m.status !== 'scheduled' || new Date(m.kickoff).getTime() <= now;
-
-  const loadPredictions = useCallback(
-    async (pid: number) => {
-      const sb = await getSupabase();
-      const { data } = await sb
-        .from('predictions')
-        .select('match_id, predicted_home, predicted_away')
-        .eq('player_id', pid)
-        .in('match_id', matches.map((m) => m.id));
-      const next: Scores = {};
-      for (const m of matches) next[m.id] = { h: '', a: '' };
-      for (const p of (data as Prediction[]) ?? []) {
-        next[p.match_id] = { h: String(p.predicted_home), a: String(p.predicted_away) };
-      }
-      setScores(next);
-      savedRef.current = JSON.parse(JSON.stringify(next)) as Scores;
-      setDirtyCount(0);
-    },
-    [matches, getSupabase]
-  );
-
-  useEffect(() => {
-    if (editable && playerId) loadPredictions(Number(playerId));
-  }, [editable, playerId, loadPredictions]);
 
   const setVal = (mid: number, side: 'h' | 'a', raw: string) => {
     let v = raw.replace(/[^0-9]/g, '').slice(0, 2);
@@ -243,7 +253,6 @@ export function RoundPanel({
     return () => window.removeEventListener('beforeunload', h);
   }, [dirtyCount]);
 
-  const selectedName = players.find((p) => p.id === playerId)?.name;
   const openCount = matches.filter((m) => !isLocked(m)).length;
   const anyPlayed = matches.some((m) => m.status === 'finished' || m.status === 'live');
 
