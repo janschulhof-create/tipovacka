@@ -162,6 +162,7 @@ textarea {
   .chance-desktop-layout {
     grid-template-columns: minmax(0, 1fr) clamp(260px, 20vw, 340px);
     gap: 12px;
+    min-height: calc(100dvh - 76px);
   }
 
   .chance-board-grid {
@@ -172,32 +173,51 @@ textarea {
     min-width: 0;
   }
 
+  /* Všechny tři desktopové sloupce drží ve stejné výšce. Zápasy, detail i
+     pravý panel se posouvají uvnitř sebe, nikoli spolu s celou stránkou. */
+  .desktop-match-list,
+  .xb-detail-container,
+  .chance-right-rail {
+    position: sticky;
+    top: 64px;
+    align-self: start;
+    max-height: calc(100dvh - 76px);
+  }
+
   .desktop-match-list {
     display: flex;
-    max-height: calc(100dvh - 72px);
-    min-height: 620px;
+    height: calc(100dvh - 76px);
+    min-height: 0;
     flex-direction: column;
   }
 
   .desktop-match-list > div:last-child {
     min-height: 0;
     overflow-y: auto;
-    overscroll-behavior: contain;
+    overscroll-behavior-y: contain;
     scrollbar-width: thin;
     scrollbar-color: rgba(164, 106, 247, 0.45) transparent;
   }
 
-  .desktop-match-list > div:last-child::-webkit-scrollbar {
+  .xb-detail-container,
+  .chance-right-rail {
+    overflow-y: auto;
+    overscroll-behavior-y: contain;
+    scrollbar-width: thin;
+    scrollbar-color: rgba(164, 106, 247, 0.34) transparent;
+  }
+
+  .desktop-match-list > div:last-child::-webkit-scrollbar,
+  .xb-detail-container::-webkit-scrollbar,
+  .chance-right-rail::-webkit-scrollbar {
     width: 6px;
   }
 
-  .desktop-match-list > div:last-child::-webkit-scrollbar-thumb {
+  .desktop-match-list > div:last-child::-webkit-scrollbar-thumb,
+  .xb-detail-container::-webkit-scrollbar-thumb,
+  .chance-right-rail::-webkit-scrollbar-thumb {
     border-radius: 999px;
     background: rgba(164, 106, 247, 0.38);
-  }
-
-  .chance-right-rail {
-    align-self: start;
   }
 
   .xb-detail-container {
@@ -245,8 +265,18 @@ textarea {
 }
 
 @media (min-width: 1200px) and (max-height: 760px) {
+  .chance-desktop-layout {
+    min-height: calc(100dvh - 66px);
+  }
+
+  .desktop-match-list,
+  .xb-detail-container,
+  .chance-right-rail {
+    top: 54px;
+    max-height: calc(100dvh - 64px);
+  }
+
   .desktop-match-list {
-    min-height: 560px;
-    max-height: calc(100dvh - 62px);
+    height: calc(100dvh - 64px);
   }
 }

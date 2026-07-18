@@ -96,8 +96,8 @@ export async function GET(req: Request) {
         if (archivedPair !== currentPair || m.hs == null || m.as == null) return [];
         return [{
           round: round.round,
-          home: m.home,
-          away: m.away,
+          home: canonTeam(m.home),
+          away: canonTeam(m.away),
           hs: m.hs,
           as: m.as,
           tips: m.tips,
@@ -132,8 +132,8 @@ export async function GET(req: Request) {
     : fallbackH2h.map((m) => ({
         round: null,
         date: m.date,
-        home: m.home,
-        away: m.away,
+        home: canonTeam(m.home),
+        away: canonTeam(m.away),
         hs: m.hs,
         as: m.as,
         ph: null,
@@ -207,10 +207,10 @@ export async function GET(req: Request) {
     away: formatForm(awayRecent, teams.away),
   };
 
-  // Osobní xB zobrazujeme i v kole Příprava, aby desktopový detail nezůstal prázdný.
-  // Přípravné zápasy se ale nadále NEpřidávají do historie ani do sezonní projekce.
+  // Osobní xB počítáme pouze pro ostré zápasy Chance ligy. Kolo Příprava
+  // je z uživatelského rozhraní odstraněné a do modelu se nezapočítává.
   let xb = null;
-  const isChanceMatch = match.source_league === 'cze.1' || Number(match.round) === 0;
+  const isChanceMatch = match.source_league === 'cze.1' && Number(match.round) > 0;
   if (player && isChanceMatch) {
     const archiveTips: XbHistoryRow[] = archive.rounds.flatMap((round) =>
       round.matches.flatMap((m) => {
@@ -249,10 +249,6 @@ export async function GET(req: Request) {
     );
     // Chybějící tip na dohraném ligovém zápase je skutečných 0 bodů.
     const seasonPoints = regularFinished.map((playedMatch) => seasonPointMap.get(playedMatch.id) ?? 0);
-    const seasonPointsChronological = [...regularFinished]
-      .reverse()
-      .map((playedMatch) => seasonPointMap.get(playedMatch.id) ?? 0);
-
     const { data: currentPrediction } = await sb
       .from('predictions')
       .select('predicted_home, predicted_away')
@@ -287,7 +283,9 @@ export async function GET(req: Request) {
       contextValue,
       contextSample: prediction?.sample ?? 0,
       contextDescription,
-      trendPoints: [...archiveTips.map((row) => row.points), ...seasonPointsChronological],
+      // Graf je pevně založený na posledních deseti vyhodnocených tipech
+      // minulé ligové sezony. Aktuální sezona ho během prvních kol nemění.
+      trendPoints: archiveTips.slice(-10).map((row) => row.points),
     });
   }
 

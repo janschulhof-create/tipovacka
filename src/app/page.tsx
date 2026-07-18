@@ -49,15 +49,23 @@ export default async function Home({
 
   const seasonId = season.id;
   const knockout = competition.kind === 'cup-knockout';
-  const [rounds, currentRound, roundLabels] = await Promise.all([
+  const [allRounds, currentRound, roundLabels] = await Promise.all([
     getSeasonRounds(seasonId),
     getCurrentRound(seasonId),
     getRoundLabels(seasonId),
   ]);
 
+  // Přípravné zápasy (kolo 0) zůstávají pouze v databázi jako technický archiv.
+  // V Chance lize je nezobrazujeme ani nenabízíme v přepínači kol.
+  const rounds = competition.key === 'liga'
+    ? allRounds.filter((round) => round > 0)
+    : allRounds;
+  const fallbackRound = currentRound != null && rounds.includes(currentRound)
+    ? currentRound
+    : rounds[0] ?? null;
   const koloParam = sp?.kolo ? parseInt(sp.kolo, 10) : NaN;
   const selectedRound =
-    !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : currentRound;
+    !Number.isNaN(koloParam) && rounds.includes(koloParam) ? koloParam : fallbackRound;
   // Kritická cesta = jen to, co je vidět hned (zápasy, tabulka, graf).
   // Vše paralelně; dřív se 5 dotazů volalo za sebou a latence se sčítaly.
   const [matches, standings, players, chart, liveMatches, liveInc, sessionPlayer] =
@@ -132,7 +140,7 @@ export default async function Home({
               roundLabels={roundLabels}
             />
 
-            <aside className="chance-right-rail min-w-0 space-y-3 min-[1200px]:sticky min-[1200px]:top-[74px]">
+            <aside className="chance-right-rail min-w-0 space-y-3">
               <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} compact />
 
               <Suspense fallback={<SeasonXbSkeleton />}>
