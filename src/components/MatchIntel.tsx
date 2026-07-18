@@ -54,20 +54,61 @@ export interface InsightData {
   loggedIn: boolean;
 }
 
-/** Načte data jednou a nasdílí je oběma záložkám (H2H i Predikce). */
+/**
+ * Cache detailů podle ID zápasu. Při přepnutí zápasu nesmí zůstat zobrazená
+ * data předchozího utkání, ale při návratu na již načtený zápas chceme
+ * okamžitý výsledek bez dalšího bliknutí a síťového dotazu.
+ */
+const insightCache = new Map<number, InsightData>();
+
+/** Načte a nasdílí data pro právě vybraný zápas (H2H, Predikce i xB). */
 export function useInsight(matchId: number, enabled: boolean) {
-  const [data, setData] = useState<InsightData | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [state, setState] = useState<{ matchId: number; data: InsightData | null }>(() => ({
+    matchId,
+    data: insightCache.get(matchId) ?? null,
+  }));
+  const [loadingMatchId, setLoadingMatchId] = useState<number | null>(null);
 
   useEffect(() => {
-    if (!enabled || data || loading) return;
-    setLoading(true);
-    fetch(`/api/match-insight?match=${matchId}`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setData(d))
-      .catch(() => setData(null))
-      .finally(() => setLoading(false));
-  }, [enabled, matchId, data, loading]);
+    if (!enabled) return;
+
+    const cached = insightCache.get(matchId);
+    if (cached) {
+      setState({ matchId, data: cached });
+      setLoadingMatchId(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    // Okamžitě odpoj data předchozího zápasu. Díky tomu se při rychlém
+    // přepínání nikdy nemíchá nový nadpis se starou xB predikcí.
+    setState({ matchId, data: null });
+    setLoadingMatchId(matchId);
+
+    fetch(`/api/match-insight?match=${matchId}`, { signal: controller.signal })
+      .then((r) => (r.ok ? r.json() as Promise<InsightData> : null))
+      .then((nextData) => {
+        if (controller.signal.aborted) return;
+        if (nextData) insightCache.set(matchId, nextData);
+        setState({ matchId, data: nextData });
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setState({ matchId, data: null });
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoadingMatchId((current) => (current === matchId ? null : current));
+        }
+      });
+
+    return () => controller.abort();
+  }, [enabled, matchId]);
+
+  const data = state.matchId === matchId ? state.data : (insightCache.get(matchId) ?? null);
+  const loading = enabled && loadingMatchId === matchId && data === null;
 
   return { data, loading };
 }

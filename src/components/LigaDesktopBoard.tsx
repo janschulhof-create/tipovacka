@@ -146,7 +146,12 @@ export function LigaDesktopBoard({
 
       <div className="xb-detail-container min-w-0 xl:sticky xl:top-[74px]">
         {selected ? (
-          <DesktopMatchDetail match={selected} predictions={predictions} selectedName={selectedName} />
+          <DesktopMatchDetail
+            key={selected.id}
+            match={selected}
+            predictions={predictions}
+            selectedName={selectedName}
+          />
         ) : (
           <div className="panel px-6 py-16 text-center text-sm text-copy-muted">V tomto filtru není žádný zápas.</div>
         )}
