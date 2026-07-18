@@ -45,6 +45,66 @@ const toneClass: Record<Tone, string> = {
   pink: 'border-pink-400/30 bg-pink-500/10 text-pink-200',
 };
 
+const toneTextClass: Record<Tone, string> = {
+  violet: 'text-violet-300',
+  green: 'text-state-success',
+  blue: 'text-state-info',
+  amber: 'text-state-warning',
+  pink: 'text-state-danger',
+};
+
+const toneBarClass: Record<Tone, string> = {
+  violet: 'bg-violet-400',
+  green: 'bg-state-success',
+  blue: 'bg-state-info',
+  amber: 'bg-state-warning',
+  pink: 'bg-state-danger',
+};
+
+const toneSoftClass: Record<Tone, string> = {
+  violet: 'border-violet-400/30 bg-violet-500/10',
+  green: 'border-state-success/30 bg-state-success/10',
+  blue: 'border-state-info/30 bg-state-info/10',
+  amber: 'border-state-warning/30 bg-state-warning/10',
+  pink: 'border-state-danger/30 bg-state-danger/10',
+};
+
+const toneHex: Record<Tone, string> = {
+  violet: '#a46af7',
+  green: '#29d17d',
+  blue: '#49a8ff',
+  amber: '#f5b942',
+  pink: '#f43f5e',
+};
+
+function scoreTone(value: number): Tone {
+  if (value >= 8) return 'green';
+  if (value >= 6) return 'blue';
+  if (value >= 4) return 'amber';
+  return 'pink';
+}
+
+function confidenceTone(value: number): Tone {
+  if (value >= 80) return 'green';
+  if (value >= 65) return 'blue';
+  if (value >= 50) return 'amber';
+  return 'pink';
+}
+
+function riskTone(value: number): Tone {
+  if (value <= 25) return 'green';
+  if (value <= 50) return 'blue';
+  if (value <= 70) return 'amber';
+  return 'pink';
+}
+
+function scoreLevel(value: number): string {
+  if (value >= 8) return 'silný bodový potenciál';
+  if (value >= 6) return 'dobrý bodový potenciál';
+  if (value >= 4) return 'střední bodový potenciál';
+  return 'slabý bodový potenciál';
+}
+
 const emptyCrowd: AICrowdSummary = {
   count: 0,
   avgHome: 1,
@@ -255,25 +315,26 @@ function MiniSparkline({
   );
 }
 
-function ConfidenceShield({ value }: { value: number }) {
+function ConfidenceShield({ value, tone = confidenceTone(value) }: { value: number; tone?: Tone }) {
+  const color = toneHex[tone];
   return (
     <div className="relative mx-auto flex h-32 w-28 items-center justify-center">
       <svg viewBox="0 0 120 140" className="absolute inset-0 h-full w-full" aria-hidden="true">
         <defs>
-          <linearGradient id="shieldFill" x1="0" y1="0" x2="1" y2="1">
-            <stop offset="0%" stopColor="#b66cff" stopOpacity="0.32" />
-            <stop offset="100%" stopColor="#5b31c9" stopOpacity="0.08" />
+          <linearGradient id={`shieldFill-${tone}`} x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity="0.34" />
+            <stop offset="100%" stopColor={color} stopOpacity="0.08" />
           </linearGradient>
-          <filter id="shieldGlow" x="-50%" y="-50%" width="200%" height="200%">
+          <filter id={`shieldGlow-${tone}`} x="-50%" y="-50%" width="200%" height="200%">
             <feGaussianBlur stdDeviation="5" result="blur" />
             <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
           </filter>
         </defs>
-        <path d="M60 7C76 18 92 20 105 23v42c0 32-18 54-45 68C33 119 15 97 15 65V23c13-3 29-5 45-16Z" fill="url(#shieldFill)" stroke="#a46af7" strokeWidth="5" filter="url(#shieldGlow)" />
-        <path d="M60 18C74 27 86 29 94 31v34c0 25-13 43-34 56-21-13-34-31-34-56V31c8-2 20-4 34-13Z" fill="none" stroke="rgba(216,191,255,.28)" strokeWidth="1" />
+        <path d="M60 7C76 18 92 20 105 23v42c0 32-18 54-45 68C33 119 15 97 15 65V23c13-3 29-5 45-16Z" fill={`url(#shieldFill-${tone})`} stroke={color} strokeWidth="5" filter={`url(#shieldGlow-${tone})`} />
+        <path d="M60 18C74 27 86 29 94 31v34c0 25-13 43-34 56-21-13-34-31-34-56V31c8-2 20-4 34-13Z" fill="none" stroke={color} strokeOpacity="0.28" strokeWidth="1" />
       </svg>
       <div className="relative text-center">
-        <div className="font-display text-4xl font-bold tabular-nums text-white">{value}<span className="text-lg">%</span></div>
+        <div className={`font-display text-4xl font-bold tabular-nums ${toneTextClass[tone]}`}>{value}<span className="text-lg">%</span></div>
       </div>
     </div>
   );
@@ -329,7 +390,7 @@ function Heatmap({ selected, crowd, compact = false }: { selected: Score; crowd:
   );
 }
 
-function RadarChart({ values }: { values: number[] }) {
+function RadarChart({ values, tone = 'violet' }: { values: number[]; tone?: Tone }) {
   const size = 220;
   const center = size / 2;
   const radius = 78;
@@ -350,10 +411,10 @@ function RadarChart({ values }: { values: number[] }) {
           const outer = point(index, 10).split(',');
           return <line key={index} x1={center} y1={center} x2={outer[0]} y2={outer[1]} stroke="rgba(120,136,163,.18)" strokeWidth="1" />;
         })}
-        <polygon points={values.map((value, index) => point(index, value)).join(' ')} fill="rgba(139,78,235,.25)" stroke="#a46af7" strokeWidth="2" />
+        <polygon points={values.map((value, index) => point(index, value)).join(' ')} fill={toneHex[tone]} fillOpacity="0.2" stroke={toneHex[tone]} strokeWidth="2" />
         {values.map((value, index) => {
           const [x, y] = point(index, value).split(',');
-          return <circle key={index} cx={x} cy={y} r="3" fill="#be94ff" />;
+          return <circle key={index} cx={x} cy={y} r="3" fill={toneHex[tone]} />;
         })}
       </svg>
       {labels.map((label, index) => {
@@ -586,6 +647,8 @@ export function AIAnalysisSection({
   const currentXb = currentXbData?.value ?? 0;
   const selectedConfidence = selectedXbData?.confidence ?? 0;
   const currentConfidence = currentXbData?.confidence ?? 0;
+  const xbDelta = selectedXbData && currentXbData ? selectedXb - currentXb : null;
+  const confidenceDelta = selectedXbData && currentXbData ? selectedConfidence - currentConfidence : null;
   const scoreDistance = Math.abs(selected.home - crowd.avgHome) + Math.abs(selected.away - crowd.avgAway);
   const outcomeAgainstCrowd = outcome(selected) !== model.dominant.key;
   const crowdDifference = Math.round(clamp(scoreDistance * 27 + (outcomeAgainstCrowd ? 16 : 0), 0, 100));
@@ -677,6 +740,15 @@ export function AIAnalysisSection({
   const xbTrendPositive = xbTrendDelta >= 0;
   const contextFactor = xbFactorValue('context', model.readability);
   const overallFactor = xbFactorValue('overall', model.success);
+  const xbTone = selectedXbData ? scoreTone(selectedXb) : 'violet';
+  const confidenceSemanticTone = selectedXbData ? confidenceTone(selectedConfidence) : 'violet';
+  const crowdSemanticTone = riskTone(crowdDifference);
+  const factorEffects = (selectedXbData?.factors ?? []).map((factor) => ({
+    ...factor,
+    effect: factor.key === 'overall' ? 0 : (factor.value - overallFactor) * factor.weight,
+  }));
+  const positiveFactor = factorEffects.filter((factor) => factor.key !== 'overall').sort((a, b) => b.effect - a.effect)[0];
+  const negativeFactor = factorEffects.filter((factor) => factor.key !== 'overall').sort((a, b) => a.effect - b.effect)[0];
 
   return (
     <section className="ai-analysis-section mb-6" aria-labelledby="ai-analysis-title">
@@ -725,9 +797,9 @@ export function AIAnalysisSection({
                   aria-pressed={isSelected}
                 >
                   <div className={`font-display text-2xl font-bold tabular-nums ${isSelected ? 'text-violet-200' : 'text-white'}`}>{label}</div>
-                  <div className="mt-1 text-[9px] text-copy-muted"><span className="normal-case">xB</span> <strong className="font-display text-sm text-copy-secondary">{simulated != null ? simulated.toFixed(1) : xbLoading ? '…' : '—'}</strong></div>
-                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${delta == null || delta >= -0.2 ? 'bg-violet-400' : delta >= -1.4 ? 'bg-state-info' : 'bg-state-danger'}`} style={{ width: `${simulated != null ? clamp(simulated * 10) : 0}%` }} /></div>
-                  <div className={`mt-2 text-[9px] font-semibold ${isSelected ? 'text-violet-300' : delta == null ? 'text-copy-muted' : delta >= 0 ? 'text-state-success' : 'text-state-danger'}`}>{isSelected ? 'Vybraná simulace' : delta != null ? `${delta >= 0 ? '+' : ''}${delta.toFixed(1)} xB` : xbLoading ? 'Přepočítávám…' : 'xB není dostupné'}</div>
+                  <div className="mt-1 text-[9px] text-copy-muted"><span className="normal-case">xB</span> <strong className={`font-display text-sm ${simulated != null ? toneTextClass[scoreTone(simulated)] : 'text-copy-secondary'}`}>{simulated != null ? simulated.toFixed(1) : xbLoading ? '…' : '—'}</strong></div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${simulated != null ? toneBarClass[scoreTone(simulated)] : 'bg-surface-3'}`} style={{ width: `${simulated != null ? clamp(simulated * 10) : 0}%` }} /></div>
+                  <div className={`mt-2 text-[9px] font-semibold ${isSelected ? 'text-violet-300' : delta == null || Math.abs(delta) < 0.05 ? 'text-copy-muted' : delta > 0 ? 'text-state-success' : 'text-state-danger'}`}>{isSelected ? 'Vybraná simulace' : delta != null ? `${delta > 0 ? '+' : ''}${delta.toFixed(1)} xB` : xbLoading ? 'Přepočítávám…' : 'xB není dostupné'}</div>
                 </button>
               );
             })}
@@ -737,30 +809,79 @@ export function AIAnalysisSection({
 
       <div key={selectedMatch.id} className="ai-analysis-grid">
         <AnalysisCard>
-          <CardHeader number={1} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} />
+          <CardHeader number={1} title="xB timeline" subtitle={`Profilový trend zakončený duelem ${matchName}.`} tone={xbTone} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
             <div className="mb-2 flex items-end justify-between gap-3">
               <div>
                 <div className="text-[10px] text-copy-secondary">xB pro vybraný tip</div>
-                <div className="mt-1 font-display text-3xl font-bold tabular-nums text-violet-300">{selectedXbData ? selectedXb.toFixed(1) : xbLoading ? '…' : '—'}</div>
+                <div className={`mt-1 font-display text-3xl font-bold tabular-nums ${selectedXbData ? toneTextClass[xbTone] : 'text-copy-muted'}`}>{selectedXbData ? selectedXb.toFixed(1) : xbLoading ? '…' : '—'}</div>
               </div>
-              <div className={`rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${!selectedXbData || !currentXbData ? 'bg-surface-3 text-copy-muted' : selectedXb >= currentXb ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>
-                {selectedXbData && currentXbData ? `${selectedXb >= currentXb ? '+' : ''}${(selectedXb - currentXb).toFixed(1)}` : xbLoading ? 'počítám' : 'bez dat'}
+              <div className={`rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${xbDelta == null ? 'bg-surface-3 text-copy-muted' : Math.abs(xbDelta) < 0.05 ? 'bg-surface-3 text-copy-muted' : xbDelta > 0 ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>
+                {xbDelta != null ? `${xbDelta > 0 ? '+' : ''}${xbDelta.toFixed(1)}` : xbLoading ? 'počítám' : 'bez dat'}
               </div>
             </div>
-            <MiniSparkline values={xBTimeline} />
+            <MiniSparkline values={xBTimeline} tone={xbTone} />
             <div className="mt-2 grid grid-cols-3 gap-2 border-t border-line-subtle/60 pt-2 text-[9px]">
-              <div><span className="block text-copy-muted">Zápas</span><strong className="font-display text-base text-violet-300">{selectedXbData ? selectedXb.toFixed(1) : '—'}</strong></div>
+              <div><span className="block text-copy-muted">Zápas</span><strong className={`font-display text-base ${toneTextClass[xbTone]}`}>{selectedXbData ? selectedXb.toFixed(1) : '—'}</strong></div>
               <div><span className="block text-copy-muted">Trend xB</span><strong className={xbTrendPositive ? 'text-state-success' : 'text-state-danger'}>{xBTimeline.length > 1 ? xbTrendPositive ? 'Roste' : 'Klesá' : 'Bez historie'}</strong></div>
               <div><span className="block text-copy-muted">Tip</span><strong className="text-copy-secondary">{selectedLabel}</strong></div>
             </div>
           </div>
           <div className="mt-3 space-y-1.5 text-[10px]">
-            <div className="flex justify-between"><span className="text-copy-muted">Dlouhodobý průměr</span><span className="text-state-success">{overallFactor.toFixed(1)}/10</span></div>
-            <div className="flex justify-between"><span className="text-copy-muted">Čitelnost zápasu</span><span className="text-state-info">{contextFactor.toFixed(1)}/10</span></div>
-            <div className="flex justify-between"><span className="text-copy-muted">Odlišnost od davu</span><span className="text-state-danger">{crowdDifference}%</span></div>
+            <div className="flex justify-between"><span className="text-copy-muted">Dlouhodobý průměr</span><span className={toneTextClass[scoreTone(overallFactor)]}>{overallFactor.toFixed(1)}/10</span></div>
+            <div className="flex justify-between"><span className="text-copy-muted">Čitelnost zápasu</span><span className={toneTextClass[scoreTone(contextFactor)]}>{contextFactor.toFixed(1)}/10</span></div>
+            <div className="flex justify-between"><span className="text-copy-muted">Odlišnost od davu</span><span className={toneTextClass[crowdSemanticTone]}>{crowdDifference}%</span></div>
           </div>
-          <div className="mt-3 rounded-lg border border-violet-400/20 bg-violet-500/8 p-2.5 text-[9px] leading-relaxed text-copy-muted"><b className="text-violet-200">Co je xB?</b> Očekávané body z tohoto zápasu na škále 0–10. Je to stejná hodnota jako na dashboardu, nikoli procento šance na správný výsledek.</div>
+          <div className={`mt-3 rounded-lg border p-3 ${toneSoftClass[xbTone]}`}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <b className={toneTextClass[xbTone]}>Co znamená xB {selectedXbData ? selectedXb.toFixed(1) : '—'}?</b>
+              {selectedXbData && <span className={`rounded-full border px-2 py-0.5 text-[8px] font-bold uppercase tracking-wider ${toneClass[xbTone]}`}>{scoreLevel(selectedXb)}</span>}
+            </div>
+            <p className="mt-1.5 text-[9px] leading-relaxed text-copy-muted">xB je očekávaný bodový zisk na škále 0–10. {selectedXbData ? <>Hodnota <b className={toneTextClass[xbTone]}>{selectedXb.toFixed(1)}</b> spadá do pásma „{scoreLevel(selectedXb)}“.</> : 'Hodnota se právě načítá.'} Nejde o procento šance. Barva odpovídá kvalitě odhadu: červená 0–3,9, žlutá 4–5,9, modrá 6–7,9 a zelená 8–10.</p>
+          </div>
+          {selectedXbData && (
+            <div className="mt-3 rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="text-[10px] font-semibold text-white">Co hodnotu mění</div>
+                  <p className="mt-0.5 text-[9px] leading-relaxed text-copy-muted">Výchozím bodem je dlouhodobý průměr {overallFactor.toFixed(1)} b. Každý další faktor ho podle své hodnoty a váhy zvyšuje nebo snižuje.</p>
+                </div>
+                <span className={`shrink-0 rounded-lg px-2 py-1 font-display text-sm font-bold ${toneClass[xbTone]}`}>{selectedXb.toFixed(1)} b</span>
+              </div>
+              <div className="mt-3 space-y-2.5">
+                {factorEffects.map((factor) => {
+                  const factorTone = scoreTone(factor.value);
+                  const neutral = Math.abs(factor.effect) < 0.05;
+                  const effectText = factor.key === 'overall'
+                    ? 'základ modelu'
+                    : neutral
+                      ? 'téměř neutrální'
+                      : `${factor.effect > 0 ? 'zvyšuje' : 'snižuje'} ${factor.effect > 0 ? '+' : ''}${factor.effect.toFixed(1)} b`;
+                  return (
+                    <div key={factor.key} title={factor.description}>
+                      <div className="flex items-center justify-between gap-2 text-[9px]">
+                        <span className="min-w-0 truncate text-copy-secondary">{factor.label}</span>
+                        <span className="flex shrink-0 items-center gap-2">
+                          <b className={toneTextClass[factorTone]}>{factor.value.toFixed(1)}/10</b>
+                          <span className="text-copy-muted">váha {Math.round(factor.weight * 100)} %</span>
+                        </span>
+                      </div>
+                      <div className="mt-1 flex items-center gap-2">
+                        <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${toneBarClass[factorTone]}`} style={{ width: `${clamp(factor.value * 10)}%` }} /></div>
+                        <span className={`w-[86px] text-right text-[8px] font-semibold ${factor.key === 'overall' || neutral ? 'text-copy-muted' : factor.effect > 0 ? 'text-state-success' : 'text-state-danger'}`}>{effectText}</span>
+                      </div>
+                      <p className="mt-1 text-[8px] leading-relaxed text-copy-muted">{factor.description}</p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 border-t border-line-subtle/70 pt-2 text-[9px] leading-relaxed text-copy-muted">
+                {positiveFactor && positiveFactor.effect > 0.04 ? <><b className="text-state-success">Nejvíc pomáhá:</b> {positiveFactor.label} (+{positiveFactor.effect.toFixed(1)} b). </> : null}
+                {negativeFactor && negativeFactor.effect < -0.04 ? <><b className="text-state-danger">Nejvíc brzdí:</b> {negativeFactor.label} ({negativeFactor.effect.toFixed(1)} b).</> : null}
+                {(!positiveFactor || positiveFactor.effect <= 0.04) && (!negativeFactor || negativeFactor.effect >= -0.04) ? selectedXbData.explanation : null}
+              </div>
+            </div>
+          )}
           {xbError && <div className="mt-2 text-[9px] text-state-danger">Jednotný xB model se nepodařilo načíst. Zkus stránku obnovit.</div>}
         </AnalysisCard>
 
@@ -783,8 +904,8 @@ export function AIAnalysisSection({
           <div className="mt-3 rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3 text-[10px] leading-relaxed text-copy-secondary">
             Dav má průměr <strong className="text-white">{crowdAverage}</strong> a nejčastěji tipuje <strong className="text-white">{modeLabel}</strong>. Vzorek tvoří {crowd.count} uložených tipů.
           </div>
-          <div className="mt-3 rounded-xl border border-state-success/25 bg-state-success/8 p-3 text-[10px] leading-relaxed text-copy-secondary">
-            <strong className="text-state-success">Doporučení:</strong> {recommendation}
+          <div className={`mt-3 rounded-xl border p-3 text-[10px] leading-relaxed text-copy-secondary ${toneSoftClass[xbTone]}`}>
+            <strong className={toneTextClass[xbTone]}>Doporučení:</strong> {recommendation}
           </div>
         </AnalysisCard>
 
@@ -812,9 +933,9 @@ export function AIAnalysisSection({
             <MetricRow label="Tvůj / simulovaný tip" value={selectedLabel} accent="text-violet-300" />
             <div className="border-t border-line-subtle/70 py-3">
               <div className="text-[10px] text-copy-secondary">Odlišnost od průměru</div>
-              <div className="mt-1 font-display text-3xl font-bold tabular-nums text-violet-300">{crowdDifference}%</div>
+              <div className={`mt-1 font-display text-3xl font-bold tabular-nums ${toneTextClass[crowdSemanticTone]}`}>{crowdDifference}%</div>
               <div className="mt-2 h-2 overflow-hidden rounded-full bg-surface-3">
-                <div className="h-full rounded-full bg-[linear-gradient(90deg,#6366f1,#a46af7,#f5b942)]" style={{ width: `${crowdDifference}%` }} />
+                <div className={`h-full rounded-full ${toneBarClass[crowdSemanticTone]}`} style={{ width: `${crowdDifference}%` }} />
               </div>
               <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Shoda</span><span>Extrém</span></div>
             </div>
@@ -823,12 +944,12 @@ export function AIAnalysisSection({
         </AnalysisCard>
 
         <AnalysisCard>
-          <CardHeader number={5} title="AI confidence" subtitle={`Jistota modelu pro ${matchName}.`} tone="green" />
+          <CardHeader number={5} title="AI confidence" subtitle={`Jistota modelu pro ${matchName}.`} tone={confidenceSemanticTone} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-3 text-center">
-            <ConfidenceShield value={selectedXbData ? selectedConfidence : 0} />
-            <div className={`mx-auto mt-2 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${!selectedXbData || !currentXbData ? 'bg-surface-3 text-copy-muted' : selectedConfidence >= currentConfidence ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{selectedXbData && currentXbData ? `${selectedConfidence >= currentConfidence ? '+' : ''}${selectedConfidence - currentConfidence}%` : xbLoading ? 'počítám' : 'bez dat'}</div>
+            <ConfidenceShield value={selectedXbData ? selectedConfidence : 0} tone={confidenceSemanticTone} />
+            <div className={`mx-auto mt-2 inline-flex rounded-lg px-2 py-1 text-[10px] font-bold tabular-nums ${confidenceDelta == null || confidenceDelta === 0 ? 'bg-surface-3 text-copy-muted' : confidenceDelta > 0 ? 'bg-state-success/10 text-state-success' : 'bg-state-danger/10 text-state-danger'}`}>{confidenceDelta != null ? `${confidenceDelta > 0 ? '+' : ''}${confidenceDelta}%` : xbLoading ? 'počítám' : 'bez dat'}</div>
             <p className="mx-auto mt-2 max-w-[220px] text-[10px] leading-relaxed text-copy-secondary"><b className="text-white">Jistota neříká šanci na výsledek.</b> Vyjadřuje, jak silný a početný datový základ má osobní xB: tvoji historii, zkušenost s oběma týmy, H2H, sezonní formu a dostupná data k zápasu.</p>
-            <div className="mt-3 h-2 rounded-full quality-gradient" />
+            <div className="mt-3 h-2 overflow-hidden rounded-full bg-surface-3"><div className={`h-full rounded-full ${toneBarClass[confidenceSemanticTone]}`} style={{ width: `${selectedXbData ? selectedConfidence : 0}%` }} /></div>
             <div className="mt-1 flex justify-between text-[8px] text-copy-muted"><span>Nízká</span><span>Střední</span><span>Vysoká</span></div>
           </div>
         </AnalysisCard>
@@ -875,9 +996,9 @@ export function AIAnalysisSection({
         </AnalysisCard>
 
         <AnalysisCard>
-          <CardHeader number={8} title="xB radar" subtitle={`Stejné osobní faktory, ze kterých vzniká xB pro ${matchName}.`} tone="green" />
+          <CardHeader number={8} title="xB radar" subtitle={`Stejné osobní faktory, ze kterých vzniká xB pro ${matchName}.`} tone={xbTone} />
           <div className="rounded-xl border border-line-subtle/80 bg-app-deep/35 p-2">
-            <RadarChart values={radarValues} />
+            <RadarChart values={radarValues} tone={xbTone} />
             <div className="mt-1 flex justify-between border-t border-line-subtle/70 px-2 pt-2 text-[8px] text-copy-muted"><span>0 = slabé</span><span>10 = výborné</span></div>
             <p className="mt-2 px-2 text-[9px] leading-relaxed text-copy-muted">Domácí a hosté znamenají, jak ti historicky sedí jednotlivé týmy. Kontext je čitelnost utkání z formy a H2H, průměr je tvůj dlouhodobý bodový základ.</p>
           </div>
