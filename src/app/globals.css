@@ -340,3 +340,46 @@ textarea {
     min-height: 350px;
   }
 }
+
+/* AI profil — desktopový UX audit: čitelnost, kontrast a pohodlné ovládání.
+   Mobilní typografie zůstává beze změny. */
+@media (min-width: 1024px) {
+  .ai-analysis-section .text-\[8px\] {
+    font-size: 11px !important;
+    line-height: 1.35 !important;
+  }
+
+  .ai-analysis-section .text-\[9px\] {
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+  }
+
+  .ai-analysis-section .text-\[10px\] {
+    font-size: 13px !important;
+    line-height: 1.45 !important;
+  }
+
+  .ai-analysis-section .text-\[11px\] {
+    font-size: 14px !important;
+    line-height: 1.5 !important;
+  }
+
+  .ai-analysis-section .text-\[12px\] {
+    font-size: 15px !important;
+    line-height: 1.5 !important;
+  }
+
+  .ai-analysis-section .text-\[13px\] {
+    font-size: 16px !important;
+    line-height: 1.35 !important;
+  }
+
+  .ai-analysis-section .text-copy-muted {
+    color: #9cabc2;
+  }
+
+  .ai-analysis-card {
+    min-height: 380px;
+    padding: 18px !important;
+  }
+}

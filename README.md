@@ -1,3 +1,5 @@
+> **Optimalizovaný balíček:** Projekt je zredukován na 99 souborů. Neobsahuje duplicitní SQL migrace, historickou dokumentaci, nepoužívané komponenty ani ladicí/legacy API endpointy. Produkční aplikace, AI analýza, veřejné assety, instalační konfigurace a aktuální databázové schéma zůstávají zachované.
+
 # Chance Liga Tipovačka ⚽
 
 Soukromá fotbalová tipovačka pro partu 5–20 přátel. Bez registrace a hesel —

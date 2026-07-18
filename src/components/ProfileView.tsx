@@ -123,6 +123,7 @@ export function ProfileView({
   basePath,
   showBack = false,
   title = 'Profil tipéra',
+  showComparison = true,
 }: {
   profile: PlayerProfile;
   h2h: H2HResult | null;
@@ -131,6 +132,7 @@ export function ProfileView({
   basePath: string;
   showBack?: boolean;
   title?: string;
+  showComparison?: boolean;
 }) {
   const maxRound = Math.max(1, ...profile.rounds.map((r) => r.points));
   const distRows: { lbl: string; n: number; clr: string }[] = [
@@ -216,15 +218,17 @@ export function ProfileView({
         </section>
       )}
 
-      <section className="panel p-4">
-        <div className="eyebrow mb-3"><span className="flag-chip" /> Porovnání (H2H)</div>
-        <H2HPicker others={others} current={vsId} basePath={basePath} />
-        {h2h ? (
-          <H2HView h2h={h2h} />
-        ) : (
-          <p className="mt-3 text-[13px] text-slate-300/50">Vyber soupeře a porovnej si statistiky i přímé souboje po zápasech.</p>
-        )}
-      </section>
+      {showComparison && (
+        <section className="panel p-4">
+          <div className="eyebrow mb-3"><span className="flag-chip" /> Porovnání (H2H)</div>
+          <H2HPicker others={others} current={vsId} basePath={basePath} />
+          {h2h ? (
+            <H2HView h2h={h2h} />
+          ) : (
+            <p className="mt-3 text-[13px] text-slate-300/50">Vyber soupeře a porovnej si statistiky i přímé souboje po zápasech.</p>
+          )}
+        </section>
+      )}
     </div>
   );
 }

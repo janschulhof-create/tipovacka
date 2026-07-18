@@ -66,6 +66,42 @@ export async function getCurrentRound(seasonId: number): Promise<number | null> 
   return last?.[0]?.round ?? null;
 }
 
+/** Aktuální řádné kolo Chance ligy. Ignoruje přípravu i případné jiné zdroje zápasů. */
+export async function getCurrentChanceRound(seasonId: number): Promise<number | null> {
+  const sb = createServerReadClient();
+  const { data: upcoming } = await sb
+    .from('matches')
+    .select('round')
+    .eq('season_id', seasonId)
+    .eq('source_league', 'cze.1')
+    .gt('round', 0)
+    .eq('status', 'scheduled')
+    .order('kickoff', { ascending: true })
+    .limit(1);
+  if (upcoming?.[0]) return upcoming[0].round;
+
+  const { data: live } = await sb
+    .from('matches')
+    .select('round')
+    .eq('season_id', seasonId)
+    .eq('source_league', 'cze.1')
+    .gt('round', 0)
+    .eq('status', 'live')
+    .order('kickoff', { ascending: true })
+    .limit(1);
+  if (live?.[0]) return live[0].round;
+
+  const { data: last } = await sb
+    .from('matches')
+    .select('round')
+    .eq('season_id', seasonId)
+    .eq('source_league', 'cze.1')
+    .gt('round', 0)
+    .order('round', { ascending: false })
+    .limit(1);
+  return last?.[0]?.round ?? null;
+}
+
 /** Předchozí kolo = nejvyšší číslo kola menší než `round`, které má zápasy. */
 export async function getPreviousRound(seasonId: number, round: number): Promise<number | null> {
   const sb = createServerReadClient();
