@@ -151,10 +151,7 @@ export function LeagueTableContent({ data, homeTeam, awayTeam, live = false }: {
   return (
     <div className="overflow-hidden rounded-xl border border-line-subtle bg-app-deep/35">
       <div className="flex items-center justify-between gap-3 border-b border-line-subtle px-3 py-2">
-        <div>
-          <div className="text-[10px] font-semibold text-copy-primary">{live ? 'Live tabulka' : 'Aktuální tabulka'}</div>
-          <div className="text-[9px] text-copy-muted">{live ? 'Průběžně započítává rozehrané zápasy a jejich aktuální skóre.' : 'Stav před začátkem nebo po posledních dohraných zápasech.'}</div>
-        </div>
+        <div className="text-[10px] font-semibold text-copy-primary">{live ? 'Live tabulka' : 'Tabulka před tímto zápasem'}</div>
         {live && <span className="rounded-full border border-state-live/30 bg-state-live/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-state-live">živě</span>}
       </div>
       <div className="grid grid-cols-[30px_minmax(0,1fr)_28px_42px_32px_56px] items-center border-b border-line-subtle px-2 py-2 text-[9px] font-semibold uppercase tracking-wide text-copy-muted">
@@ -196,9 +193,6 @@ export function LeagueTableContent({ data, homeTeam, awayTeam, live = false }: {
           </div>
         );
       })}
-      <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line-subtle px-3 py-2 text-[8px] text-copy-muted">
-        <span><b className="text-violet-300">27</b> live body</span><span><b className="text-state-info">25</b> před zápasem</span><span><b className="text-state-success">+2</b> změna</span>
-      </div>
     </div>
   );
 }
