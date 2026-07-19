@@ -594,7 +594,7 @@ function MatchRow({
 
       {/* rozbalený detail: záložky Tipy | Statistiky | Sestavy */}
       {open && (
-        <div className={desktopListOnly ? 'xl:hidden' : ''}>
+        <div className={`w-full max-w-full min-w-0 overflow-hidden ${desktopListOnly ? 'xl:hidden' : ''}`}>
           <MatchExpanded m={m} locked={locked} live={live} preds={preds} selectedName={selectedName} />
         </div>
       )}
@@ -641,16 +641,16 @@ function MatchExpanded({
   type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'xb' | 'prubeh' | 'staty' | 'sestavy';
   const tabs = (
     [
-      { id: 'tipy' as const, label: 'Tipy' },
-      isChanceLeague ? { id: 'xb' as const, label: 'xB predikce' } : null,
-      hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení' } : null,
-      showPrediction && !isChanceLeague ? { id: 'h2h' as const, label: 'H2H' } : null,
-      showPrediction && !isChanceLeague ? { id: 'predikce' as const, label: 'Predikce' } : null,
-      hasProgress ? { id: 'prubeh' as const, label: 'Průběh' } : null,
-      hasStats ? { id: 'staty' as const, label: 'Statistiky' } : null,
-      hasLineups ? { id: 'sestavy' as const, label: 'Sestavy' } : null,
-    ] as ({ id: TabId; label: string } | null)[]
-  ).filter((t): t is { id: TabId; label: string } => t !== null);
+      { id: 'tipy' as const, label: 'Tipy', mobileLabel: 'Tipy' },
+      isChanceLeague ? { id: 'xb' as const, label: 'xB predikce', mobileLabel: 'xB' } : null,
+      hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení', mobileLabel: 'Hodnocení' } : null,
+      showPrediction && !isChanceLeague ? { id: 'h2h' as const, label: 'H2H', mobileLabel: 'H2H' } : null,
+      showPrediction && !isChanceLeague ? { id: 'predikce' as const, label: 'Predikce', mobileLabel: 'Predikce' } : null,
+      hasProgress ? { id: 'prubeh' as const, label: 'Průběh', mobileLabel: 'Průběh' } : null,
+      hasStats ? { id: 'staty' as const, label: 'Statistiky', mobileLabel: 'Stat.' } : null,
+      hasLineups ? { id: 'sestavy' as const, label: 'Sestavy', mobileLabel: 'Sestavy' } : null,
+    ] as ({ id: TabId; label: string; mobileLabel: string } | null)[]
+  ).filter((t): t is { id: TabId; label: string; mobileLabel: string } => t !== null);
 
   const [tab, setTab] = useState<TabId>(preferXb && isChanceLeague ? 'xb' : 'tipy');
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
@@ -659,9 +659,9 @@ function MatchExpanded({
   const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce' || active === 'xb');
 
   return (
-    <div className={`min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40 ${desktopDetail ? 'desktop-match-expanded' : ''}`}>
+    <div className={`w-full max-w-full min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40 ${desktopDetail ? 'desktop-match-expanded' : ''}`}>
       {tabs.length > 1 && (
-        <div className={`flex gap-1 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${desktopDetail ? 'border-b border-line-subtle bg-app-deep/28 px-3 pt-1.5 2xl:px-4' : 'px-2 pt-2 sm:px-3'}`}>
+        <div className={`flex w-full max-w-full min-w-0 touch-pan-x gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden ${desktopDetail ? 'border-b border-line-subtle bg-app-deep/28 px-3 pt-1.5 2xl:px-4' : 'px-2 pt-2 sm:px-3'}`}>
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -669,18 +669,18 @@ function MatchExpanded({
                 e.stopPropagation();
                 setTab(t.id);
               }}
-              className={`shrink-0 whitespace-nowrap px-3 text-xs font-semibold transition ${
+              className={`min-w-0 shrink-0 whitespace-nowrap px-2.5 text-[11px] font-semibold transition sm:px-3 sm:text-xs ${
                 desktopDetail
                   ? `border-b-2 py-3 ${active === t.id ? 'border-violet-400 text-white' : 'border-transparent text-copy-muted hover:text-copy-primary'}`
                   : `rounded-t-md py-1.5 ${active === t.id ? 'bg-terrain-800 text-white' : 'text-slate-300/50 hover:text-slate-100/80'}`
               }`}
             >
-              {t.label}
+              <span className="sm:hidden">{t.mobileLabel}</span><span className="hidden sm:inline">{t.label}</span>
             </button>
           ))}
         </div>
       )}
-      <div className={desktopDetail ? 'bg-app-deep/18 px-3.5 py-3.5 2xl:px-4 2xl:py-4' : tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}>
+      <div className={`w-full max-w-full min-w-0 overflow-hidden ${desktopDetail ? 'bg-app-deep/18 px-3.5 py-3.5 2xl:px-4 2xl:py-4' : tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}`}>
         {active === 'tipy' && (
           <div className="space-y-3">
             <TipsContent m={m} locked={locked} live={live} preds={preds} />
