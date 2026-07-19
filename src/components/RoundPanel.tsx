@@ -592,7 +592,7 @@ function MatchRow({
         </span>
       </div>
 
-      {/* rozbalený detail: záložky Tipy | Statistiky | Sestavy */}
+      {/* rozbalený detail: responzivní záložky podle dostupné šířky */}
       {open && (
         <div className={`w-full max-w-full min-w-0 overflow-hidden ${desktopListOnly ? 'xl:hidden' : ''}`}>
           <MatchExpanded m={m} locked={locked} live={live} preds={preds} selectedName={selectedName} />
@@ -665,7 +665,7 @@ function MatchExpanded({
   return (
     <div className={`w-full max-w-full min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40 ${desktopDetail ? 'desktop-match-expanded' : ''}`}>
       {tabs.length > 1 && (
-        <div className={`${isChanceLeague ? 'grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-0.5 overflow-hidden' : 'flex touch-pan-x gap-1 overflow-x-auto overscroll-x-contain whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden'} w-full max-w-full min-w-0 overflow-y-hidden ${desktopDetail ? 'border-b border-line-subtle bg-app-deep/28 px-2 pt-1.5 2xl:px-4' : 'px-1.5 pt-2 sm:px-3'}`}>
+        <div className={`grid w-full max-w-full min-w-0 grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-0.5 overflow-hidden ${desktopDetail ? 'border-b border-line-subtle bg-app-deep/28 px-2 pt-1.5 2xl:px-4' : 'px-1.5 pt-2 sm:px-3'}`}>
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -673,7 +673,7 @@ function MatchExpanded({
                 e.stopPropagation();
                 setTab(t.id);
               }}
-              className={`min-w-0 whitespace-nowrap px-1 text-[9px] font-semibold tracking-tight transition sm:px-2 sm:text-[11px] ${isChanceLeague ? 'w-full' : 'shrink-0'} ${
+              className={`w-full min-w-0 whitespace-nowrap px-1 text-[9px] font-semibold tracking-tight transition sm:px-2 sm:text-[11px] ${
                 desktopDetail
                   ? `border-b-2 py-3 ${active === t.id ? 'border-violet-400 text-white' : 'border-transparent text-copy-muted hover:text-copy-primary'}`
                   : `rounded-t-md py-1.5 ${active === t.id ? 'bg-terrain-800 text-white' : 'text-slate-300/50 hover:text-slate-100/80'}`
