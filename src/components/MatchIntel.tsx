@@ -157,7 +157,7 @@ export function LeagueTableContent({ data, homeTeam, awayTeam, live = false }: {
         </div>
         {live && <span className="rounded-full border border-state-live/30 bg-state-live/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-state-live">živě</span>}
       </div>
-      <div className="grid grid-cols-[30px_minmax(0,1fr)_28px_44px_36px_34px] items-center border-b border-line-subtle px-2 py-2 text-[9px] font-semibold uppercase tracking-wide text-copy-muted">
+      <div className="grid grid-cols-[30px_minmax(0,1fr)_28px_42px_32px_56px] items-center border-b border-line-subtle px-2 py-2 text-[9px] font-semibold uppercase tracking-wide text-copy-muted">
         <span>#</span><span>Tým</span><span className="text-center">Z</span><span className="text-center">Skóre</span><span className="text-center">±</span><span className="text-right">B</span>
       </div>
       {rows.map((row) => {
@@ -165,7 +165,7 @@ export function LeagueTableContent({ data, homeTeam, awayTeam, live = false }: {
         const movedUp = row.positionChange > 0;
         const movedDown = row.positionChange < 0;
         return (
-          <div key={row.team} className={`grid grid-cols-[30px_minmax(0,1fr)_28px_44px_36px_34px] items-center border-b border-line-subtle/60 px-2 py-2 text-[10px] last:border-b-0 ${highlighted ? 'bg-violet-500/10' : ''}`}>
+          <div key={row.team} className={`grid grid-cols-[30px_minmax(0,1fr)_28px_42px_32px_56px] items-center border-b border-line-subtle/60 px-2 py-2 text-[10px] last:border-b-0 ${highlighted ? 'bg-violet-500/10' : ''}`}>
             <span className="flex items-center gap-1 font-display font-bold tabular-nums text-copy-muted">
               {row.position}
               {movedUp ? <span className="text-[9px] text-state-success">▲</span> : movedDown ? <span className="text-[9px] text-state-danger">▼</span> : <span className="text-[9px] text-copy-muted/40">•</span>}
@@ -178,12 +178,26 @@ export function LeagueTableContent({ data, homeTeam, awayTeam, live = false }: {
             <span className="text-center tabular-nums text-copy-secondary">{row.played}</span>
             <span className="text-center tabular-nums text-copy-muted">{row.goalsFor}:{row.goalsAgainst}</span>
             <span className={`text-center font-semibold tabular-nums ${row.goalDifference > 0 ? 'text-state-success' : row.goalDifference < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{row.goalDifference > 0 ? '+' : ''}{row.goalDifference}</span>
-            <strong className={`text-right font-display tabular-nums ${row.pointsChange > 0 ? 'text-state-success' : 'text-white'}`}>{row.points}{row.pointsChange > 0 && <span className="ml-0.5 text-[8px]">+{row.pointsChange}</span>}</strong>
+            <div className="min-w-0 text-right tabular-nums">
+              {live ? (
+                <>
+                  <div className="font-display text-[15px] font-bold leading-none text-violet-300">{row.points}</div>
+                  <div className="mt-1 flex items-center justify-end gap-1 text-[7px] leading-none">
+                    <span className="text-state-info">{row.points - row.pointsChange} před</span>
+                    <span className={row.pointsChange > 0 ? 'text-state-success' : row.pointsChange < 0 ? 'text-state-danger' : 'text-copy-muted'}>
+                      {row.pointsChange > 0 ? '+' : ''}{row.pointsChange}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="font-display text-[14px] font-bold text-white">{row.points}</div>
+              )}
+            </div>
           </div>
         );
       })}
       <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line-subtle px-3 py-2 text-[8px] text-copy-muted">
-        <span><b className="text-state-success">▲</b> posun nahoru</span><span><b className="text-state-danger">▼</b> posun dolů</span><span><b className="text-state-live">●</b> právě hraje</span>
+        <span><b className="text-violet-300">27</b> live body</span><span><b className="text-state-info">25</b> před zápasem</span><span><b className="text-state-success">+2</b> změna</span>
       </div>
     </div>
   );
