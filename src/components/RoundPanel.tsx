@@ -6,7 +6,7 @@ import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/e
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
-import { Baroko, H2HContent, PredictionContent, XbContent, useInsight } from './MatchIntel';
+import { Baroko, H2HContent, LeagueTableContent, PredictionContent, XbContent, useInsight } from './MatchIntel';
 import { sourceLabel } from '@/lib/espnCompetition';
 
 type Scores = Record<number, { h: string; a: string }>;
@@ -638,7 +638,7 @@ function MatchExpanded({
     || sourceKey.includes('chance-liga')
   ));
 
-  type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'xb' | 'prubeh' | 'staty' | 'sestavy';
+  type TabId = 'tipy' | 'hodnoceni' | 'h2h' | 'predikce' | 'xb' | 'prubeh' | 'staty' | 'tabulka';
   const tabs = (
     [
       { id: 'tipy' as const, label: 'Tipy', mobileLabel: 'Tipy' },
@@ -647,8 +647,8 @@ function MatchExpanded({
       showPrediction && !isChanceLeague ? { id: 'h2h' as const, label: 'H2H', mobileLabel: 'H2H' } : null,
       showPrediction && !isChanceLeague ? { id: 'predikce' as const, label: 'Predikce', mobileLabel: 'Predikce' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh', mobileLabel: 'Průběh' } : null,
-      hasStats ? { id: 'staty' as const, label: 'Statistiky', mobileLabel: 'Stat.' } : null,
-      hasLineups ? { id: 'sestavy' as const, label: 'Sestavy', mobileLabel: 'Sestavy' } : null,
+      hasStats ? { id: 'staty' as const, label: 'Statistiky', mobileLabel: 'Statistiky' } : null,
+      isChanceLeague ? { id: 'tabulka' as const, label: 'Tabulka', mobileLabel: 'Tabulka' } : null,
     ] as ({ id: TabId; label: string; mobileLabel: string } | null)[]
   ).filter((t): t is { id: TabId; label: string; mobileLabel: string } => t !== null);
 
@@ -656,12 +656,16 @@ function MatchExpanded({
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
   // Data pro H2H / xB / predikci se načtou až při otevření příslušné záložky.
-  const { data: intel, loading: intelLoading } = useInsight(m.id, active === 'h2h' || active === 'predikce' || active === 'xb');
+  const { data: intel, loading: intelLoading } = useInsight(
+    m.id,
+    active === 'h2h' || active === 'predikce' || active === 'xb' || active === 'tabulka',
+    active === 'tabulka' && m.status === 'live' ? 30000 : 0,
+  );
 
   return (
     <div className={`w-full max-w-full min-w-0 overflow-hidden border-t border-terrain-800/60 bg-terrain-950/40 ${desktopDetail ? 'desktop-match-expanded' : ''}`}>
       {tabs.length > 1 && (
-        <div className={`flex w-full max-w-full min-w-0 touch-pan-x gap-1 overflow-x-auto overflow-y-hidden overscroll-x-contain whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden ${desktopDetail ? 'border-b border-line-subtle bg-app-deep/28 px-3 pt-1.5 2xl:px-4' : 'px-2 pt-2 sm:px-3'}`}>
+        <div className={`${isChanceLeague ? 'grid grid-cols-[repeat(auto-fit,minmax(0,1fr))] gap-0.5 overflow-hidden' : 'flex touch-pan-x gap-1 overflow-x-auto overscroll-x-contain whitespace-nowrap [-ms-overflow-style:none] [scrollbar-width:none] [-webkit-overflow-scrolling:touch] [&::-webkit-scrollbar]:hidden'} w-full max-w-full min-w-0 overflow-y-hidden ${desktopDetail ? 'border-b border-line-subtle bg-app-deep/28 px-2 pt-1.5 2xl:px-4' : 'px-1.5 pt-2 sm:px-3'}`}>
           {tabs.map((t) => (
             <button
               key={t.id}
@@ -669,13 +673,13 @@ function MatchExpanded({
                 e.stopPropagation();
                 setTab(t.id);
               }}
-              className={`min-w-0 shrink-0 whitespace-nowrap px-2.5 text-[11px] font-semibold transition sm:px-3 sm:text-xs ${
+              className={`min-w-0 whitespace-nowrap px-1 text-[9px] font-semibold tracking-tight transition sm:px-2 sm:text-[11px] ${isChanceLeague ? 'w-full' : 'shrink-0'} ${
                 desktopDetail
                   ? `border-b-2 py-3 ${active === t.id ? 'border-violet-400 text-white' : 'border-transparent text-copy-muted hover:text-copy-primary'}`
                   : `rounded-t-md py-1.5 ${active === t.id ? 'bg-terrain-800 text-white' : 'text-slate-300/50 hover:text-slate-100/80'}`
               }`}
             >
-              <span className="sm:hidden">{t.mobileLabel}</span><span className="hidden sm:inline">{t.label}</span>
+              <span>{t.label}</span>
             </button>
           ))}
         </div>
@@ -703,7 +707,7 @@ function MatchExpanded({
         )}
         {active === 'prubeh' && d && <ProgressContent d={d} />}
         {active === 'staty' && d && <StatsContent d={d} />}
-        {active === 'sestavy' && lu && <FormationView lineups={lu} homeTeam={m.home_team} awayTeam={m.away_team} />}
+        {active === 'tabulka' && <LeagueTableContent data={intel} homeTeam={m.home_team} awayTeam={m.away_team} live={m.status === 'live'} />}
       </div>
     </div>
   );

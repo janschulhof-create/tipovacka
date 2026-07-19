@@ -47,6 +47,7 @@ interface XbPrediction {
   hasTip: boolean;
 }
 interface Form5Row { opponent: string; gf: number; ga: number; res: 'W' | 'D' | 'L' }
+export interface LeagueStandingRow { position: number; previousPosition: number; positionChange: number; team: string; played: number; won: number; drawn: number; lost: number; goalsFor: number; goalsAgainst: number; goalDifference: number; points: number; pointsChange: number; live: boolean }
 export interface InsightData {
   teams: { home: string; away: string };
   mutualMatches: MutualMatchRow[];
@@ -54,6 +55,7 @@ export interface InsightData {
   prediction: Prediction | null;
   xb: XbPrediction | null;
   loggedIn: boolean;
+  leagueTable?: LeagueStandingRow[];
 }
 
 /**
@@ -64,7 +66,7 @@ export interface InsightData {
 const insightCache = new Map<number, InsightData>();
 
 /** Načte a nasdílí data pro právě vybraný zápas (H2H, Predikce i xB). */
-export function useInsight(matchId: number, enabled: boolean) {
+export function useInsight(matchId: number, enabled: boolean, pollMs = 0) {
   const [state, setState] = useState<{ matchId: number; data: InsightData | null }>(() => ({
     matchId,
     data: insightCache.get(matchId) ?? null,
@@ -74,40 +76,51 @@ export function useInsight(matchId: number, enabled: boolean) {
   useEffect(() => {
     if (!enabled) return;
 
-    const cached = insightCache.get(matchId);
-    if (cached) {
-      setState({ matchId, data: cached });
-      setLoadingMatchId(null);
-      return;
-    }
-
     const controller = new AbortController();
+    let mounted = true;
 
-    // Okamžitě odpoj data předchozího zápasu. Díky tomu se při rychlém
-    // přepínání nikdy nemíchá nový nadpis se starou xB predikcí.
-    setState({ matchId, data: null });
-    setLoadingMatchId(matchId);
+    const load = async (force = false) => {
+      const cached = insightCache.get(matchId);
+      if (cached && !force) {
+        setState({ matchId, data: cached });
+        setLoadingMatchId(null);
+        return;
+      }
 
-    fetch(`/api/match-insight?match=${matchId}`, { signal: controller.signal })
-      .then((r) => (r.ok ? r.json() as Promise<InsightData> : null))
-      .then((nextData) => {
-        if (controller.signal.aborted) return;
+      if (!cached) {
+        setState({ matchId, data: null });
+        setLoadingMatchId(matchId);
+      }
+
+      try {
+        const response = await fetch(`/api/match-insight?match=${matchId}`, {
+          signal: controller.signal,
+          cache: 'no-store',
+        });
+        const nextData = response.ok ? await response.json() as InsightData : null;
+        if (!mounted || controller.signal.aborted) return;
         if (nextData) insightCache.set(matchId, nextData);
         setState({ matchId, data: nextData });
-      })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+      } catch (error: unknown) {
+        if (!mounted || controller.signal.aborted) return;
         if (error instanceof DOMException && error.name === 'AbortError') return;
-        setState({ matchId, data: null });
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
+        if (!insightCache.has(matchId)) setState({ matchId, data: null });
+      } finally {
+        if (mounted && !controller.signal.aborted) {
           setLoadingMatchId((current) => (current === matchId ? null : current));
         }
-      });
+      }
+    };
 
-    return () => controller.abort();
-  }, [enabled, matchId]);
+    void load(false);
+    const timer = pollMs > 0 ? window.setInterval(() => void load(true), pollMs) : null;
+
+    return () => {
+      mounted = false;
+      controller.abort();
+      if (timer != null) window.clearInterval(timer);
+    };
+  }, [enabled, matchId, pollMs]);
 
   const data = state.matchId === matchId ? state.data : (insightCache.get(matchId) ?? null);
   const loading = enabled && loadingMatchId === matchId && data === null;
@@ -131,6 +144,51 @@ function Score({ hs, as }: { hs: number; as: number }) {
     </span>
   );
 }
+
+export function LeagueTableContent({ data, homeTeam, awayTeam, live = false }: { data: InsightData | null; homeTeam: string; awayTeam: string; live?: boolean }) {
+  const rows = data?.leagueTable ?? [];
+  if (!rows.length) return <Empty text="Ligová tabulka se zobrazí po načtení dat Chance ligy." />;
+  return (
+    <div className="overflow-hidden rounded-xl border border-line-subtle bg-app-deep/35">
+      <div className="flex items-center justify-between gap-3 border-b border-line-subtle px-3 py-2">
+        <div>
+          <div className="text-[10px] font-semibold text-copy-primary">{live ? 'Live tabulka' : 'Aktuální tabulka'}</div>
+          <div className="text-[9px] text-copy-muted">{live ? 'Průběžně započítává rozehrané zápasy a jejich aktuální skóre.' : 'Stav před začátkem nebo po posledních dohraných zápasech.'}</div>
+        </div>
+        {live && <span className="rounded-full border border-state-live/30 bg-state-live/10 px-2 py-1 text-[9px] font-bold uppercase tracking-wide text-state-live">živě</span>}
+      </div>
+      <div className="grid grid-cols-[30px_minmax(0,1fr)_28px_44px_36px_34px] items-center border-b border-line-subtle px-2 py-2 text-[9px] font-semibold uppercase tracking-wide text-copy-muted">
+        <span>#</span><span>Tým</span><span className="text-center">Z</span><span className="text-center">Skóre</span><span className="text-center">±</span><span className="text-right">B</span>
+      </div>
+      {rows.map((row) => {
+        const highlighted = row.team === homeTeam || row.team === awayTeam;
+        const movedUp = row.positionChange > 0;
+        const movedDown = row.positionChange < 0;
+        return (
+          <div key={row.team} className={`grid grid-cols-[30px_minmax(0,1fr)_28px_44px_36px_34px] items-center border-b border-line-subtle/60 px-2 py-2 text-[10px] last:border-b-0 ${highlighted ? 'bg-violet-500/10' : ''}`}>
+            <span className="flex items-center gap-1 font-display font-bold tabular-nums text-copy-muted">
+              {row.position}
+              {movedUp ? <span className="text-[9px] text-state-success">▲</span> : movedDown ? <span className="text-[9px] text-state-danger">▼</span> : <span className="text-[9px] text-copy-muted/40">•</span>}
+            </span>
+            <span className="flex min-w-0 items-center gap-2">
+              <Flag team={row.team} className="h-5 w-5" />
+              <strong className={`truncate ${highlighted ? 'text-violet-200' : 'text-copy-primary'}`}>{row.team}</strong>
+              {row.live && <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-state-live" title="Tým právě hraje" />}
+            </span>
+            <span className="text-center tabular-nums text-copy-secondary">{row.played}</span>
+            <span className="text-center tabular-nums text-copy-muted">{row.goalsFor}:{row.goalsAgainst}</span>
+            <span className={`text-center font-semibold tabular-nums ${row.goalDifference > 0 ? 'text-state-success' : row.goalDifference < 0 ? 'text-state-danger' : 'text-copy-muted'}`}>{row.goalDifference > 0 ? '+' : ''}{row.goalDifference}</span>
+            <strong className={`text-right font-display tabular-nums ${row.pointsChange > 0 ? 'text-state-success' : 'text-white'}`}>{row.points}{row.pointsChange > 0 && <span className="ml-0.5 text-[8px]">+{row.pointsChange}</span>}</strong>
+          </div>
+        );
+      })}
+      <div className="flex flex-wrap gap-x-4 gap-y-1 border-t border-line-subtle px-3 py-2 text-[8px] text-copy-muted">
+        <span><b className="text-state-success">▲</b> posun nahoru</span><span><b className="text-state-danger">▼</b> posun dolů</span><span><b className="text-state-live">●</b> právě hraje</span>
+      </div>
+    </div>
+  );
+}
+
 
 /** Řetízek posledních výsledků (W/D/L) + skóre. */
 function FormChain({ rows }: { rows: Form5Row[] }) {

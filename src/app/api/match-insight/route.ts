@@ -45,6 +45,23 @@ interface ArchiveMatch {
   tips: Record<string, { h: number; a: number; pts: number | null }>;
 }
 
+interface LeagueStandingRow {
+  position: number;
+  team: string;
+  played: number;
+  won: number;
+  drawn: number;
+  lost: number;
+  goalsFor: number;
+  goalsAgainst: number;
+  goalDifference: number;
+  points: number;
+  previousPosition: number;
+  positionChange: number;
+  pointsChange: number;
+  live: boolean;
+}
+
 interface PlayedMatch {
   id: number;
   home_team: string;
@@ -307,6 +324,63 @@ export async function GET(req: Request) {
     xbVariants = requestedScores.map((score) => ({ ...score, xb: computeForScore(score) }));
   }
 
+  let leagueTable: LeagueStandingRow[] = [];
+  if (isCurrentChanceMatch) {
+    const { data: seasonMatchesData } = await sb
+      .from('matches')
+      .select('home_team, away_team, home_score, away_score, status, source_league, round')
+      .eq('season_id', match.season_id)
+      .eq('source_league', 'cze.1')
+      .gt('round', 0);
+
+    type TableBase = Omit<LeagueStandingRow, 'position' | 'previousPosition' | 'positionChange' | 'pointsChange' | 'goalDifference'>;
+    const createTable = () => new Map<string, TableBase>();
+    const ensure = (table: Map<string, TableBase>, team: string) => {
+      if (!table.has(team)) table.set(team, { team, played: 0, won: 0, drawn: 0, lost: 0, goalsFor: 0, goalsAgainst: 0, points: 0, live: false });
+      return table.get(team)!;
+    };
+    const apply = (table: Map<string, TableBase>, row: { home_team: string; away_team: string; home_score: number | null; away_score: number | null; status: string }, includeLive: boolean) => {
+      const home = ensure(table, row.home_team);
+      const away = ensure(table, row.away_team);
+      const counts = row.status === 'finished' || (includeLive && row.status === 'live');
+      if (!counts || row.home_score == null || row.away_score == null) return;
+      if (row.status === 'live') { home.live = true; away.live = true; }
+      home.played += 1; away.played += 1;
+      home.goalsFor += row.home_score; home.goalsAgainst += row.away_score;
+      away.goalsFor += row.away_score; away.goalsAgainst += row.home_score;
+      if (row.home_score > row.away_score) { home.won += 1; home.points += 3; away.lost += 1; }
+      else if (row.home_score < row.away_score) { away.won += 1; away.points += 3; home.lost += 1; }
+      else { home.drawn += 1; away.drawn += 1; home.points += 1; away.points += 1; }
+    };
+    const sortTable = (table: Map<string, TableBase>) => [...table.values()]
+      .map((row) => ({ ...row, goalDifference: row.goalsFor - row.goalsAgainst }))
+      .sort((a, b) => b.points - a.points || b.goalDifference - a.goalDifference || b.goalsFor - a.goalsFor || a.team.localeCompare(b.team, 'cs'));
+
+    const baseline = createTable();
+    const liveTable = createTable();
+    for (const row of (seasonMatchesData ?? []) as { home_team: string; away_team: string; home_score: number | null; away_score: number | null; status: string }[]) {
+      ensure(baseline, row.home_team); ensure(baseline, row.away_team);
+      ensure(liveTable, row.home_team); ensure(liveTable, row.away_team);
+      apply(baseline, row, false);
+      apply(liveTable, row, true);
+    }
+
+    const baselineSorted = sortTable(baseline);
+    const previousByTeam = new Map(baselineSorted.map((row, index) => [row.team, { position: index + 1, points: row.points }]));
+    leagueTable = sortTable(liveTable).map((row, index) => {
+      const previous = previousByTeam.get(row.team) ?? { position: index + 1, points: row.points };
+      const position = index + 1;
+      return {
+        ...row,
+        position,
+        previousPosition: previous.position,
+        positionChange: previous.position - position,
+        pointsChange: row.points - previous.points,
+      };
+    });
+  }
+
+
   return NextResponse.json({
     teams,
     mutualMatches,
@@ -315,5 +389,6 @@ export async function GET(req: Request) {
     xb,
     xbVariants,
     loggedIn: !!player,
+    leagueTable,
   });
 }
