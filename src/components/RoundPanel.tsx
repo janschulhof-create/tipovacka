@@ -673,7 +673,7 @@ function MatchExpanded({
                 e.stopPropagation();
                 setTab(t.id);
               }}
-              className={`w-full min-w-0 whitespace-nowrap px-1 text-[9px] font-semibold tracking-tight transition sm:px-2 sm:text-[11px] ${
+              className={`w-full min-w-0 whitespace-nowrap px-1 text-[10px] font-semibold tracking-tight transition sm:px-2 sm:text-xs ${
                 desktopDetail
                   ? `border-b-2 py-3 ${active === t.id ? 'border-violet-400 text-white' : 'border-transparent text-copy-muted hover:text-copy-primary'}`
                   : `rounded-t-md py-1.5 ${active === t.id ? 'bg-terrain-800 text-white' : 'text-slate-300/50 hover:text-slate-100/80'}`
