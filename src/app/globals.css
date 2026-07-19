@@ -221,10 +221,6 @@ textarea {
     container-type: inline-size;
   }
 
-  .xb-content {
-    min-width: 0;
-  }
-
   .xb-factor-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -237,41 +233,108 @@ textarea {
     gap: 16px;
   }
 
-  .xb-hero-grid {
-    display: grid;
-    grid-template-columns: 124px minmax(0, 1fr);
-    align-items: center;
-    gap: 14px;
-  }
-
-  .xb-hero-chart {
-    grid-column: 1 / -1;
-    min-width: 0;
-  }
-
   .desktop-match-expanded > div:last-child {
     min-height: 0;
   }
 }
 
-@container (min-width: 760px) {
-  .xb-hero-grid {
-    grid-template-columns: clamp(124px, 17%, 144px) minmax(0, 1fr);
+/* xB detail používá vlastní container queries, nikoli šířku viewportu.
+   Díky tomu se kruh, text i graf správně skládají také uvnitř úzkého
+   desktopového panelu na širokém monitoru. */
+.xb-content {
+  min-width: 0;
+  container-type: inline-size;
+}
+
+.xb-hero-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+}
+
+.xb-score-ring {
+  width: 128px;
+  height: auto;
+  aspect-ratio: 1 / 1;
+  justify-self: center;
+}
+
+.xb-score-ring--desktop {
+  padding: 8px;
+}
+
+.xb-score-ring--compact {
+  padding: 9px;
+}
+
+.xb-score-value {
+  font-size: clamp(2rem, 10cqi, 2.25rem);
+  line-height: 1;
+}
+
+.xb-hero-copy {
+  min-width: 0;
+  text-align: center;
+  overflow-wrap: anywhere;
+}
+
+.xb-hero-badges {
+  justify-content: center;
+}
+
+.xb-hero-chart {
+  grid-column: 1 / -1;
+  min-width: 0;
+  margin-top: 2px;
+}
+
+@container (min-width: 431px) {
+  .xb-hero-grid--desktop {
+    grid-template-columns: minmax(112px, 124px) minmax(0, 1fr);
     gap: 16px;
+  }
+
+  .xb-hero-grid--compact {
+    grid-template-columns: minmax(112px, 136px) minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .xb-score-ring {
+    width: 100%;
+    max-width: 144px;
+  }
+
+  .xb-hero-copy {
+    text-align: left;
+  }
+
+  .xb-hero-badges {
+    justify-content: flex-start;
+  }
+}
+
+@container (min-width: 760px) {
+  .xb-hero-grid--desktop {
+    grid-template-columns: 144px minmax(0, 1fr);
+  }
+
+  .xb-score-ring--desktop {
+    padding: 9px;
   }
 }
 
 @container (min-width: 1080px) {
-  .xb-hero-grid {
-    grid-template-columns: clamp(124px, 17%, 144px) minmax(220px, 0.84fr) minmax(280px, 1.16fr);
+  .xb-hero-grid--desktop {
+    grid-template-columns: 144px minmax(220px, 0.84fr) minmax(280px, 1.16fr);
   }
 
   .xb-hero-chart {
     grid-column: auto;
+    margin-top: 0;
   }
 }
-
-
 
 @container (min-width: 620px) {
   .xb-factor-grid {

@@ -494,10 +494,10 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
   }
 
   const width = 420;
-  const height = 176;
+  const height = 184;
   const padLeft = 28;
   const padRight = 8;
-  const padTop = 14;
+  const padTop = 20;
   const padBottom = 28;
   const innerW = width - padLeft - padRight;
   const innerH = height - padTop - padBottom;
@@ -566,7 +566,7 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
 
       <svg
         viewBox={`0 0 ${width} ${height}`}
-        className="mt-1 h-[176px] w-full overflow-visible"
+        className="mt-3 h-[184px] w-full overflow-visible"
         role="img"
         aria-label={`Trend xB a skutečných bodů za posledních ${visible.length} zápasů minulé sezony`}
       >
@@ -644,7 +644,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
   const mainColor = xb ? qualityColor(xb.value) : '#7888a3';
 
   return (
-    <div className={desktop ? 'xb-content space-y-4' : 'space-y-5'}>
+    <div className={desktop ? 'xb-content space-y-4' : 'xb-content space-y-5'}>
       <div className={`rounded-xl border border-violet-400/20 bg-violet-500/5 px-3 py-2.5 leading-relaxed text-copy-secondary ${desktop ? 'text-[11.5px]' : 'text-[11px]'}`}>
         <b className="text-violet-200">Co je xB?</b> xB z tohoto zápasu v našem bodování 0–10. Stejný osobní výpočet se používá také v profilu a simulátoru. xB není procento ani slib výsledku. <b className="text-copy-primary">Jistota</b> vedle odhadu popisuje sílu a množství dat, nikoli pravděpodobnost, že konkrétní skóre vyjde.
       </div>
@@ -656,26 +656,26 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
       ) : (
         <>
           <div className={`panel-premium ${desktop ? 'p-3.5 2xl:p-4' : 'p-4'}`}>
-            <div className={desktop ? 'xb-hero-grid' : 'grid gap-4 sm:grid-cols-[9rem_minmax(0,1fr)] sm:items-center lg:grid-cols-[9rem_minmax(0,1fr)_18rem]'}>
+            <div className={`xb-hero-grid ${desktop ? 'xb-hero-grid--desktop' : 'xb-hero-grid--compact'}`}>
               <div
-                className={`${desktop ? 'h-[124px] w-[124px] p-[8px] 2xl:h-36 2xl:w-36 2xl:p-[9px]' : 'h-36 w-36 p-[9px]'} relative mx-auto flex shrink-0 items-center justify-center rounded-full sm:mx-0`}
+                className={`xb-score-ring ${desktop ? 'xb-score-ring--desktop' : 'xb-score-ring--compact'} relative flex shrink-0 items-center justify-center rounded-full`}
                 style={{ background: `conic-gradient(${mainColor} ${degrees}deg, rgb(23 42 71) ${degrees}deg)` }}
                 aria-label={`xB ${xb.value} z 10`}
               >
                 <div className="flex h-full w-full flex-col items-center justify-center rounded-full bg-app-deep shadow-inner">
-                  <span className={`${desktop ? 'text-[34px] 2xl:text-4xl' : 'text-4xl'} font-display font-bold tabular-nums text-white`}>{xb.value.toFixed(1)}</span>
+                  <span className="xb-score-value font-display font-bold tabular-nums text-white">{xb.value.toFixed(1)}</span>
                   <span className="text-xs text-copy-muted">/ 10</span>
                   <span className="mt-1 text-[10px] uppercase tracking-wide text-copy-muted"><span className="normal-case">xB</span></span>
                 </div>
               </div>
 
-              <div className="min-w-0 flex-1 text-center sm:text-left">
+              <div className="xb-hero-copy min-w-0 flex-1">
                 <div className="text-[10px] font-bold uppercase tracking-[0.13em] text-violet-300">{desktop ? <><span className="normal-case">xB</span></> : <><span className="normal-case">xB</span> predikce</>}</div>
-                <h4 className={`${desktop ? 'text-[18px] 2xl:text-xl' : 'text-xl'} mt-1 font-display font-bold`} style={{ color: mainColor }}>{label}</h4>
-                <p className="mt-2 text-[12.5px] leading-relaxed text-copy-secondary">
+                <h4 className={`${desktop ? 'text-[18px] 2xl:text-xl' : 'text-xl'} mt-1 text-balance font-display font-bold leading-tight`} style={{ color: mainColor }}>{label}</h4>
+                <p className="mt-2 break-words text-[12.5px] leading-relaxed text-copy-secondary">
                   Podle tvé historie model odhaduje v tomto zápase přibližné <b className="tabular-nums text-copy-primary">xB {xb.value.toFixed(1)}</b>.
                 </p>
-                <div className="mt-3 flex flex-wrap justify-center gap-2 sm:justify-start">
+                <div className="xb-hero-badges mt-3 flex flex-wrap gap-2">
                   <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${qualitySoftClass(xb.value)}`}>
                     interval {xb.low.toFixed(1)}–{xb.high.toFixed(1)} b
                   </span>
@@ -688,17 +688,15 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
                 )}
               </div>
 
-              <div className={desktop ? 'xb-hero-chart' : 'hidden lg:block'}>
-                <XbTrendChart rows={xb.trend ?? []} />
-              </div>
+              {desktop && (
+                <div className="xb-hero-chart">
+                  <XbTrendChart rows={xb.trend ?? []} />
+                </div>
+              )}
             </div>
           </div>
 
-          {!desktop && (
-            <div className="lg:hidden">
-              <XbTrendChart rows={xb.trend ?? []} />
-            </div>
-          )}
+          {!desktop && <XbTrendChart rows={xb.trend ?? []} />}
 
           <div className="space-y-3">
             <div>
