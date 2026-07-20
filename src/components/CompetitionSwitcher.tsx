@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { COMPETITIONS, type CompetitionKey } from '@/lib/competitions';
+import { DASHBOARD_COMPETITIONS, type CompetitionKey } from '@/lib/competitions';
 import { Flag } from './Flag';
 
 /** Jednotné ikony soutěží používané v přepínači i prázdném dashboardu. */
@@ -71,9 +71,11 @@ export function CompetitionSwitcher({ current }: { current: CompetitionKey }) {
     return `${pathname}?${p.toString()}`;
   };
 
+  if (DASHBOARD_COMPETITIONS.length <= 1) return null;
+
   return (
     <div className="-mx-1 flex items-center gap-1.5 overflow-x-auto px-1 pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {COMPETITIONS.map((c) => {
+      {DASHBOARD_COMPETITIONS.map((c) => {
         const on = c.key === current;
         return (
           <Link

@@ -17,7 +17,7 @@ import { RoundSelector } from '@/components/RoundSelector';
 import { roundLabel } from '@/lib/roundLabel';
 import { CompetitionSwitcher } from '@/components/CompetitionSwitcher';
 import { ComingSoonPanel } from '@/components/ComingSoonPanel';
-import { getCompetition } from '@/lib/competitions';
+import { getDashboardCompetition } from '@/lib/competitions';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { Suspense } from 'react';
@@ -34,7 +34,7 @@ export default async function Home({
   searchParams: Promise<{ kolo?: string; soutez?: string; zapas?: string }>;
 }) {
   const sp = await searchParams;
-  const competition = getCompetition(sp?.soutez);
+  const competition = getDashboardCompetition(sp?.soutez);
 
   const season = competition.active ? await getActiveSeason(competition.key) : null;
   if (!season) {

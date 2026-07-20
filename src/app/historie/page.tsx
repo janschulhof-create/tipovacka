@@ -3,7 +3,7 @@ import { CompetitionTabs } from '@/components/CompetitionTabs';
 import data from '@/data/historie.json';
 import { PageHeader } from '@/components/PageHeader';
 import { getMsSeason } from '@/lib/msSeason';
-import { getActiveSeasonId, getStoppageStats, getWizardAndContinentStats } from '@/lib/queries';
+import { getLatestSeasonId, getStoppageStats, getWizardAndContinentStats } from '@/lib/queries';
 import type { StatCardDef } from '@/lib/statCards';
 import { buildHistoricalLeagueRegionTables } from '@/lib/leagueRegions';
 
@@ -18,8 +18,8 @@ export default async function HistoriePage() {
   const winner = liga.players.reduce((a, b) => (liga.stats[b].points > liga.stats[a].points ? b : a));
   const titleRows = [{ name: winner, val: '1×', n: 1 }];
 
-  // Statistiky navíc, které dávají smysl jen u MS (shodné se Síní slávy)
-  const seasonId = await getActiveSeasonId('ms');
+  // Archivní statistiky MS (shodné se Síní slávy), dostupné i po deaktivaci sezóny
+  const seasonId = await getLatestSeasonId('ms');
   const [stoppage, wizCont] = seasonId
     ? await Promise.all([getStoppageStats(seasonId), getWizardAndContinentStats(seasonId)])
     : [[], { wizard: [], spodina: [], continents: [], regions: [] }];
@@ -58,6 +58,7 @@ export default async function HistoriePage() {
       <CompetitionTabs
         liga={<HistorieView data={liga} titleRows={titleRows} regionalCards={ligaRegions} />}
         ms={ms ? <HistorieView data={ms.data} extraCards={msExtra} trailingCards={msContinents} /> : null}
+        msLabel="MS 2026 · archiv"
       />
     </main>
   );

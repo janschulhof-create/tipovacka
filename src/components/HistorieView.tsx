@@ -83,7 +83,7 @@ export function HistorieView({
     <div className="space-y-7">
       {/* Vítěz sezóny */}
       <div className="rounded-2xl border border-gold/40 bg-gradient-to-b from-gold/15 to-transparent p-5 text-center">
-        <div className="text-xs uppercase tracking-wide text-gold">Vítěz 1. sezóny ({data.season})</div>
+        <div className="text-xs uppercase tracking-wide text-gold">Vítěz soutěže ({data.season})</div>
         <div className="mt-1 font-display text-3xl font-extrabold text-white">🏆 {winner}</div>
         <div className="text-sm text-slate-100/70">{data.stats[winner].points} bodů</div>
       </div>

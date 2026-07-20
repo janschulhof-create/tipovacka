@@ -3,7 +3,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { CompetitionTabs } from '@/components/CompetitionTabs';
 import { HallOfFameSection, type HofSeason } from '@/components/HallOfFameSection';
 import { getMsSeason } from '@/lib/msSeason';
-import { getActiveSeasonId, getStoppageStats, getWizardAndContinentStats } from '@/lib/queries';
+import { getLatestSeasonId, getStoppageStats, getWizardAndContinentStats } from '@/lib/queries';
 import { buildHistoricalLeagueRegionTables } from '@/lib/leagueRegions';
 
 export const dynamic = 'force-dynamic';
@@ -14,9 +14,9 @@ export default async function SinSlavyPage() {
   const winner = liga.players.reduce((a, b) => (liga.stats[b].points > liga.stats[a].points ? b : a));
   const titleRows = [{ name: winner, val: '1×', n: 1 }];
 
-  // ── MS 2026: probíhající sezóna z DB, stojí bokem ──
+  // ── MS 2026: dokončený archiv z DB, stojí bokem ──
   const ms = await getMsSeason();
-  const seasonId = await getActiveSeasonId('ms');
+  const seasonId = await getLatestSeasonId('ms');
   const [stoppage, wizCont] = seasonId
     ? await Promise.all([getStoppageStats(seasonId), getWizardAndContinentStats(seasonId)])
     : [[], { wizard: [], spodina: [], continents: [], regions: [] }];
@@ -38,6 +38,11 @@ export default async function SinSlavyPage() {
     accent: 'text-pitch-light',
     rows: c.rows.map((r) => ({ name: r.name, val: `${r.points} b`, n: r.points })),
   }));
+
+  const msWinner = ms
+    ? ms.data.players.reduce((a, b) => (ms.data.stats[b].points > ms.data.stats[a].points ? b : a))
+    : null;
+  const msTitleRows = msWinner ? [{ name: msWinner, val: '1×', n: 1 }] : undefined;
 
   const ligaRegions = buildHistoricalLeagueRegionTables(liga.rounds, liga.players).map((region) => ({
     icon: region.icon,
@@ -66,12 +71,18 @@ export default async function SinSlavyPage() {
           ms ? (
             <>
               <p className="mb-4 text-xs text-slate-100/45">
-                Probíhající {ms.data.season} — vlastní rekordy, mimo ligovou Síň slávy.
+                Dokončené {ms.data.season} — konečné pořadí a rekordy jsou vedené samostatně od Chance ligy.
               </p>
-              <HallOfFameSection s={ms.data as unknown as HofSeason} extraCards={msExtra} trailingCards={msContinents} />
+              <HallOfFameSection
+                s={ms.data as unknown as HofSeason}
+                titleRows={msTitleRows}
+                extraCards={msExtra}
+                trailingCards={msContinents}
+              />
             </>
           ) : null
         }
+        msLabel="MS 2026 · archiv"
       />
     </main>
   );

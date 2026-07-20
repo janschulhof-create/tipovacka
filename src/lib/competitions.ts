@@ -1,9 +1,9 @@
 /**
  * Centrální konfigurace soutěží — jeden zdroj pravdy pro dashboard i sync.
  *
- * MS 2026 je výchozí soutěž. Chance liga je hlavní dlouhodobá soutěž a
- * „Evropa“ sdružuje vybrané zápasy Ligy mistrů, Evropské ligy a
- * Konferenční ligy do jedné tipovací sekce.
+ * Po skončení MS 2026 je výchozí a jedinou veřejnou soutěží dashboardu
+ * Chance liga. MS zůstává v konfiguraci kvůli archivním datům, ale na
+ * dashboardu se už nenabízí; kompletní výsledky jsou v Historii a Síni slávy.
  */
 export type CompetitionKey = 'liga' | 'evropa' | 'ms';
 
@@ -18,7 +18,7 @@ export interface Competition {
   espnSlugs: string[];
 }
 
-export const DEFAULT_COMPETITION_KEY: CompetitionKey = 'ms';
+export const DEFAULT_COMPETITION_KEY: CompetitionKey = 'liga';
 
 export const COMPETITIONS: Competition[] = [
   {
@@ -62,6 +62,18 @@ export const COMPETITIONS: Competition[] = [
    */
 ];
 
+/** Soutěže dostupné na hlavním dashboardu. MS 2026 je po skončení pouze v archivu. */
+export const DASHBOARD_COMPETITIONS = COMPETITIONS.filter((competition) => competition.key !== 'ms');
+
+/** Resolver pro dashboard: archivní nebo neznámý klíč vždy bezpečně vrátí Chance ligu. */
+export function getDashboardCompetition(key: string | undefined): Competition {
+  return (
+    DASHBOARD_COMPETITIONS.find((competition) => competition.key === key) ??
+    DASHBOARD_COMPETITIONS.find((competition) => competition.key === DEFAULT_COMPETITION_KEY)!
+  );
+}
+
+/** Obecný resolver ponechaný i pro interní synchronizace a archivní práci s daty. */
 export function getCompetition(key: string | undefined): Competition {
   return (
     COMPETITIONS.find((c) => c.key === key) ??

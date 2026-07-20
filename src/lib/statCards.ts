@@ -28,7 +28,7 @@ export function buildStatCards(opts: {
   players: string[];
   stats: Record<string, CardStat>;
   rounds: SRound[];
-  /** Počet titulů (jen tam, kde dává smysl – dokončené sezóny ligy). */
+  /** Počet vítězství v dokončené soutěži nebo sezónách. */
   titleRows?: RankRow[];
   /** Statistiky navíc uprostřed – Pán nastavení (jen MS). Řadí se jako na dashboardu. */
   extraCards?: StatCardDef[];

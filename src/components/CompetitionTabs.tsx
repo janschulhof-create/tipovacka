@@ -4,9 +4,8 @@ import { useState, type ReactNode } from 'react';
 import { Flag } from './Flag';
 
 /**
- * Přepínač soutěží: Chance liga (dokončené sezóny) × MS 2026 (probíhající).
- * Obsah obou záložek se vykreslí na serveru, tady se jen přepíná zobrazení —
- * MS se tak NIKDY nemíchá do ligových rekordů, jen stojí vedle.
+ * Přepínač archivů: Chance liga × dokončené MS 2026.
+ * Obsah obou záložek se vykreslí na serveru a nikdy se nemíchá dohromady.
  */
 export function CompetitionTabs({
   liga,

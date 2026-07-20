@@ -1,22 +1,27 @@
-import { getActiveSeason, getSeasonTipRounds, getPlayers } from './queries';
+import { getLatestSeason, getSeasonTipRounds } from './queries';
 import { computePerPlayer, type SRound } from './seasonStats';
 import type { Historie } from '@/components/HistorieView';
 
 /**
- * Poskládá probíhající MS do STEJNÉHO tvaru, jaký má historie.json
- * (season / players / rounds / stats) — díky tomu jde MS zobrazit
- * úplně stejnými komponentami jako dokončené sezóny Chance ligy.
+ * Poskládá poslední MS do STEJNÉHO tvaru, jaký má historie.json
+ * (season / players / rounds / stats). Nezávisí na `is_active`, takže po
+ * skončení soutěže zůstávají všechny výsledky, tipy a statistiky v archivu.
  */
 export async function getMsSeason(): Promise<{ data: Historie; rounds: SRound[] } | null> {
-  const season = await getActiveSeason('ms');
+  const season = await getLatestSeason('ms');
   if (!season) return null;
 
   const rounds = (await getSeasonTipRounds(season.id)) as SRound[];
-  const players = (await getPlayers()).map((p) => p.name);
 
-  // jen hráči, kteří opravdu tipovali (ať v tabulkách nevisí prázdné řádky)
-  const active = players.filter((n) =>
-    rounds.some((r) => r.matches.some((m) => m.tips[n] && m.tips[n].pts != null)),
+  // Archiv musí zachovat i hráče, kteří už později nejsou označení jako aktivní.
+  // Proto jména odvozujeme přímo z uložených tipů daného MS.
+  const players = [...new Set(
+    rounds.flatMap((round) => round.matches.flatMap((match) => Object.keys(match.tips))),
+  )].sort((a, b) => a.localeCompare(b, 'cs'));
+
+  // Jen hráči, kteří mají alespoň jeden vyhodnocený tip.
+  const active = players.filter((name) =>
+    rounds.some((round) => round.matches.some((match) => match.tips[name]?.pts != null)),
   );
   if (active.length === 0) return null;
 

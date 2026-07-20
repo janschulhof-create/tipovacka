@@ -29,6 +29,28 @@ export async function getActiveSeason(competitionKey: CompetitionKey = 'liga'): 
   return (data as ActiveSeason | null) ?? null;
 }
 
+/**
+ * Nejnovější sezóna soutěže bez ohledu na `is_active`.
+ * Archivní stránky ji používají proto, aby dokončené MS zůstalo dostupné i po
+ * deaktivaci sezóny v databázi. Vyšší id odpovídá nověji založené sezóně.
+ */
+export async function getLatestSeason(competitionKey: CompetitionKey): Promise<ActiveSeason | null> {
+  const sb = createServerReadClient();
+  const { data } = await sb
+    .from('seasons')
+    .select('id, name, competition_key')
+    .eq('competition_key', competitionKey)
+    .order('id', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  return (data as ActiveSeason | null) ?? null;
+}
+
+export async function getLatestSeasonId(competitionKey: CompetitionKey): Promise<number | null> {
+  const season = await getLatestSeason(competitionKey);
+  return season?.id ?? null;
+}
+
 /** Popisky kol uložené u zápasů (např. „Evropa · týden 31/2026"). */
 export async function getRoundLabels(seasonId: number): Promise<Record<number, string>> {
   const sb = createServerReadClient();
