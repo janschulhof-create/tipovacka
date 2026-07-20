@@ -8,7 +8,6 @@ import {
 } from '@/lib/queries';
 import { getSessionPlayer } from '@/lib/auth';
 import { createServerAuthClient } from '@/lib/supabase/server';
-import { ProfileView } from '@/components/ProfileView';
 import {
   AIAnalysisSection,
   type AIAnalysisMatch,
@@ -144,15 +143,6 @@ export default async function ProfilPage() {
             profile={profile}
             matches={aiMatches}
             roundTitle={currentRound != null ? `${currentRound}. kolo` : 'aktuální kolo'}
-          />
-          <ProfileView
-            profile={profile}
-            h2h={null}
-            others={[]}
-            vsId={null}
-            basePath="/profil"
-            title="Datové centrum"
-            showComparison={false}
           />
         </>
       ) : (
