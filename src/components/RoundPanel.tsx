@@ -729,7 +729,7 @@ export function DesktopMatchDetail({
   const status = live ? `živě${match.clock ? ` ${match.clock}` : match.minute != null ? ` ${match.minute}′` : ''}` : match.status === 'finished' ? 'konec' : 'otevřeno';
 
   return (
-    <section className="panel-flush overflow-hidden shadow-elevated">
+    <section className="panel-flush w-full max-w-full min-w-0 overflow-hidden shadow-elevated">
       <div className="border-b border-line-subtle bg-gradient-to-br from-violet-500/10 via-surface-2/75 to-surface-1 px-4 py-3.5 2xl:px-5">
         <div className="mb-3 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-muted">
           <span className={live ? 'text-state-live' : ''}>{status}</span>
