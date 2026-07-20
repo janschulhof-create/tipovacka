@@ -503,7 +503,7 @@ function XbTrendChart({
           xB Ø {avg((row) => row.value).toFixed(1)}
         </span>
         <span className="inline-flex items-center gap-1.5 rounded-full border border-state-success/20 bg-state-success/10 px-2 py-1 text-state-success">
-          <span className="h-2 w-2 rounded-full bg-state-success opacity-50" />
+          <span className="h-2 w-2 rounded-full bg-state-success opacity-30" />
           reálné body Ø {avg((row) => row.actual).toFixed(1)}
         </span>
       </div>
@@ -537,11 +537,11 @@ function XbTrendChart({
           </g>
         ))}
         <path d={area} fill={`url(#${gradientId})`} opacity="0.10" />
-        <path d={actualLine} fill="none" stroke="#35D07F" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" opacity="0.5" />
+        <path d={actualLine} fill="none" stroke="#35D07F" strokeWidth="2.2" strokeDasharray="1 7" strokeLinecap="round" strokeLinejoin="round" opacity="0.3" />
         <path d={xbLine} fill="none" stroke={`url(#${gradientId})`} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
         {visible.map((row, index) => (
           <g key={`${row.index}-${index}`}>
-            <circle cx={x(index)} cy={y(row.actual)} r={visible.length > 20 ? 2.2 : 3.2} fill="#35D07F" stroke="#07101D" strokeWidth="1.4" opacity="0.5">
+            <circle cx={x(index)} cy={y(row.actual)} r={visible.length > 20 ? 2.2 : 3.2} fill="#35D07F" stroke="#07101D" strokeWidth="1.2" opacity="0.3">
               <title>{`Zápas ${row.index}: skutečně ${row.actual} b`}</title>
             </circle>
             <circle cx={x(index)} cy={y(row.value)} r={visible.length > 20 ? 2.5 : 3.6} fill="#A46AF7" stroke="#07101D" strokeWidth="1.5">
@@ -557,7 +557,7 @@ function XbTrendChart({
       </svg>
 
       <p className="mt-1 text-[9.5px] leading-snug text-copy-muted">
-        Zobrazeno {visible.length} z {sourceRows.length} dostupných zápasů. Fialová ukazuje tehdejší xB, zelená skutečný bodový zisk.
+        Zobrazeno {visible.length} z {sourceRows.length} dostupných zápasů. Fialová ukazuje tehdejší xB, zelená tečkovaná skutečný bodový zisk.
       </p>
     </div>
   );

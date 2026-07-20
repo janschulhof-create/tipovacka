@@ -153,12 +153,11 @@ export function SeasonXbTable({
   const total = rows[0]?.total_matches ?? 0;
   const remaining = Math.max(0, total - finished);
   const averageConfidence = Math.round(rows.reduce((sum, row) => sum + row.confidence, 0) / rows.length);
-  // Délka čáry je normalizovaná v rámci aktuální tabulky. Nejvyšší odhad má 100 %,
-  // nejnižší 42 %, aby byly rozdíly čitelné i na mobilu, ale žádný hráč opticky nezmizel.
+  // Délka čáry odpovídá podílu vůči nejvyššímu odhadu v tabulce.
+  // Hodnota 0 proto nemá žádnou výplň a novému tipérovi čára roste spolu s xB.
   const projectionBarWidth = (value: number) => {
-    const span = max - min;
-    if (span <= 0) return 100;
-    return 42 + ((value - min) / span) * 58;
+    if (max <= 0 || value <= 0) return 0;
+    return Math.max(0, Math.min(100, (value / max) * 100));
   };
 
   if (compact) {
@@ -306,7 +305,7 @@ export function SeasonXbTable({
       </ol>
 
       <div className="border-t border-line-subtle px-4 py-3 text-[10.5px] leading-relaxed text-copy-muted">
-        <b className="text-copy-secondary">Jak se projekce počítá:</b> základem je Chance liga 2025/26. Poslední tipy z MS 2026 mají před startem ligy maximálně 8% váhu a postupně mizí; posledních 20 ligových tipů získává až 24% váhu. U známého rozpisu model přidává aktuální formu klubů a H2H, neznámou nadstavbu a baráž dopočítává konzervativním osobním průměrem. Tajné tipy před výkopem neprozrazuje.
+        <b className="text-copy-secondary">Jak se projekce počítá:</b> základem je Chance liga 2025/26. Poslední tipy z MS 2026 mají před startem ligy maximálně 8% váhu a postupně mizí; posledních 20 ligových tipů získává až 24% váhu. U známého rozpisu model přidává aktuální formu klubů a H2H, neznámou nadstavbu a baráž dopočítává konzervativním osobním průměrem. Nový tipér bez historie začíná na 0 a projekce se mu postupně rozbíhá během prvních 50 vyhodnocených tipů. Tajné tipy před výkopem neprozrazuje.
       </div>
     </div>
   );

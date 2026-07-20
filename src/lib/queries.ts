@@ -477,6 +477,57 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
       ? msFinished.map((match) => msTipsByPlayerMatch.get(`${player.id}:${match.id}`) ?? 0)
       : [];
 
+    // Nový tipér bez ligové historie a bez účasti na MS nezačíná umělým
+    // průměrem celé party. Dokud nemá vyhodnocený tip, jeho projekce je 0.
+    // Potom se odhad rozbíhá postupně podle skutečně odehraného vzorku a
+    // během prvních 50 zápasů plynule získává plnou projekční váhu.
+    const newcomer = archiveTips.length === 0 && msPoints.length === 0;
+    if (newcomer) {
+      const firstPredictionIndex = finished.findIndex((match) =>
+        tipsByPlayerMatch.has(`${player.id}:${match.id}`),
+      );
+      const newcomerPoints = firstPredictionIndex < 0
+        ? []
+        : finished.slice(firstPredictionIndex).map(
+            (match) => tipsByPlayerMatch.get(`${player.id}:${match.id}`) ?? 0,
+          );
+      const sample = newcomerPoints.length;
+
+      if (sample === 0) {
+        return {
+          player_id: player.id,
+          name: player.name,
+          actual_points: 0,
+          finished_matches: finished.length,
+          remaining_matches: remainingMatches,
+          total_matches: totalMatches,
+          expected_remaining: 0,
+          projected_points: 0,
+          avg_xb_remaining: 0,
+          confidence: 0,
+        };
+      }
+
+      const recent = newcomerPoints.slice(-50);
+      const observedAverage = recentWeightedAverage(recent, 0);
+      const maturity = Math.min(1, sample / 50);
+      const conservativeAverage = Math.max(0, Math.min(10, observedAverage * maturity));
+      const expectedRemaining = conservativeAverage * remainingMatches;
+
+      return {
+        player_id: player.id,
+        name: player.name,
+        actual_points: actualPoints,
+        finished_matches: finished.length,
+        remaining_matches: remainingMatches,
+        total_matches: totalMatches,
+        expected_remaining: Number(expectedRemaining.toFixed(1)),
+        projected_points: Math.round(actualPoints + expectedRemaining),
+        avg_xb_remaining: Number(conservativeAverage.toFixed(1)),
+        confidence: Math.round(Math.min(70, maturity * 70)),
+      };
+    }
+
     let expectedKnown = 0;
     let confidenceSum = 0;
     for (const match of knownRemaining) {
