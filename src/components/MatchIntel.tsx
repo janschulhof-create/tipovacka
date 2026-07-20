@@ -250,7 +250,7 @@ export function TeamFormContent({ data }: { data: InsightData }) {
 }
 
 /**
- * BAROKO — jak moc se tvůj tip liší od průměru party.
+ * HODNOCENÍ ZÁPASU — slovní komentář k odlišnosti tipu od průměru party.
  * Kladné = tipuješ víc gólů / odvážněji než ostatní.
  */
 export function Baroko({
@@ -273,14 +273,9 @@ export function Baroko({
   const avgH = others.reduce((s, p) => s + p.predicted_home, 0) / others.length;
   const avgA = others.reduce((s, p) => s + p.predicted_away, 0) / others.length;
 
-  // zaokrouhlený "tip party" – čte se líp než desetinná čísla
-  const partaH = Math.round(avgH);
-  const partaA = Math.round(avgA);
-
   const dGoals = myTip.h + myTip.a - (avgH + avgA); // víc/míň gólů než parta
   const dLean = myTip.h - myTip.a - (avgH - avgA); // komu víc věříš
 
-  const same = others.filter((p) => p.predicted_home === myTip.h && p.predicted_away === myTip.a);
   const myWin = Math.sign(myTip.h - myTip.a);
   const partyWin = Math.sign(avgH - avgA);
 
@@ -351,41 +346,15 @@ export function Baroko({
     ]);
   }
 
-  const company =
-    same.length === 0
-      ? pick([
-          'S tímhle tipem jsi na to úplně sám. Sláva, nebo ostuda — o obojí se dělit nebudeš.',
-          'Tenhle tip nemá nikdo jiný. Buď jsi napřed, nebo úplně mimo.',
-          'Jsi s tím sám. Což je buď známka geniality, nebo varovný signál.',
-        ])
-      : same.length === 1
-        ? pick([
-            'Stejný tip má ještě 1 další. Aspoň nebudeš za blbce sám.',
-            'Ještě jeden má stejný tip. Sdílená ostuda, poloviční ostuda.',
-          ])
-        : `Stejný tip má ještě ${same.length} ${same.length < 5 ? 'další' : 'dalších'}. ${pick(['Buď máte pravdu, nebo padnete společně.', 'Stádo se mýlí svorně, ale mýlí se rádo.'])}`;
 
   return (
     <div className="rounded-xl border border-terrain-700 bg-terrain-900/40 p-3">
       <div className="text-[11px] font-semibold uppercase tracking-wide text-slate-300/60">
-        🎭 Baroko — jak moc jsi mimo partu
-      </div>
-
-      <div className="mt-2 flex items-center gap-3 text-[13px]">
-        <span className="rounded-lg bg-terrain-800 px-2 py-1">
-          <span className="text-slate-300/50">ty </span>
-          <b className="tabular-nums text-white">{myTip.h}:{myTip.a}</b>
-        </span>
-        <span className="text-slate-300/35">vs</span>
-        <span className="rounded-lg bg-terrain-800 px-2 py-1">
-          <span className="text-slate-300/50">parta spíš </span>
-          <b className="tabular-nums text-slate-100/80">{partaH}:{partaA}</b>
-        </span>
+        🏆 Hodnocení zápasu
       </div>
 
       <p className="mt-2 text-sm font-semibold text-flag">{title}</p>
       <p className="mt-0.5 text-[12.5px] leading-snug text-slate-100/70">{note}</p>
-      <p className="mt-1 text-[11px] text-slate-300/45">{company}</p>
     </div>
   );
 }

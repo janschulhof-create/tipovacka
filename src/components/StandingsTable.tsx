@@ -149,11 +149,17 @@ export function SeasonXbTable({
 
   const min = Math.min(...rows.map((row) => row.projected_points));
   const max = Math.max(...rows.map((row) => row.projected_points));
-  const maxExpected = Math.max(1, ...rows.map((row) => row.projected_points));
   const finished = rows[0]?.finished_matches ?? 0;
   const total = rows[0]?.total_matches ?? 0;
   const remaining = Math.max(0, total - finished);
   const averageConfidence = Math.round(rows.reduce((sum, row) => sum + row.confidence, 0) / rows.length);
+  // Délka čáry je normalizovaná v rámci aktuální tabulky. Nejvyšší odhad má 100 %,
+  // nejnižší 42 %, aby byly rozdíly čitelné i na mobilu, ale žádný hráč opticky nezmizel.
+  const projectionBarWidth = (value: number) => {
+    const span = max - min;
+    if (span <= 0) return 100;
+    return 42 + ((value - min) / span) * 58;
+  };
 
   if (compact) {
     return (
@@ -197,7 +203,7 @@ export function SeasonXbTable({
           {rows.map((row, index) => {
             const mine = currentPlayerId === row.player_id;
             const color = qualityColor(row.projected_points, min, max);
-            const width = Math.max(8, (row.projected_points / maxExpected) * 100);
+            const width = projectionBarWidth(row.projected_points);
             return (
               <li key={row.player_id}>
                 <Link
@@ -251,7 +257,7 @@ export function SeasonXbTable({
         {rows.map((row, index) => {
           const mine = currentPlayerId === row.player_id;
           const color = qualityColor(row.projected_points, min, max);
-          const width = Math.max(8, (row.projected_points / maxExpected) * 100);
+          const width = projectionBarWidth(row.projected_points);
           return (
             <li key={row.player_id}>
               <Link
@@ -284,7 +290,10 @@ export function SeasonXbTable({
                   </div>
                 </div>
                 <div className="mt-2 h-1 overflow-hidden rounded-full bg-surface-3">
-                  <div className="h-full rounded-full quality-gradient transition-[width] duration-300" style={{ width: `${width}%` }} />
+                  <div
+                    className="h-full rounded-full transition-[width,background-color] duration-300"
+                    style={{ width: `${width}%`, backgroundColor: color }}
+                  />
                 </div>
                 <div className="mt-1.5 flex items-center justify-between text-[9.5px] text-copy-muted">
                   <span>+{row.expected_remaining.toFixed(1)} xB do konce</span>
