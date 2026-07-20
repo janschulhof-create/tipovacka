@@ -6,7 +6,7 @@ import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/e
 import { pointsBadgeClass } from '@/lib/points';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
-import { Baroko, H2HContent, LeagueTableContent, PredictionContent, XbContent, useInsight } from './MatchIntel';
+import { H2HContent, LeagueTableContent, PredictionContent, XbContent, useInsight } from './MatchIntel';
 import { sourceLabel } from '@/lib/espnCompetition';
 
 type Scores = Record<number, { h: string; a: string }>;
@@ -643,7 +643,7 @@ function MatchExpanded({
     [
       { id: 'tipy' as const, label: 'Tipy', mobileLabel: 'Tipy' },
       isChanceLeague ? { id: 'xb' as const, label: 'xB predikce', mobileLabel: 'xB' } : null,
-      hasRoast ? { id: 'hodnoceni' as const, label: 'Hodnocení', mobileLabel: 'Hodnocení' } : null,
+      hasRoast ? { id: 'hodnoceni' as const, label: 'Baroko', mobileLabel: 'Baroko' } : null,
       showPrediction && !isChanceLeague ? { id: 'h2h' as const, label: 'H2H', mobileLabel: 'H2H' } : null,
       showPrediction && !isChanceLeague ? { id: 'predikce' as const, label: 'Predikce', mobileLabel: 'Predikce' } : null,
       hasProgress ? { id: 'prubeh' as const, label: 'Průběh', mobileLabel: 'Průběh' } : null,
@@ -685,20 +685,7 @@ function MatchExpanded({
         </div>
       )}
       <div className={`w-full max-w-full min-w-0 overflow-hidden ${desktopDetail ? 'bg-app-deep/18 px-3.5 py-3.5 2xl:px-4 2xl:py-4' : tabs.length > 1 ? 'bg-terrain-800/40 px-3 py-3 sm:px-4' : 'px-3 py-3 sm:px-4'}`}>
-        {active === 'tipy' && (
-          <div className="space-y-3">
-            <TipsContent m={m} locked={locked} live={live} preds={preds} />
-            {showPrediction && (
-              <Baroko
-                seed={m.id}
-                myTip={myTip ? { h: myTip.predicted_home, a: myTip.predicted_away } : undefined}
-                preds={preds.filter((p) => p.name !== selectedName)}
-                home={m.home_team}
-                away={m.away_team}
-              />
-            )}
-          </div>
-        )}
+        {active === 'tipy' && <TipsContent m={m} locked={locked} live={live} preds={preds} />}
         {active === 'hodnoceni' && <RoastContent m={m} preds={preds} />}
         {active === 'h2h' && <H2HContent data={intel} loading={intelLoading} />}
         {active === 'xb' && <XbContent data={intel} loading={intelLoading} desktop={desktopDetail} />}
@@ -1053,11 +1040,11 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
 function RoastContent({ m, preds }: { m: Match; preds: RoundPrediction[] }) {
   const llm = (m.roast ?? '').trim();
   const paras = llm ? llm.split(/\n+/).filter(Boolean) : matchRoast(m, preds);
-  if (paras.length === 0) return <p className="text-xs text-slate-300/40">Hodnocení se objeví po skončení zápasu.</p>;
+  if (paras.length === 0) return <p className="text-xs text-slate-300/40">Baroko se objeví po skončení zápasu.</p>;
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-flag">
-        🎙️ Zhodnocení zápasu
+        🎙️ Baroko
       </div>
       {paras.map((l, i) => (
         <p key={i} className="text-sm leading-snug text-slate-100/80">
