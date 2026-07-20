@@ -217,3 +217,13 @@ Bez přihlašování může kdokoli s odkazem tipovat pod cizím jménem. Pro uz
 partu kamarádů je to OK (důvěra). Snadné vylepšení později: 4místný PIN na hráče
 (sloupec `players.pin`, ověření v RPC funkci) — neřeší to plné přihlašování, ale
 zabrání „překlepu" pod cizím jménem.
+
+## Nový tipér Mele
+
+Databázový řádek je součástí `schema.sql`. Pro vytvoření a propojení Supabase Auth účtu spusť jednorázově se service-role proměnnými:
+
+```bash
+npm run seed:mele
+```
+
+Skript je idempotentní: hráče založí, případně znovu propojí, a nastaví mu úvodní heslo `Bageta-Ponozka-Tucnak`. Po prvním přihlášení je vhodné heslo změnit v účtu.

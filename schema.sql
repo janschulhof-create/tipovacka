@@ -36,6 +36,19 @@ create table if not exists players (
   created_at  timestamptz not null default now()
 );
 
+-- Vazba na Supabase Auth. Sloupce jsou idempotentní i pro starší databázi.
+alter table public.players
+  add column if not exists auth_user_id uuid unique references auth.users(id) on delete set null;
+alter table public.players
+  add column if not exists email text unique;
+
+-- Nový tipér pro sezonu 2026/27. Auth účet vytvoří `npm run seed:mele`.
+insert into public.players (name, is_active, email)
+values ('Mele', true, 'mele@obtipovacka.local')
+on conflict (name) do update
+set is_active = true,
+    email = coalesce(players.email, excluded.email);
+
 -- ----------------------------- MATCHES -------------------------------
 create table if not exists matches (
   id              bigint generated always as identity primary key,
