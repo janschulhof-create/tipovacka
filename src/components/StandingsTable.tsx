@@ -228,7 +228,7 @@ export function UnifiedStandingsTable({
 
         <div className="mt-3 grid grid-cols-3 rounded-xl border border-line-subtle bg-app-deep/35 p-1">
           {([
-            ['current', 'Aktuální'],
+            ['current', 'Body'],
             ['live', 'Live'],
             ['xb', 'xB'],
           ] as const).map(([value, label]) => {
