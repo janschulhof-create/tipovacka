@@ -212,6 +212,7 @@ export interface SeasonXbRow {
   player_id: number;
   name: string;
   actual_points: number;
+  expected_actual_xb: number;
   finished_matches: number;
   remaining_matches: number;
   total_matches: number;
@@ -498,6 +499,7 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
           player_id: player.id,
           name: player.name,
           actual_points: 0,
+          expected_actual_xb: 0,
           finished_matches: finished.length,
           remaining_matches: remainingMatches,
           total_matches: totalMatches,
@@ -513,11 +515,22 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
       const maturity = Math.min(1, sample / 50);
       const conservativeAverage = Math.max(0, Math.min(10, observedAverage * maturity));
       const expectedRemaining = conservativeAverage * remainingMatches;
+      // U nováčka počítáme očekávání vždy jen z informací dostupných před
+      // daným tipem. První vyhodnocený tip proto začíná proti xB 0 a model
+      // se postupně učí až z jeho skutečných výsledků.
+      let expectedActualXb = 0;
+      newcomerPoints.forEach((_, index) => {
+        const prior = newcomerPoints.slice(0, index).slice(-50);
+        if (!prior.length) return;
+        const priorMaturity = Math.min(1, prior.length / 50);
+        expectedActualXb += recentWeightedAverage(prior, 0) * priorMaturity;
+      });
 
       return {
         player_id: player.id,
         name: player.name,
         actual_points: actualPoints,
+        expected_actual_xb: Number(expectedActualXb.toFixed(1)),
         finished_matches: finished.length,
         remaining_matches: remainingMatches,
         total_matches: totalMatches,
@@ -527,6 +540,23 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
         confidence: Math.round(Math.min(70, maturity * 70)),
       };
     }
+
+    // Očekávání pro již odehrané zápasy rekonstruujeme chronologicky z
+    // dlouhodobé historie, MS formy a pouze dříve odehraných ligových tipů.
+    // Nepoužíváme pozdější výsledky klubů, takže rozdíl skutečnost vs xB
+    // není zpětně přikrášlený znalostí výsledku.
+    let expectedActualXb = 0;
+    finished.forEach((match, index) => {
+      const base = computePersonalXb({
+        home: match.home_team,
+        away: match.away_team,
+        archiveTips,
+        priorAverage,
+        contextValue: null,
+        contextSample: 0,
+      });
+      expectedActualXb += blendRecentForm(base.value, seasonPoints.slice(0, index), msPoints).value;
+    });
 
     let expectedKnown = 0;
     let confidenceSum = 0;
@@ -571,6 +601,7 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
       player_id: player.id,
       name: player.name,
       actual_points: actualPoints,
+      expected_actual_xb: Number(expectedActualXb.toFixed(1)),
       finished_matches: finished.length,
       remaining_matches: remainingMatches,
       total_matches: totalMatches,
