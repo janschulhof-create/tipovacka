@@ -726,7 +726,7 @@ export function DesktopMatchDetail({
         <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3 2xl:gap-5">
           <div className="flex min-w-0 items-center justify-end gap-2.5 text-right">
             <span className="truncate font-display text-[17px] font-bold text-copy-primary 2xl:text-xl">{match.home_team}</span>
-            <Flag team={match.home_team} className="h-8 w-8 2xl:h-9 2xl:w-9" />
+            <Flag team={match.home_team} className="h-9 w-9 2xl:h-10 2xl:w-10" />
           </div>
 
           <div className="shrink-0 text-center">
@@ -740,7 +740,7 @@ export function DesktopMatchDetail({
           </div>
 
           <div className="flex min-w-0 items-center gap-2.5">
-            <Flag team={match.away_team} className="h-8 w-8 2xl:h-9 2xl:w-9" />
+            <Flag team={match.away_team} className="h-9 w-9 2xl:h-10 2xl:w-10" />
             <span className="truncate font-display text-[17px] font-bold text-copy-primary 2xl:text-xl">{match.away_team}</span>
           </div>
         </div>

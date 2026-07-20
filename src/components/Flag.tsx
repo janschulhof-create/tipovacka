@@ -124,7 +124,7 @@ function SpriteIcon({
     <span
       role="img"
       aria-label={`Logo nebo vlajka ${team}`}
-      className={`inline-block h-6 w-6 shrink-0 bg-no-repeat ${className}`}
+      className={`inline-block h-6 w-6 shrink-0 bg-no-repeat lg:h-7 lg:w-7 ${className}`}
       style={{
         backgroundImage: 'url(/team-sprite-v1.webp)',
         // Procentuální výřez se přizpůsobí skutečné velikosti prvku. Díky tomu
@@ -168,12 +168,12 @@ function RemoteClubLogo({ team, className }: { team: string; className: string }
       <Image
         src={badge}
         alt={`Logo ${team}`}
-        width={24}
-        height={24}
-        sizes="24px"
-        quality={65}
+        width={48}
+        height={48}
+        sizes="(min-width: 1024px) 28px, 24px"
+        quality={82}
         loading="lazy"
-        className={`inline-block h-6 w-6 shrink-0 object-contain ${className}`}
+        className={`inline-block h-6 w-6 shrink-0 object-contain lg:h-7 lg:w-7 ${className}`}
         onError={() => {
           badgeCache.set(cacheKey, null);
           storeBadge(cacheKey, null);
@@ -194,7 +194,7 @@ function RemoteClubLogo({ team, className }: { team: string; className: string }
     <span
       aria-label={`Klub ${team}`}
       title={badge === null ? `Logo ${team} se nepodařilo načíst` : `Načítám logo ${team}`}
-      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-600/70 bg-slate-800 text-[8px] font-bold text-slate-300 ${className}`}
+      className={`inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-slate-600/70 bg-slate-800 text-[8px] font-bold text-slate-300 lg:h-7 lg:w-7 lg:text-[9px] ${className}`}
     >
       {initials || 'FC'}
     </span>
