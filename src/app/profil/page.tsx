@@ -151,7 +151,7 @@ export default async function ProfilPage() {
             others={[]}
             vsId={null}
             basePath="/profil"
-            title="Můj profil"
+            title="Datové centrum"
             showComparison={false}
           />
         </>

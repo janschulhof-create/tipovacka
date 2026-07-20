@@ -6,7 +6,7 @@ import { BrandMark } from './Brand';
 
 const ITEMS = [
   { href: '/', label: 'Dashboard', icon: '🏠' },
-  { href: '/profil', label: 'Můj profil', icon: '👤' },
+  { href: '/profil', label: 'Datové centrum', icon: '📊' },
   { href: '/historie', label: 'Historie', icon: '📚' },
   { href: '/sin-slavy', label: 'Síň slávy', icon: '🏆' },
   { href: '/h2h', label: 'H2H', icon: '⚔️' },
@@ -44,7 +44,7 @@ export function SideRail() {
               }`}
             >
               <span className="text-base">{it.icon}</span>
-              {it.label}
+              <span className="whitespace-nowrap">{it.label}</span>
             </Link>
           );
         })}
@@ -69,12 +69,12 @@ export function BottomNav() {
               key={it.href}
               href={it.href}
               aria-current={active ? 'page' : undefined}
-              className={`flex min-h-[52px] flex-1 touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[10px] font-medium transition active:bg-terrain-800/70 ${
+              className={`flex min-h-[52px] flex-1 touch-manipulation select-none flex-col items-center justify-center gap-0.5 rounded-lg py-1 text-[9px] font-medium tracking-tight transition active:bg-terrain-800/70 sm:text-[10px] ${
                 active ? 'text-white' : 'text-slate-100/60'
               }`}
             >
               <span className="text-lg leading-none">{it.icon}</span>
-              {it.label}
+              <span className="whitespace-nowrap">{it.label}</span>
             </Link>
           );
         })}
