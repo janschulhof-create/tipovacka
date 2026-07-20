@@ -135,6 +135,213 @@ export function StandingsTable({
 }
 
 
+type UnifiedRankMode = 'current' | 'live' | 'xb';
+
+type SarcasmResult = {
+  label: string;
+  comment: string;
+  className: string;
+};
+
+function performanceSarcasm(diff: number, hasData: boolean): SarcasmResult {
+  if (!hasData) {
+    return {
+      label: 'Čekáme na první důkaz',
+      comment: 'Model zatím nemá co kritizovat. Neobvyklý klid.',
+      className: 'text-copy-muted',
+    };
+  }
+  if (diff >= 15) return { label: 'Drtí model', comment: 'Model podal výpověď.', className: 'text-state-success' };
+  if (diff >= 7) return { label: 'Nad plánem', comment: 'Statistika začíná být nervózní.', className: 'text-state-success' };
+  if (diff >= 2) return { label: 'Lehce nad xB', comment: 'Nenápadně krade body budoucnosti.', className: 'text-state-info' };
+  if (diff > -2) return { label: 'Podle plánu', comment: 'Podezřele normální výkon.', className: 'text-violet-300' };
+  if (diff > -7) return { label: 'Pod plánem', comment: 'Model věří. Zatím.', className: 'text-state-warning' };
+  if (diff > -15) return { label: 'Výrazně pod xB', comment: 'Body zřejmě cestují jiným spojem.', className: 'text-state-danger' };
+  return { label: 'Model v troskách', comment: 'Teorie funguje. Tipér méně.', className: 'text-state-danger' };
+}
+
+function signed(value: number): string {
+  if (Math.abs(value) < 0.05) return '±0,0';
+  return `${value > 0 ? '+' : '−'}${Math.abs(value).toFixed(1).replace('.', ',')}`;
+}
+
+/** Jedna společná tabulka pro skutečné, živé a očekávané pořadí. */
+export function UnifiedStandingsTable({
+  rows,
+  liveInc = {},
+  hasLive = false,
+  currentPlayerId,
+  compact = false,
+}: {
+  rows: SeasonXbRow[];
+  liveInc?: Record<string, number>;
+  hasLive?: boolean;
+  currentPlayerId?: number;
+  compact?: boolean;
+}) {
+  const hasActual = rows.some((row) => row.actual_points > 0 || row.finished_matches > 0);
+  const [mode, setMode] = useState<UnifiedRankMode>(hasLive ? 'live' : hasActual ? 'current' : 'xb');
+  if (!rows.length) return null;
+
+  const ranked = rows
+    .map((row) => ({
+      ...row,
+      live_increment: liveInc[row.name] ?? 0,
+      live_points: row.actual_points + (liveInc[row.name] ?? 0),
+    }))
+    .sort((a, b) => {
+      const aValue = mode === 'xb' ? a.projected_points : mode === 'live' ? a.live_points : a.actual_points;
+      const bValue = mode === 'xb' ? b.projected_points : mode === 'live' ? b.live_points : b.actual_points;
+      return bValue - aValue || b.actual_points - a.actual_points || a.name.localeCompare(b.name, 'cs');
+    });
+
+  const displayedValues = ranked.map((row) => mode === 'xb' ? row.projected_points : mode === 'live' ? row.live_points : row.actual_points);
+  const min = displayedValues.length ? Math.min(...displayedValues) : 0;
+  const max = displayedValues.length ? Math.max(...displayedValues) : 0;
+  const finished = rows[0]?.finished_matches ?? 0;
+  const total = rows[0]?.total_matches ?? CHANCE_LIGA_TOTAL_MATCHES;
+  const averageConfidence = Math.round(rows.reduce((sum, row) => sum + row.confidence, 0) / rows.length);
+
+  const widthFor = (value: number) => {
+    if (max <= 0 || value <= 0) return 0;
+    return Math.max(4, Math.min(100, (value / max) * 100));
+  };
+
+  const subtitle = mode === 'current'
+    ? 'Skutečné body proti xB ze stejných odehraných zápasů.'
+    : mode === 'live'
+      ? 'Průběžné body a posun během právě hraných zápasů.'
+      : `Odhad konečných bodů podle historie, formy a rozpisu ${total} zápasů.`;
+
+  return (
+    <div className="panel-flush overflow-hidden">
+      <div className={`border-b border-line-subtle ${compact ? 'px-3 pb-2.5 pt-3' : 'px-4 pb-3 pt-4'}`}>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="eyebrow"><span className="flag-chip" /> Pořadí</h2>
+            <p className={`mt-1 leading-snug text-copy-muted ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{subtitle}</p>
+          </div>
+          <span className={`shrink-0 rounded-full border px-2.5 py-1 font-bold uppercase tracking-wide ${mode === 'live' && hasLive ? 'border-state-success/30 bg-state-success/10 text-state-success' : 'border-violet-400/25 bg-violet-500/10 text-violet-200'} ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
+            {mode === 'live' && hasLive ? '● živě' : `${finished}/${total}`}
+          </span>
+        </div>
+
+        <div className="mt-3 grid grid-cols-3 rounded-xl border border-line-subtle bg-app-deep/35 p-1">
+          {([
+            ['current', 'Aktuální'],
+            ['live', 'Live'],
+            ['xb', 'xB'],
+          ] as const).map(([value, label]) => {
+            const disabled = value === 'live' && !hasLive;
+            const active = mode === value;
+            return (
+              <button
+                key={value}
+                type="button"
+                disabled={disabled}
+                onClick={() => setMode(value)}
+                className={`relative rounded-lg px-2 py-2 text-center font-semibold transition ${compact ? 'text-[10px]' : 'text-xs'} ${
+                  active
+                    ? 'bg-violet-500/18 text-violet-100 shadow-[inset_0_0_0_1px_rgba(164,106,247,.28)]'
+                    : disabled
+                      ? 'cursor-not-allowed text-copy-muted/35'
+                      : 'text-copy-muted hover:bg-surface-2/70 hover:text-copy-primary'
+                }`}
+              >
+                {label}
+                {value === 'live' && hasLive && <span className="ml-1 inline-block h-1.5 w-1.5 rounded-full bg-state-success align-middle" />}
+              </button>
+            );
+          })}
+        </div>
+
+        {mode === 'xb' && !compact && (
+          <div className="mt-3 grid grid-cols-3 divide-x divide-line-subtle rounded-xl border border-line-subtle bg-app-deep/25 py-2">
+            <div className="px-2 text-center"><div className="font-display text-base font-bold text-copy-primary">{Math.max(0, total - finished)}</div><div className="text-[8px] uppercase tracking-wide text-copy-muted">zbývá zápasů</div></div>
+            <div className="px-2 text-center"><div className="font-display text-base font-bold text-copy-primary">{averageConfidence} %</div><div className="text-[8px] uppercase tracking-wide text-copy-muted">jistota</div></div>
+            <div className="px-2 text-center"><div className="font-display text-sm font-bold text-state-success">živě</div><div className="text-[8px] uppercase tracking-wide text-copy-muted">průběžný odhad</div></div>
+          </div>
+        )}
+      </div>
+
+      <div className={`grid border-b border-line-subtle font-semibold uppercase tracking-wide text-copy-muted ${compact ? 'grid-cols-[24px_minmax(0,1fr)_60px] gap-2 px-3 py-1.5 text-[8px]' : 'grid-cols-[32px_minmax(0,1fr)_72px] gap-3 px-4 py-2 text-[9px]'}`}>
+        <span>#</span><span>Tipař</span><span className="text-right">{mode === 'xb' ? 'Odhad' : 'Body'}</span>
+      </div>
+
+      <ol className={compact ? 'px-2 py-2' : 'space-y-1 px-2 py-2 sm:px-3'}>
+        {ranked.map((row, index) => {
+          const mine = currentPlayerId === row.player_id;
+          const value = mode === 'xb' ? row.projected_points : mode === 'live' ? row.live_points : row.actual_points;
+          const color = max > min ? qualityColor(value, min, max) : mode === 'xb' ? '#A46AF7' : '#5DA9FF';
+          const baseRank = [...rows]
+            .sort((a, b) => b.actual_points - a.actual_points || a.name.localeCompare(b.name, 'cs'))
+            .findIndex((candidate) => candidate.player_id === row.player_id) + 1;
+          const move = mode === 'live' ? baseRank - (index + 1) : 0;
+          const diff = row.actual_points - row.expected_actual_xb;
+          const sarcasm = performanceSarcasm(diff, row.finished_matches > 0);
+
+          return (
+            <li key={row.player_id}>
+              <Link
+                prefetch={false}
+                href={`/hrac/${row.player_id}`}
+                className={`grid items-center rounded-xl border border-transparent transition hover:border-line-subtle hover:bg-surface-2/55 ${compact ? 'grid-cols-[24px_minmax(0,1fr)_60px] gap-2 px-1.5 py-2' : 'grid-cols-[32px_minmax(0,1fr)_72px] gap-3 px-2 py-2.5'} ${mine ? 'border-violet-400/25 bg-violet-500/10' : ''}`}
+              >
+                <span className={`flex items-center justify-center rounded-full border font-bold ${compact ? 'h-6 w-6 text-[9px]' : 'h-8 w-8 text-xs'} ${index === 0 ? 'border-violet-300/55 bg-violet-500/18 text-violet-200' : 'border-line-strong bg-surface-2 text-copy-secondary'}`}>
+                  {index + 1}
+                </span>
+
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-1.5">
+                    {mode === 'live' && move !== 0 && (
+                      <span className={`shrink-0 text-[9px] font-bold ${move > 0 ? 'text-state-success' : 'text-state-danger'}`}>{move > 0 ? `▲${move}` : `▼${Math.abs(move)}`}</span>
+                    )}
+                    <span className={`truncate font-semibold text-copy-primary ${compact ? 'text-[11.5px]' : 'text-sm'}`}>{row.name}</span>
+                    {mine && <span className="shrink-0 text-[8px] font-bold uppercase tracking-wide text-violet-300">ty</span>}
+                  </div>
+
+                  <div className={`mt-1 h-1 overflow-hidden rounded-full bg-surface-3 ${compact ? '' : 'max-w-[340px]'}`}>
+                    <div className="h-full rounded-full transition-[width,background-color] duration-300" style={{ width: `${widthFor(value)}%`, backgroundColor: color }} />
+                  </div>
+
+                  {mode === 'current' && (
+                    <div className={`mt-1 flex min-w-0 flex-wrap items-center gap-x-1.5 leading-snug ${compact ? 'text-[8.5px]' : 'text-[10px]'}`}>
+                      <span className={sarcasm.className}>{row.finished_matches > 0 ? `${signed(diff)} proti xB` : sarcasm.label}</span>
+                      {row.finished_matches > 0 && <span className={`font-semibold ${sarcasm.className}`}>· {sarcasm.label}</span>}
+                      {!compact && <span className="hidden text-copy-muted sm:inline">— {sarcasm.comment}</span>}
+                    </div>
+                  )}
+                  {mode === 'live' && (
+                    <div className={`mt-1 text-copy-muted ${compact ? 'text-[8.5px]' : 'text-[10px]'}`}>
+                      {row.live_increment > 0 ? <span className="font-semibold text-state-success">+{row.live_increment} live</span> : 'zatím bez bodu'}
+                      {move !== 0 && <span> · posun {move > 0 ? `o ${move} nahoru` : `o ${Math.abs(move)} dolů`}</span>}
+                    </div>
+                  )}
+                  {mode === 'xb' && (
+                    <div className={`mt-1 text-copy-muted ${compact ? 'text-[8.5px]' : 'text-[10px]'}`}>Ø xB {row.avg_xb_remaining.toFixed(1)} · jistota {row.confidence} %</div>
+                  )}
+                </div>
+
+                <div className="shrink-0 text-right">
+                  <div className={`font-display font-bold tabular-nums leading-none ${compact ? 'text-[14px]' : 'text-xl'}`} style={{ color }}>{value}</div>
+                  <div className={`mt-1 uppercase tracking-wide text-copy-muted ${compact ? 'text-[7px]' : 'text-[8px]'}`}>{mode === 'xb' ? 'odhad bodů' : 'bodů'}</div>
+                </div>
+              </Link>
+            </li>
+          );
+        })}
+      </ol>
+
+      <div className={`border-t border-line-subtle leading-relaxed text-copy-muted ${compact ? 'px-3 py-2 text-[9px]' : 'px-4 py-3 text-[10.5px]'}`}>
+        {mode === 'current' && 'Rozdíl porovnává skutečně získané body se součtem xB pouze ze stejných vyhodnocených zápasů.'}
+        {mode === 'live' && (hasLive ? 'Live pořadí se přepočítává z právě hraných zápasů.' : 'Žádný zápas právě neběží.')}
+        {mode === 'xb' && 'xB je průběžná projekce konečného bodového zisku, nikoli slib ani pravděpodobnost přesného výsledku.'}
+      </div>
+    </div>
+  );
+}
+
+
 /** Projekce konečných bodů pro celou Chance ligu. */
 export function SeasonXbTable({
   rows,

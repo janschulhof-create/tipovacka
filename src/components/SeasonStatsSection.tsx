@@ -1,5 +1,5 @@
 import { StatsCards } from '@/components/StatsCards';
-import { SeasonXbTable } from '@/components/StandingsTable';
+import { SeasonXbTable, UnifiedStandingsTable } from '@/components/StandingsTable';
 import { SeasonStats } from '@/components/SeasonStats';
 import {
   getGoalStats,
@@ -66,6 +66,45 @@ export function SeasonStatsSkeleton() {
   );
 }
 
+
+/** Společná karta pořadí: aktuální, živé a xB v jednom responzivním panelu. */
+export async function UnifiedStandingsSection({
+  seasonId,
+  liveInc,
+  hasLive,
+  currentPlayerId,
+  compact = false,
+}: {
+  seasonId: number;
+  liveInc?: Record<string, number>;
+  hasLive?: boolean;
+  currentPlayerId?: number;
+  compact?: boolean;
+}) {
+  const rows = await getSeasonXbProjection(seasonId);
+  return (
+    <UnifiedStandingsTable
+      rows={rows}
+      liveInc={liveInc}
+      hasLive={hasLive}
+      currentPlayerId={currentPlayerId}
+      compact={compact}
+    />
+  );
+}
+
+export function UnifiedStandingsSkeleton() {
+  return (
+    <div className="panel-flush overflow-hidden">
+      <div className="h-28 animate-pulse border-b border-line-subtle bg-surface-2/60" />
+      <div className="space-y-2 p-3">
+        {Array.from({ length: 8 }).map((_, index) => (
+          <div key={index} className="h-12 animate-pulse rounded-xl bg-surface-2/55" />
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** Projekci konce sezony streamujeme samostatně, aby nezpomalovala první vykreslení zápasů. */
 export async function SeasonXbSection({
