@@ -21,7 +21,7 @@ import { getDashboardCompetition } from '@/lib/competitions';
 import { StandingsTable } from '@/components/StandingsTable';
 import { StandingsChart } from '@/components/StandingsChart';
 import { Suspense } from 'react';
-import { SeasonStatsSection, SeasonStatsSkeleton, SeasonXbSection, SeasonXbSkeleton } from '@/components/SeasonStatsSection';
+import { SeasonStatsSection, SeasonStatsSkeleton, UnifiedStandingsSection, UnifiedStandingsSkeleton } from '@/components/SeasonStatsSection';
 import { LiveRefresh } from '@/components/LiveRefresh';
 import Link from 'next/link';
 import { getSessionPlayer } from '@/lib/auth';
@@ -143,10 +143,14 @@ export default async function Home({
             />
 
             <aside className="chance-right-rail min-w-0 space-y-3">
-              <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} compact />
-
-              <Suspense fallback={<SeasonXbSkeleton />}>
-                <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} compact />
+              <Suspense fallback={<UnifiedStandingsSkeleton />}>
+                <UnifiedStandingsSection
+                  seasonId={seasonId}
+                  liveInc={liveInc}
+                  hasLive={liveMatches.length > 0}
+                  currentPlayerId={sessionPlayer?.id}
+                  compact
+                />
               </Suspense>
             </aside>
           </div>
@@ -172,9 +176,13 @@ export default async function Home({
                 <div className="panel"><Empty msg="Rozpis se načte po synchronizaci." /></div>
               )}
             </section>
-            <StandingsTable rows={standings} liveInc={liveInc} hasLive={liveMatches.length > 0} />
-            <Suspense fallback={<SeasonXbSkeleton />}>
-              <SeasonXbSection seasonId={seasonId} currentPlayerId={sessionPlayer?.id} />
+            <Suspense fallback={<UnifiedStandingsSkeleton />}>
+              <UnifiedStandingsSection
+                seasonId={seasonId}
+                liveInc={liveInc}
+                hasLive={liveMatches.length > 0}
+                currentPlayerId={sessionPlayer?.id}
+              />
             </Suspense>
           </div>
         </>
