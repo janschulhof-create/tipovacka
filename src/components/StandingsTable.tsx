@@ -165,7 +165,7 @@ export function SeasonXbTable({
                 <span className="flag-chip" /> <span className="normal-case">xB</span> na konci sezony
               </h2>
               <p className="mt-1 text-[10.5px] leading-snug text-copy-muted">
-                Odhad konečných bodů pro všech {CHANCE_LIGA_TOTAL_MATCHES} zápasů včetně nadstavby a baráže.
+                Dlouhodobá ligová historie, čerstvá forma tipéra a známý rozpis všech {CHANCE_LIGA_TOTAL_MATCHES} zápasů.
               </p>
             </div>
             <span className="shrink-0 rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[9.5px] font-bold uppercase tracking-wide text-violet-200">
@@ -238,7 +238,7 @@ export function SeasonXbTable({
               <span className="flag-chip" /> <span className="normal-case">xB</span> na konci sezony
             </h2>
             <p className="mt-1 text-[11px] leading-snug text-copy-muted">
-              Odhad konečných bodů pro všech {CHANCE_LIGA_TOTAL_MATCHES} zápasů včetně nadstavby a baráže.
+              Dlouhodobá ligová historie, čerstvá forma tipéra a známý rozpis všech {CHANCE_LIGA_TOTAL_MATCHES} zápasů.
             </p>
           </div>
           <span className="shrink-0 rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-200">
@@ -297,7 +297,7 @@ export function SeasonXbTable({
       </ol>
 
       <div className="border-t border-line-subtle px-4 py-3 text-[10.5px] leading-relaxed text-copy-muted">
-        <b className="text-copy-secondary">Jak to číst:</b> odehrané zápasy používají skutečné body, známý zbytek rozpisu osobní xB. Dokud nejsou dvojice nadstavby a baráže známé, model je dopočítává z osobního průměru. Tajné tipy před výkopem tabulka neprozrazuje.
+        <b className="text-copy-secondary">Jak se projekce počítá:</b> základem je Chance liga 2025/26. Poslední tipy z MS 2026 mají před startem ligy maximálně 8% váhu a postupně mizí; posledních 20 ligových tipů získává až 24% váhu. U známého rozpisu model přidává aktuální formu klubů a H2H, neznámou nadstavbu a baráž dopočítává konzervativním osobním průměrem. Tajné tipy před výkopem neprozrazuje.
       </div>
     </div>
   );

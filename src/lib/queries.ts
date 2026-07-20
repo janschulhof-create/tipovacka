@@ -5,7 +5,8 @@ import { CONTINENTS, matchContinents, type ContinentKey } from './continents';
 import { LEAGUE_REGIONS, matchLeagueRegions, type LeagueRegionKey } from './leagueRegions';
 import { CHANCE_LIGA_TOTAL_MATCHES, type CompetitionKey } from './competitions';
 import historie from '@/data/historie.json';
-import { computePersonalXb, type XbHistoryRow } from './predict';
+import { computePersonalXb, predictMatch, type TeamForm, type XbHistoryRow } from './predict';
+import { canonTeam } from './teamAliases';
 
 export interface ActiveSeason {
   id: number;
@@ -223,32 +224,45 @@ export interface SeasonXbRow {
 /**
  * Odhad konečného bodového zisku v Chance lize.
  *
- * - Příprava (round 0) se zcela ignoruje.
- * - Odehrané zápasy používají skutečné body, včetně 0 za chybějící tip.
- * - Zbývající rozpis se odhaduje zápas po zápasu podle osobní historie hráče,
- *   konkrétních týmů, H2H a postupně i podle formy tipéra v aktuální sezoně.
- * - Neodehrané tajné tipy se do veřejného pořadí záměrně nezapočítávají.
+ * Model kombinuje čtyři vrstvy:
+ * - stabilní dlouhodobý základ z Chance ligy 2025/26,
+ * - slabý a postupně mizející signál posledních tipů z MS 2026,
+ * - rostoucí vliv posledních maximálně 20 tipů aktuální ligové sezony,
+ * - u známého rozpisu také aktuální formu klubů a jejich vzájemné zápasy.
+ *
+ * Neznámé dvojice nadstavby a baráže se dopočítávají konzervativním osobním
+ * průměrem. Neodehrané tajné tipy se do veřejného pořadí nezapočítávají.
  */
 export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbRow[]> {
   const sb = createServerReadClient();
-  const [{ data: playerData }, { data: matchData }] = await Promise.all([
+  const [{ data: playerData }, { data: matchData }, { data: msSeasonData }] = await Promise.all([
     sb.from('players').select('id, name, is_active').eq('is_active', true).order('name'),
     sb
       .from('matches')
-      .select('id, round, home_team, away_team, status')
+      .select('id, round, kickoff, home_team, away_team, home_score, away_score, status')
       .eq('season_id', seasonId)
       .eq('source_league', 'cze.1')
       .gt('round', 0)
       .neq('status', 'cancelled')
       .order('kickoff', { ascending: true }),
+    sb
+      .from('seasons')
+      .select('id')
+      .eq('competition_key', 'ms')
+      .order('id', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
 
   const players = (playerData as Player[]) ?? [];
   type ProjectionMatch = {
     id: number;
     round: number;
+    kickoff: string;
     home_team: string;
     away_team: string;
+    home_score: number | null;
+    away_score: number | null;
     status: Match['status'];
   };
   const matches = (matchData as ProjectionMatch[]) ?? [];
@@ -257,19 +271,42 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
   // PostgREST může mít limit 1000 řádků. Predikce proto čteme stránkovaně,
   // aby projekce fungovala i na konci sezony (280 × 8 tipů = 2240 řádků).
   type ProjectionTip = { player_id: number; match_id: number; points: number | null };
-  const predictionRows: ProjectionTip[] = [];
-  const pageSize = 1000;
-  for (let from = 0; ; from += pageSize) {
+  const readPredictionPages = async (matchIds: number[]): Promise<ProjectionTip[]> => {
+    if (!matchIds.length) return [];
+    const rows: ProjectionTip[] = [];
+    const pageSize = 1000;
+    for (let from = 0; ; from += pageSize) {
+      const { data } = await sb
+        .from('predictions')
+        .select('player_id, match_id, points')
+        .in('match_id', matchIds)
+        .order('match_id', { ascending: true })
+        .order('player_id', { ascending: true })
+        .range(from, from + pageSize - 1);
+      const page = (data as ProjectionTip[]) ?? [];
+      rows.push(...page);
+      if (page.length < pageSize) break;
+    }
+    return rows;
+  };
+
+  const predictionRows = await readPredictionPages(matches.map((match) => match.id));
+
+  // MS 2026 je pouze menší signál čerstvé formy tipéra. Používáme dokončený
+  // archiv bez závislosti na is_active, aby model fungoval i po ukončení turnaje.
+  type MsMatch = { id: number; kickoff: string };
+  let msFinished: MsMatch[] = [];
+  let msPredictionRows: ProjectionTip[] = [];
+  const msSeasonId = (msSeasonData as { id: number } | null)?.id;
+  if (msSeasonId != null) {
     const { data } = await sb
-      .from('predictions')
-      .select('player_id, match_id, points')
-      .in('match_id', matches.map((match) => match.id))
-      .order('match_id', { ascending: true })
-      .order('player_id', { ascending: true })
-      .range(from, from + pageSize - 1);
-    const page = (data as ProjectionTip[]) ?? [];
-    predictionRows.push(...page);
-    if (page.length < pageSize) break;
+      .from('matches')
+      .select('id, kickoff')
+      .eq('season_id', msSeasonId)
+      .eq('status', 'finished')
+      .order('kickoff', { ascending: true });
+    msFinished = (data as MsMatch[]) ?? [];
+    msPredictionRows = await readPredictionPages(msFinished.map((match) => match.id));
   }
 
   const archive = historie as unknown as {
@@ -284,12 +321,11 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
     }[];
   };
 
-  const allArchivePoints = archive.rounds.flatMap((round) =>
-    round.matches.flatMap((match) =>
-      Object.values(match.tips)
-        .map((tip) => tip.pts)
-        .filter((points): points is number => points != null && Number.isFinite(points)),
-    ),
+  const archiveMatches = archive.rounds.flatMap((round) => round.matches);
+  const allArchivePoints = archiveMatches.flatMap((match) =>
+    Object.values(match.tips)
+      .map((tip) => tip.pts)
+      .filter((points): points is number => points != null && Number.isFinite(points)),
   );
   const priorAverage = allArchivePoints.length
     ? allArchivePoints.reduce((sum, points) => sum + points, 0) / allArchivePoints.length
@@ -302,56 +338,179 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
     }
   }
 
+  const msTipsByPlayerMatch = new Map<string, number>();
+  const msParticipants = new Set<number>();
+  for (const row of msPredictionRows) {
+    msParticipants.add(row.player_id);
+    if (row.points != null && Number.isFinite(row.points)) {
+      msTipsByPlayerMatch.set(`${row.player_id}:${row.match_id}`, row.points);
+    }
+  }
+
   const finished = matches.filter((match) => match.status === 'finished');
+  const finishedWithScore = finished.filter(
+    (match): match is ProjectionMatch & { home_score: number; away_score: number } =>
+      Number.isFinite(match.home_score) && Number.isFinite(match.away_score),
+  );
   const scheduledRemaining = matches.filter((match) => match.status !== 'finished');
   const totalMatches = CHANCE_LIGA_TOTAL_MATCHES;
   const remainingMatches = Math.max(0, totalMatches - finished.length);
   const knownRemaining = scheduledRemaining.slice(0, remainingMatches);
   const unscheduledRemaining = Math.max(0, remainingMatches - knownRemaining.length);
 
-  const rows: SeasonXbRow[] = players.map((player) => {
-    const archiveTips: XbHistoryRow[] = archive.rounds.flatMap((round) =>
-      round.matches.flatMap((match) => {
-        const tip = match.tips[player.name];
-        if (!tip || tip.pts == null || match.hs == null || match.as == null) return [];
-        return [{ home: match.home, away: match.away, points: tip.pts }];
-      }),
-    );
+  const archiveGoals = archiveMatches
+    .filter((match) => Number.isFinite(match.hs) && Number.isFinite(match.as))
+    .map((match) => ({ ...match, hs: Number(match.hs), as: Number(match.as) }));
+  const currentGoals = finishedWithScore.reduce(
+    (sum, match) => sum + match.home_score + match.away_score,
+    0,
+  );
+  const archiveGoalSum = archiveGoals.reduce((sum, match) => sum + match.hs + match.as, 0);
+  const leagueAverageGoals = finishedWithScore.length
+    ? currentGoals / (finishedWithScore.length * 2)
+    : archiveGoals.length
+      ? archiveGoalSum / (archiveGoals.length * 2)
+      : 1.25;
 
-    // Chybějící tip na dohraném zápase je reálně 0 bodů a má být součástí formy.
+  const recentTeamForm = (team: string): TeamForm => {
+    const canonical = canonTeam(team);
+    const recent = finishedWithScore
+      .filter((match) => canonTeam(match.home_team) === canonical || canonTeam(match.away_team) === canonical)
+      .slice(-5);
+    return recent.reduce<TeamForm>((form, match) => {
+      const isHome = canonTeam(match.home_team) === canonical;
+      form.scored += isHome ? match.home_score : match.away_score;
+      form.conceded += isHome ? match.away_score : match.home_score;
+      form.played += 1;
+      return form;
+    }, { scored: 0, conceded: 0, played: 0 });
+  };
+
+  const matchContext = (match: ProjectionMatch) => {
+    const home = canonTeam(match.home_team);
+    const away = canonTeam(match.away_team);
+    const pair = [home, away].sort().join('|');
+    const historicalH2h = archiveGoals
+      .filter((row) => [canonTeam(row.home), canonTeam(row.away)].sort().join('|') === pair)
+      .map((row) => ({ home: canonTeam(row.home), away: canonTeam(row.away), hs: row.hs, as: row.as }));
+    const currentH2h = finishedWithScore
+      .filter((row) => [canonTeam(row.home_team), canonTeam(row.away_team)].sort().join('|') === pair)
+      .map((row) => ({
+        home: canonTeam(row.home_team),
+        away: canonTeam(row.away_team),
+        hs: row.home_score,
+        as: row.away_score,
+      }));
+    const h2h = [...historicalH2h, ...currentH2h].slice(-6);
+    const prediction = predictMatch(
+      recentTeamForm(match.home_team),
+      recentTeamForm(match.away_team),
+      leagueAverageGoals,
+      h2h,
+      home,
+    );
+    if (!prediction) return { value: null, sample: 0, description: undefined };
+    return {
+      value: Math.max(
+        0,
+        Math.min(10, Math.max(prediction.pHome, prediction.pDraw, prediction.pAway) * 6 + prediction.bestTip.ev * 0.4),
+      ),
+      sample: prediction.sample,
+      description: `Čitelnost známého zápasu podle poslední formy klubů a ${prediction.h2hSample} vzájemných utkání.`,
+    };
+  };
+
+  const recentWeightedAverage = (points: number[], fallback: number): number => {
+    if (!points.length) return fallback;
+    let weighted = 0;
+    let weightSum = 0;
+    points.forEach((point, index) => {
+      // Novější tipy mají vyšší váhu, ale žádný jednotlivý zápas model nepřeválcuje.
+      const weight = Math.pow(0.88, points.length - index - 1);
+      weighted += point * weight;
+      weightSum += weight;
+    });
+    return weightSum ? weighted / weightSum : fallback;
+  };
+
+  const blendRecentForm = (
+    base: number,
+    currentPoints: number[],
+    msPoints: number[],
+  ) => {
+    const currentRecent = currentPoints.slice(-20);
+    const msRecent = msPoints.slice(-12);
+    // Aktuální liga roste až na 24 %. MS začíná maximálně na 8 % a po 20
+    // ligových zápasech z modelu zcela zmizí.
+    const currentWeight = Math.min(0.24, currentRecent.length * 0.012);
+    const msSampleWeight = Math.min(1, msRecent.length / 12);
+    const msDecay = 1 - Math.min(1, currentRecent.length / 20);
+    const msWeight = 0.08 * msSampleWeight * msDecay;
+    const baseWeight = Math.max(0, 1 - currentWeight - msWeight);
+    const value = base * baseWeight
+      + recentWeightedAverage(currentRecent, base) * currentWeight
+      + recentWeightedAverage(msRecent, base) * msWeight;
+    return {
+      value: Math.max(0, Math.min(10, value)),
+      currentSample: currentRecent.length,
+      msSample: msRecent.length,
+    };
+  };
+
+  const contextByMatchId = new Map(
+    knownRemaining.map((match) => [match.id, matchContext(match)] as const),
+  );
+
+  const rows: SeasonXbRow[] = players.map((player) => {
+    const archiveTips: XbHistoryRow[] = archiveMatches.flatMap((match) => {
+      const tip = match.tips[player.name];
+      if (!tip || tip.pts == null || match.hs == null || match.as == null) return [];
+      return [{ home: match.home, away: match.away, points: tip.pts }];
+    });
+
+    // Chybějící tip na dohraném zápase je reálně 0 bodů a je součástí formy.
     const seasonPoints = finished.map(
       (match) => tipsByPlayerMatch.get(`${player.id}:${match.id}`) ?? 0,
     );
     const actualPoints = seasonPoints.reduce((sum, points) => sum + points, 0);
+    const msPoints = msParticipants.has(player.id)
+      ? msFinished.map((match) => msTipsByPlayerMatch.get(`${player.id}:${match.id}`) ?? 0)
+      : [];
 
     let expectedKnown = 0;
     let confidenceSum = 0;
     for (const match of knownRemaining) {
-      const xb = computePersonalXb({
+      const context = contextByMatchId.get(match.id) ?? { value: null, sample: 0, description: undefined };
+      const base = computePersonalXb({
         home: match.home_team,
         away: match.away_team,
         archiveTips,
         priorAverage,
-        seasonPoints,
+        contextValue: context.value,
+        contextSample: context.sample,
+        contextDescription: context.description,
       });
-      expectedKnown += xb.value;
-      confidenceSum += xb.confidence;
+      const blended = blendRecentForm(base.value, seasonPoints, msPoints);
+      expectedKnown += blended.value;
+      confidenceSum += Math.min(
+        95,
+        base.confidence + Math.min(8, blended.currentSample * 0.4) + Math.min(2, blended.msSample / 6),
+      );
     }
 
     const archiveAverage = archiveTips.length
       ? archiveTips.reduce((sum, tip) => sum + tip.points, 0) / archiveTips.length
       : priorAverage;
-    const seasonAverage = seasonPoints.length
-      ? seasonPoints.reduce((sum, points) => sum + points, 0) / seasonPoints.length
-      : archiveAverage;
-    const fallbackXb = knownRemaining.length
-      ? expectedKnown / knownRemaining.length
-      : seasonPoints.length
-        ? seasonAverage * 0.6 + archiveAverage * 0.4
-        : archiveAverage;
+    const blendedFallback = blendRecentForm(archiveAverage, seasonPoints, msPoints);
+    // Neznámé dvojice nadstavby a baráže zůstávají konzervativní: čerstvá forma
+    // může osobní průměr posunout maximálně o půl bodu na zápas.
+    const fallbackXb = Math.max(
+      0,
+      Math.min(10, Math.max(archiveAverage - 0.5, Math.min(archiveAverage + 0.5, blendedFallback.value))),
+    );
     const expectedRemaining = expectedKnown + fallbackXb * unscheduledRemaining;
     const knownConfidence = knownRemaining.length ? confidenceSum / knownRemaining.length : 56;
-    const fallbackConfidence = Math.max(36, knownConfidence - 12);
+    const fallbackConfidence = Math.max(36, knownConfidence - 14);
     const confidence = remainingMatches
       ? Math.round((confidenceSum + fallbackConfidence * unscheduledRemaining) / remainingMatches)
       : Math.min(99, 80 + Math.min(19, finished.length));
