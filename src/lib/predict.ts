@@ -1,5 +1,9 @@
 import { calculatePoints } from './scoring';
 import { canonTeam } from './teamAliases';
+import {
+  CHANCE_LIGA_TEAM_TREND_MATCHES,
+  CHANCE_LIGA_TOTAL_MATCHES,
+} from './competitions';
 
 /**
  * Statistická predikce zápasu.
@@ -66,8 +70,13 @@ export interface XbPrediction {
   high: number;
   confidence: number;
   factors: XbFactor[];
-  /** Posledních maximálně 35 průběžných osobních odhadů podle tehdejší formy tipéra. */
+  /** Ligový trend napříč posledními maximálně 280 tipy. */
   trend: XbTrendPoint[];
+  /** Trend pouze v zápasech domácího a hostujícího týmu. */
+  teamTrends: {
+    home: XbTrendPoint[];
+    away: XbTrendPoint[];
+  };
   explanation: string;
   hasTip: boolean;
 }
@@ -89,6 +98,11 @@ export interface PersonalXbInput {
   contextDescription?: string;
   /** Historické body v chronologickém pořadí pro graf vývoje osobního xB. */
   trendPoints?: number[];
+  /** Historické body omezené na zápasy jednotlivých týmů v chronologickém pořadí. */
+  teamTrendPoints?: {
+    home?: number[];
+    away?: number[];
+  };
 }
 
 const avgPoints = (rows: XbHistoryRow[]): number | null =>
@@ -224,15 +238,18 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
   const strongestPositive = meaningfulImpacts.filter((factor) => factor.impact > 0).sort((a, b) => b.impact - a.impact)[0];
   const strongestNegative = meaningfulImpacts.filter((factor) => factor.impact < 0).sort((a, b) => a.impact - b.impact)[0];
 
-  const sourceTrend = (input.trendPoints ?? [])
-    .filter((point) => Number.isFinite(point))
-    .map(clamp10);
-  let rolling = priorAverage;
-  const trendAll = sourceTrend.map((actual, index) => {
-    // Citlivější exponenciální forma: poslední zápasy hýbou odhadem, ale jeden extrém ho nerozbije.
-    rolling = rolling * 0.68 + actual * 0.32;
-    return { index: index + 1, value: Number(clamp10(rolling).toFixed(1)), actual };
-  });
+  const buildTrend = (points: number[] | undefined, limit: number): XbTrendPoint[] => {
+    const source = (points ?? [])
+      .filter((point) => Number.isFinite(point))
+      .map(clamp10);
+    let rolling = priorAverage;
+    const all = source.map((actual, index) => {
+      // Citlivější exponenciální forma: poslední zápasy hýbou odhadem, ale jeden extrém ho nerozbije.
+      rolling = rolling * 0.68 + actual * 0.32;
+      return { index: index + 1, value: Number(clamp10(rolling).toFixed(1)), actual };
+    });
+    return all.slice(-limit).map((row, index) => ({ ...row, index: index + 1 }));
+  };
 
   return {
     value: Number(rounded.toFixed(1)),
@@ -240,7 +257,11 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     high: Number(Math.min(10, rounded + spread).toFixed(1)),
     confidence,
     factors,
-    trend: trendAll.slice(-35),
+    trend: buildTrend(input.trendPoints, CHANCE_LIGA_TOTAL_MATCHES),
+    teamTrends: {
+      home: buildTrend(input.teamTrendPoints?.home, CHANCE_LIGA_TEAM_TREND_MATCHES),
+      away: buildTrend(input.teamTrendPoints?.away, CHANCE_LIGA_TEAM_TREND_MATCHES),
+    },
     explanation: strongestPositive || strongestNegative
       ? [
           `Výchozí dlouhodobý průměr je ${baseline.toFixed(1)} xB.`,

@@ -3,7 +3,7 @@ import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player 
 import { calculatePoints } from './scoring';
 import { CONTINENTS, matchContinents, type ContinentKey } from './continents';
 import { LEAGUE_REGIONS, matchLeagueRegions, type LeagueRegionKey } from './leagueRegions';
-import type { CompetitionKey } from './competitions';
+import { CHANCE_LIGA_TOTAL_MATCHES, type CompetitionKey } from './competitions';
 import historie from '@/data/historie.json';
 import { computePersonalXb, type XbHistoryRow } from './predict';
 
@@ -255,7 +255,7 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
   if (!players.length || !matches.length) return [];
 
   // PostgREST může mít limit 1000 řádků. Predikce proto čteme stránkovaně,
-  // aby projekce fungovala i na konci sezony (240 × 8 tipů = 1920 řádků).
+  // aby projekce fungovala i na konci sezony (280 × 8 tipů = 2240 řádků).
   type ProjectionTip = { player_id: number; match_id: number; points: number | null };
   const predictionRows: ProjectionTip[] = [];
   const pageSize = 1000;
@@ -303,7 +303,11 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
   }
 
   const finished = matches.filter((match) => match.status === 'finished');
-  const remaining = matches.filter((match) => match.status !== 'finished');
+  const scheduledRemaining = matches.filter((match) => match.status !== 'finished');
+  const totalMatches = CHANCE_LIGA_TOTAL_MATCHES;
+  const remainingMatches = Math.max(0, totalMatches - finished.length);
+  const knownRemaining = scheduledRemaining.slice(0, remainingMatches);
+  const unscheduledRemaining = Math.max(0, remainingMatches - knownRemaining.length);
 
   const rows: SeasonXbRow[] = players.map((player) => {
     const archiveTips: XbHistoryRow[] = archive.rounds.flatMap((round) =>
@@ -320,9 +324,9 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
     );
     const actualPoints = seasonPoints.reduce((sum, points) => sum + points, 0);
 
-    let expectedRemaining = 0;
+    let expectedKnown = 0;
     let confidenceSum = 0;
-    for (const match of remaining) {
+    for (const match of knownRemaining) {
       const xb = computePersonalXb({
         home: match.home_team,
         away: match.away_team,
@@ -330,22 +334,36 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
         priorAverage,
         seasonPoints,
       });
-      expectedRemaining += xb.value;
+      expectedKnown += xb.value;
       confidenceSum += xb.confidence;
     }
 
-    const avgXbRemaining = remaining.length ? expectedRemaining / remaining.length : 0;
-    const confidence = remaining.length
-      ? Math.round(confidenceSum / remaining.length)
+    const archiveAverage = archiveTips.length
+      ? archiveTips.reduce((sum, tip) => sum + tip.points, 0) / archiveTips.length
+      : priorAverage;
+    const seasonAverage = seasonPoints.length
+      ? seasonPoints.reduce((sum, points) => sum + points, 0) / seasonPoints.length
+      : archiveAverage;
+    const fallbackXb = knownRemaining.length
+      ? expectedKnown / knownRemaining.length
+      : seasonPoints.length
+        ? seasonAverage * 0.6 + archiveAverage * 0.4
+        : archiveAverage;
+    const expectedRemaining = expectedKnown + fallbackXb * unscheduledRemaining;
+    const knownConfidence = knownRemaining.length ? confidenceSum / knownRemaining.length : 56;
+    const fallbackConfidence = Math.max(36, knownConfidence - 12);
+    const confidence = remainingMatches
+      ? Math.round((confidenceSum + fallbackConfidence * unscheduledRemaining) / remainingMatches)
       : Math.min(99, 80 + Math.min(19, finished.length));
+    const avgXbRemaining = remainingMatches ? expectedRemaining / remainingMatches : 0;
 
     return {
       player_id: player.id,
       name: player.name,
       actual_points: actualPoints,
       finished_matches: finished.length,
-      remaining_matches: remaining.length,
-      total_matches: matches.length,
+      remaining_matches: remainingMatches,
+      total_matches: totalMatches,
       expected_remaining: Number(expectedRemaining.toFixed(1)),
       projected_points: Math.round(actualPoints + expectedRemaining),
       avg_xb_remaining: Number(avgXbRemaining.toFixed(1)),

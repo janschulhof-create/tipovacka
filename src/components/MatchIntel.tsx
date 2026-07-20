@@ -3,7 +3,12 @@
 import { useEffect, useId, useMemo, useState } from 'react';
 import { pointsBadgeClass, qualityColor, qualitySoftClass } from '@/lib/points';
 import { canonTeam } from '@/lib/teamAliases';
+import {
+  CHANCE_LIGA_TEAM_TREND_MATCHES,
+  CHANCE_LIGA_TOTAL_MATCHES,
+} from '@/lib/competitions';
 import { Flag } from './Flag';
+import { CompetitionIcon } from './CompetitionSwitcher';
 
 interface MutualMatchRow {
   round: number | null;
@@ -43,6 +48,10 @@ interface XbPrediction {
   confidence: number;
   factors: XbFactor[];
   trend: { index: number; value: number; actual: number }[];
+  teamTrends?: {
+    home: { index: number; value: number; actual: number }[];
+    away: { index: number; value: number; actual: number }[];
+  };
   explanation: string;
   hasTip: boolean;
 }
@@ -474,21 +483,114 @@ function QualityLegend() {
   );
 }
 
-function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
+function XbTrendChart({
+  rows,
+  homeRows = [],
+  awayRows = [],
+  homeTeam,
+  awayTeam,
+}: {
+  rows: XbPrediction['trend'];
+  homeRows?: XbPrediction['trend'];
+  awayRows?: XbPrediction['trend'];
+  homeTeam: string;
+  awayTeam: string;
+}) {
   const rawId = useId();
   const gradientId = `xb-trend-${rawId.replace(/[^a-zA-Z0-9_-]/g, '')}`;
-  const [windowSize, setWindowSize] = useState<5 | 10 | 20 | 35>(10);
-  const options = [5, 10, 20, 35] as const;
+  const [scope, setScope] = useState<'home' | 'away' | 'league'>('home');
+  const [teamWindowSize, setTeamWindowSize] = useState(10);
+  const [leagueWindowSize, setLeagueWindowSize] = useState(50);
+  const teamOptions = [5, 10, 20, CHANCE_LIGA_TEAM_TREND_MATCHES] as const;
+  const leagueOptions = [10, 50, 100, CHANCE_LIGA_TOTAL_MATCHES] as const;
+
+  const sourceRows = scope === 'home' ? homeRows : scope === 'away' ? awayRows : rows;
+  const windowSize = scope === 'league' ? leagueWindowSize : teamWindowSize;
+  const options = scope === 'league' ? leagueOptions : teamOptions;
+  const selectedLabel = scope === 'home' ? homeTeam : scope === 'away' ? awayTeam : 'Celá Chance liga';
 
   const visible = useMemo(
-    () => rows.slice(-Math.min(windowSize, rows.length)),
-    [rows, windowSize],
+    () => sourceRows.slice(-Math.min(windowSize, sourceRows.length)),
+    [sourceRows, windowSize],
   );
 
-  if (!rows?.length) {
+  const scopeButton = (active: boolean) =>
+    `flex h-8 min-w-9 items-center justify-center rounded-lg border px-2 transition ${
+      active
+        ? 'border-violet-300/45 bg-violet-500/20 text-violet-100 shadow-[inset_0_0_0_1px_rgba(164,106,247,.2)]'
+        : 'border-transparent text-copy-muted hover:border-line-subtle hover:bg-surface-hover hover:text-copy-primary'
+    }`;
+
+  const chartControls = (
+    <div className="flex flex-wrap items-center justify-end gap-2">
+      <div className="flex rounded-xl border border-line-subtle bg-surface-1/75 p-0.5" aria-label="Výběr trendu podle týmu nebo ligy">
+        <button
+          type="button"
+          onClick={() => setScope('home')}
+          className={scopeButton(scope === 'home')}
+          aria-label={`Trend zápasů týmu ${homeTeam}`}
+          title={homeTeam}
+        >
+          <Flag team={homeTeam} className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setScope('away')}
+          className={scopeButton(scope === 'away')}
+          aria-label={`Trend zápasů týmu ${awayTeam}`}
+          title={awayTeam}
+        >
+          <Flag team={awayTeam} className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => setScope('league')}
+          className={scopeButton(scope === 'league')}
+          aria-label="Trend celé Chance ligy"
+          title="Celá Chance liga"
+        >
+          <CompetitionIcon compKey="liga" className="h-4 w-6" />
+        </button>
+      </div>
+
+      <div className="flex rounded-lg border border-line-subtle bg-surface-1/75 p-0.5" aria-label="Počet zápasů v grafu">
+        {options.map((option) => (
+          <button
+            key={option}
+            type="button"
+            onClick={() => {
+              if (scope === 'league') setLeagueWindowSize(option);
+              else setTeamWindowSize(option);
+            }}
+            className={`rounded-md px-2 py-1 text-[10px] font-bold tabular-nums transition ${
+              windowSize === option
+                ? 'bg-violet-500/25 text-violet-200 shadow-[inset_0_0_0_1px_rgba(164,106,247,.35)]'
+                : 'text-copy-muted hover:bg-surface-hover hover:text-copy-primary'
+            }`}
+            aria-label={`Zobrazit posledních ${option} zápasů`}
+          >
+            {option}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+
+  if (!sourceRows.length) {
     return (
-      <div className="flex min-h-44 items-center justify-center rounded-2xl border border-line-subtle bg-app-deep/30 px-4 text-center text-[11px] text-copy-muted">
-        Trend xB se objeví po načtení vyhodnocených tipů z minulé sezony.
+      <div className="rounded-2xl border border-line-subtle bg-app-deep/35 p-3.5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
+              Trend xB z minulé sezony
+            </div>
+            <p className="mt-0.5 text-[10px] text-copy-muted">{selectedLabel}</p>
+          </div>
+          {chartControls}
+        </div>
+        <div className="mt-3 flex min-h-40 items-center justify-center rounded-xl border border-line-subtle bg-app-deep/30 px-4 text-center text-[11px] text-copy-muted">
+          Pro tento výběr zatím nemáme dost vyhodnocených tipů.
+        </div>
       </div>
     );
   }
@@ -522,35 +624,18 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
 
   return (
     <div className="rounded-2xl border border-line-subtle bg-app-deep/35 p-3.5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
           <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
-            Trend z minulé sezony
+            Trend xB z minulé sezony
           </div>
           <p className="mt-0.5 text-[10px] text-copy-muted">
-            Průběžný odhad xB proti skutečně získaným bodům.
+            {scope === 'league'
+              ? 'Tvůj osobní xB napříč všemi zápasy Chance ligy.'
+              : `Tvůj osobní xB pouze v zápasech týmu ${selectedLabel}.`}
           </p>
         </div>
-        <div className="flex rounded-lg border border-line-subtle bg-surface-1/75 p-0.5" aria-label="Počet zápasů v grafu">
-          {options.map((option) => {
-            const disabled = rows.length < option;
-            return (
-              <button
-                key={option}
-                type="button"
-                disabled={disabled}
-                onClick={() => setWindowSize(option)}
-                className={`rounded-md px-2 py-1 text-[10px] font-bold tabular-nums transition ${
-                  windowSize === option
-                    ? 'bg-violet-500/25 text-violet-200 shadow-[inset_0_0_0_1px_rgba(164,106,247,.35)]'
-                    : 'text-copy-muted hover:bg-surface-hover hover:text-copy-primary'
-                } disabled:cursor-not-allowed disabled:opacity-25`}
-              >
-                {option}
-              </button>
-            );
-          })}
-        </div>
+        {chartControls}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2 text-[10px] font-semibold">
@@ -568,7 +653,7 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
         viewBox={`0 0 ${width} ${height}`}
         className="mt-3 h-[184px] w-full overflow-visible"
         role="img"
-        aria-label={`Trend xB a skutečných bodů za posledních ${visible.length} zápasů minulé sezony`}
+        aria-label={`Trend xB a skutečných bodů: ${selectedLabel}, posledních ${visible.length} zápasů`}
       >
         <defs>
           <linearGradient id={gradientId} x1="0" y1="0" x2="1" y2="0">
@@ -598,14 +683,14 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
         {visible.map((row, index) => (
           <g key={`${row.index}-${index}`}>
             <circle cx={x(index)} cy={y(row.actual)} r={visible.length > 20 ? 2.2 : 3.2} fill="#35D07F" stroke="#07101D" strokeWidth="1.4">
-              <title>{`Zápas ${index + 1}: skutečně ${row.actual} b`}</title>
+              <title>{`Zápas ${row.index}: skutečně ${row.actual} b`}</title>
             </circle>
             <circle cx={x(index)} cy={y(row.value)} r={visible.length > 20 ? 2.5 : 3.6} fill="#A46AF7" stroke="#07101D" strokeWidth="1.5">
-              <title>{`Zápas ${index + 1}: xB ${row.value.toFixed(1)} · skutečně ${row.actual} b`}</title>
+              <title>{`Zápas ${row.index}: xB ${row.value.toFixed(1)} · skutečně ${row.actual} b`}</title>
             </circle>
             {labelIndexes.has(index) && (
               <text x={x(index)} y={height - 6} textAnchor="middle" fill="rgba(180,192,212,.54)" fontSize="8.5">
-                {index + 1}
+                {row.index}
               </text>
             )}
           </g>
@@ -613,7 +698,7 @@ function XbTrendChart({ rows }: { rows: XbPrediction['trend'] }) {
       </svg>
 
       <p className="mt-1 text-[9.5px] leading-snug text-copy-muted">
-        Zleva doprava jde čas od nejstaršího k nejnovějšímu zápasu ve zvoleném výřezu. Fialová ukazuje tehdejší xB, zelená skutečný bodový zisk.
+        Zobrazeno {visible.length} z {sourceRows.length} dostupných zápasů. Fialová ukazuje tehdejší xB, zelená skutečný bodový zisk.
       </p>
     </div>
   );
@@ -690,13 +775,27 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
 
               {desktop && (
                 <div className="xb-hero-chart">
-                  <XbTrendChart rows={xb.trend ?? []} />
+                  <XbTrendChart
+                    rows={xb.trend ?? []}
+                    homeRows={xb.teamTrends?.home ?? []}
+                    awayRows={xb.teamTrends?.away ?? []}
+                    homeTeam={data.teams.home}
+                    awayTeam={data.teams.away}
+                  />
                 </div>
               )}
             </div>
           </div>
 
-          {!desktop && <XbTrendChart rows={xb.trend ?? []} />}
+          {!desktop && (
+            <XbTrendChart
+              rows={xb.trend ?? []}
+              homeRows={xb.teamTrends?.home ?? []}
+              awayRows={xb.teamTrends?.away ?? []}
+              homeTeam={data.teams.home}
+              awayTeam={data.teams.away}
+            />
+          )}
 
           <div className="space-y-3">
             <div>

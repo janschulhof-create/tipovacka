@@ -87,7 +87,7 @@ Aplikace používá více zdrojů podle toho, k čemu jsou vhodné:
 
 | Oblast | Primární zdroj | Úloha |
 |---|---|---|
-| Chance liga – rozpis | oficiální web Chance ligy | 240 validovaných zápasů, termíny a konečné výsledky |
+| Chance liga – rozpis | oficiální web Chance ligy | 240 zápasů základní části; nadstavba a baráž zvyšují celý ročník na 280 utkání |
 | Chance liga – live | Highlightly Football API | minuta, průběžné skóre, události, sestavy a statistiky |
 | Příprava 17.–24. 7. 2026 | Highlightly Football API | zápasy 16 ligových klubů v kole `Příprava` |
 | Evropa | veřejný ESPN scoreboard | vybrané evropské poháry a kvalifikace |

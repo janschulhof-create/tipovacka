@@ -7,6 +7,27 @@
  */
 export type CompetitionKey = 'liga' | 'evropa' | 'ms';
 
+/**
+ * Kompletní počet utkání ročníku Chance Ligy 2026/27.
+ *
+ * 240 základní část
+ * + 15 skupina o titul
+ * + 15 skupina o záchranu
+ * + 6 play-off o umístění
+ * + 4 barážová utkání
+ * = 280 zápasů
+ */
+export const CHANCE_LIGA_REGULAR_MATCHES = 240;
+export const CHANCE_LIGA_POSTSEASON_MATCHES = 36;
+export const CHANCE_LIGA_RELEGATION_PLAYOFF_MATCHES = 4;
+export const CHANCE_LIGA_TOTAL_MATCHES =
+  CHANCE_LIGA_REGULAR_MATCHES
+  + CHANCE_LIGA_POSTSEASON_MATCHES
+  + CHANCE_LIGA_RELEGATION_PLAYOFF_MATCHES;
+
+/** Jeden klub odehraje 30 zápasů základní části a standardně 5 v nadstavbě. */
+export const CHANCE_LIGA_TEAM_TREND_MATCHES = 35;
+
 export interface Competition {
   key: CompetitionKey;
   label: string;

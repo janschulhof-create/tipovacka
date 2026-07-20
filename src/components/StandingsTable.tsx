@@ -5,6 +5,7 @@ import Link from 'next/link';
 import type { StandingRow } from '@/lib/types';
 import type { SeasonXbRow } from '@/lib/queries';
 import { qualityColor } from '@/lib/points';
+import { CHANCE_LIGA_TOTAL_MATCHES } from '@/lib/competitions';
 
 export function StandingsTable({
   rows,
@@ -164,7 +165,7 @@ export function SeasonXbTable({
                 <span className="flag-chip" /> <span className="normal-case">xB</span> na konci sezony
               </h2>
               <p className="mt-1 text-[10.5px] leading-snug text-copy-muted">
-                Odhad konečných bodů podle celého ligového rozpisu.
+                Odhad konečných bodů pro všech {CHANCE_LIGA_TOTAL_MATCHES} zápasů včetně nadstavby a baráže.
               </p>
             </div>
             <span className="shrink-0 rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[9.5px] font-bold uppercase tracking-wide text-violet-200">
@@ -237,7 +238,7 @@ export function SeasonXbTable({
               <span className="flag-chip" /> <span className="normal-case">xB</span> na konci sezony
             </h2>
             <p className="mt-1 text-[11px] leading-snug text-copy-muted">
-              Odhad konečných bodů podle celého ligového rozpisu.
+              Odhad konečných bodů pro všech {CHANCE_LIGA_TOTAL_MATCHES} zápasů včetně nadstavby a baráže.
             </p>
           </div>
           <span className="shrink-0 rounded-full border border-violet-400/25 bg-violet-500/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-violet-200">
@@ -296,7 +297,7 @@ export function SeasonXbTable({
       </ol>
 
       <div className="border-t border-line-subtle px-4 py-3 text-[10.5px] leading-relaxed text-copy-muted">
-        <b className="text-copy-secondary">Jak to číst:</b> odehrané ligové zápasy používají skutečné body, zbytek rozpisu osobní xB. Tajné tipy před výkopem tabulka neprozrazuje.
+        <b className="text-copy-secondary">Jak to číst:</b> odehrané zápasy používají skutečné body, známý zbytek rozpisu osobní xB. Dokud nejsou dvojice nadstavby a baráže známé, model je dopočítává z osobního průměru. Tajné tipy před výkopem tabulka neprozrazuje.
       </div>
     </div>
   );

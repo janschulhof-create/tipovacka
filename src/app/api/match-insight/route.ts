@@ -308,9 +308,17 @@ export async function GET(req: Request) {
         contextValue,
         contextSample: prediction?.sample ?? 0,
         contextDescription,
-        // Pro přepínač 5 / 10 / 20 / 35 posíláme kompletní chronologickou
-        // historii minulé ligové sezony; výpočet vrátí posledních max. 35 bodů.
+        // Ligový graf používá až 280 tipů. Týmové grafy filtrují pouze zápasy,
+        // v nichž nastoupil daný klub, a zobrazují maximálně 35 utkání.
         trendPoints: archiveTips.map((row) => row.points),
+        teamTrendPoints: {
+          home: archiveTips
+            .filter((row) => canonTeam(row.home) === canonTeam(teams.home) || canonTeam(row.away) === canonTeam(teams.home))
+            .map((row) => row.points),
+          away: archiveTips
+            .filter((row) => canonTeam(row.home) === canonTeam(teams.away) || canonTeam(row.away) === canonTeam(teams.away))
+            .map((row) => row.points),
+        },
       });
     };
 

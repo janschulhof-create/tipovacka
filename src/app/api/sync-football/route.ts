@@ -661,7 +661,7 @@ export async function GET(req: NextRequest) {
     const firstRoundTeams = new Set(firstRoundRows.flatMap((match) => [match.home_team, match.away_team]));
     const sourceRepairNeeded = repairRequested
       || (key === 'liga' && existingRows.length > 0 && (
-        officialRows.length !== 240
+        officialRows.length < 240
         || firstRoundRows.length !== 8
         || firstRoundTeams.size !== 16
       ))
