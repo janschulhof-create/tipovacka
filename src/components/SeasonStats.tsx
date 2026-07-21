@@ -45,6 +45,12 @@ export function SeasonStats({
 
     return (
       <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+          {emptyCards.map((card) => (
+            <StatCard key={card.label} {...card} rows={[]} />
+          ))}
+        </div>
+
         {regions.length > 0 && (
           <section id="regiony-chance-ligy" className="space-y-3 rounded-2xl border border-violet-400/20 bg-violet-500/5 p-3 sm:p-4">
             <div>
@@ -60,11 +66,6 @@ export function SeasonStats({
             </div>
           </section>
         )}
-        <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {emptyCards.map((card) => (
-            <StatCard key={card.label} {...card} rows={[]} />
-          ))}
-        </div>
       </div>
     );
   }
@@ -104,6 +105,12 @@ export function SeasonStats({
 
   return (
     <div className="space-y-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        {cards.map((c) => (
+          <StatCard key={c.label} {...c} />
+        ))}
+      </div>
+
       {regions.length > 0 && (
         <section id="regiony-chance-ligy" className="space-y-3 rounded-2xl border border-violet-400/20 bg-violet-500/5 p-3 sm:p-4">
           <div>
@@ -132,11 +139,6 @@ export function SeasonStats({
           </div>
         </section>
       )}
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {cards.map((c) => (
-          <StatCard key={c.label} {...c} />
-        ))}
-      </div>
 
       {continents.length > 0 && (
         <div>

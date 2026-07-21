@@ -270,9 +270,15 @@ textarea {
 
 .xb-score-ring {
   width: 128px;
-  height: auto;
+  height: 128px;
+  min-width: 128px;
+  min-height: 128px;
+  max-width: 128px;
+  max-height: 128px;
   aspect-ratio: 1 / 1;
+  box-sizing: border-box;
   justify-self: center;
+  overflow: hidden;
 }
 
 .xb-score-ring--desktop {
@@ -316,8 +322,12 @@ textarea {
   }
 
   .xb-score-ring {
-    width: 100%;
+    width: 144px;
+    height: 144px;
+    min-width: 144px;
+    min-height: 144px;
     max-width: 144px;
+    max-height: 144px;
   }
 
   .xb-hero-copy {
