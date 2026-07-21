@@ -179,8 +179,7 @@ export function UnifiedStandingsTable({
   currentPlayerId?: number;
   compact?: boolean;
 }) {
-  const hasActual = rows.some((row) => row.actual_points > 0 || row.finished_matches > 0);
-  const [mode, setMode] = useState<UnifiedRankMode>(hasLive ? 'live' : hasActual ? 'current' : 'xb');
+  const [mode, setMode] = useState<UnifiedRankMode>('current');
   if (!rows.length) return null;
 
   const ranked = rows
@@ -230,7 +229,7 @@ export function UnifiedStandingsTable({
           {([
             ['current', 'Body'],
             ['live', 'Live'],
-            ['xb', 'xB'],
+            ['xb', 'xBody'],
           ] as const).map(([value, label]) => {
             const disabled = value === 'live' && !hasLive;
             const active = mode === value;
