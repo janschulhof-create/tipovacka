@@ -647,6 +647,23 @@ export function AIAnalysisSection({
 
   const selectedXbData = xbVariants[scoreLabel(selected)] ?? (scoreLabel(selected) === scoreLabel(currentScore) ? officialXb : null);
   const currentXbData = xbVariants[scoreLabel(currentScore)] ?? officialXb;
+  const orderedAlternatives = useMemo(() => {
+    const currentLabel = scoreLabel(currentScore);
+    return alternatives
+      .map((score, index) => {
+        const label = scoreLabel(score);
+        const value = xbVariants[label]?.value ?? (label === currentLabel ? officialXb?.value : null);
+        return { score, index, value };
+      })
+      .sort((a, b) => {
+        if (a.value == null && b.value == null) return a.index - b.index;
+        if (a.value == null) return 1;
+        if (b.value == null) return -1;
+        if (Math.abs(b.value - a.value) > 0.001) return b.value - a.value;
+        return a.index - b.index;
+      })
+      .map((item) => item.score);
+  }, [alternatives, currentScore, officialXb, xbVariants]);
   const selectedXb = selectedXbData?.value ?? 0;
   const currentXb = currentXbData?.value ?? 0;
   const selectedConfidence = selectedXbData?.confidence ?? 0;
@@ -780,7 +797,7 @@ export function AIAnalysisSection({
           </div>
       
           <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-            {alternatives.map((score) => {
+            {orderedAlternatives.map((score) => {
               const label = scoreLabel(score);
               const isSelected = label === selectedLabel;
               const variant = xbVariants[label] ?? (label === currentLabel ? officialXb : null);
