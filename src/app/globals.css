@@ -410,12 +410,6 @@ textarea {
 
 @media (min-width: 1180px) {
   .ai-analysis-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-}
-
-@media (min-width: 1600px) {
-  .ai-analysis-grid {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
