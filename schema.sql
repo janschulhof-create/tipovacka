@@ -49,6 +49,13 @@ on conflict (name) do update
 set is_active = true,
     email = coalesce(players.email, excluded.email);
 
+-- Nový tipér Víčko. Auth účet vytvoří `npm run seed:vicko`.
+insert into public.players (name, is_active, email)
+values ('Víčko', true, 'vicko@obtipovacka.local')
+on conflict (name) do update
+set is_active = true,
+    email = coalesce(players.email, excluded.email);
+
 -- ----------------------------- MATCHES -------------------------------
 create table if not exists matches (
   id              bigint generated always as identity primary key,
