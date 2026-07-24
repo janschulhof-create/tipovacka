@@ -260,3 +260,63 @@ create policy write_players_ins on players for insert with check (true);
 
 -- matches/seasons: žádná anon write policy => zapisuje jen service_role
 -- (service_role RLS obchází automaticky).
+
+-- =====================================================================
+--  WEB PUSH NOTIFIKACE
+-- =====================================================================
+create table if not exists public.push_subscriptions (
+  id              bigint generated always as identity primary key,
+  player_id       bigint not null references public.players(id) on delete cascade,
+  endpoint        text not null unique,
+  p256dh          text not null,
+  auth            text not null,
+  user_agent      text,
+  notify_24h      boolean not null default true,
+  notify_3h       boolean not null default true,
+  notify_results  boolean not null default true,
+  active          boolean not null default true,
+  last_seen_at    timestamptz not null default now(),
+  created_at      timestamptz not null default now(),
+  updated_at      timestamptz not null default now()
+);
+create index if not exists push_subscriptions_player_idx
+  on public.push_subscriptions (player_id, active);
+
+create table if not exists public.push_notification_log (
+  id          bigint generated always as identity primary key,
+  player_id   bigint not null references public.players(id) on delete cascade,
+  season_id   bigint not null references public.seasons(id) on delete cascade,
+  round       int not null,
+  kind        text not null check (kind in ('round_24h', 'round_3h', 'match_results')),
+  block_key   text not null default '',
+  sent_at     timestamptz not null default now(),
+  unique (player_id, season_id, round, kind, block_key)
+);
+create index if not exists push_notification_log_round_idx
+  on public.push_notification_log (season_id, round, kind);
+
+-- Migrace pro instalace, které už základní push tabulky mají z předchozí verze.
+alter table public.push_subscriptions
+  add column if not exists notify_results boolean not null default true;
+alter table public.push_notification_log
+  add column if not exists block_key text not null default '';
+
+alter table public.push_notification_log
+  drop constraint if exists push_notification_log_kind_check;
+alter table public.push_notification_log
+  add constraint push_notification_log_kind_check
+  check (kind in ('round_24h', 'round_3h', 'match_results'));
+
+alter table public.push_notification_log
+  drop constraint if exists push_notification_log_player_id_season_id_round_kind_key;
+alter table public.push_notification_log
+  drop constraint if exists push_notification_log_player_id_season_id_round_kind_block_key_key;
+alter table public.push_notification_log
+  drop constraint if exists push_notification_log_player_season_round_kind_block_key_key;
+alter table public.push_notification_log
+  add constraint push_notification_log_player_season_round_kind_block_key_key
+  unique (player_id, season_id, round, kind, block_key);
+
+alter table public.push_subscriptions enable row level security;
+alter table public.push_notification_log enable row level security;
+-- Přístup k oběma tabulkám má pouze server přes SUPABASE_SERVICE_ROLE_KEY.

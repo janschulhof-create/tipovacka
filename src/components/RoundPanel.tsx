@@ -901,6 +901,13 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
     return [pick([
       'Tenhle zápas nikdo netipnul — kolektivní alibismus, nula odvahy. 🙈',
       'Prázdný tipovací lístek. Buď byla ponorka, nebo strach z ostudy.',
+      '„Ivánku, kamaráde, můžeš mluvit?“ Tady nepřišla ani čárka.',
+      '„Tak poď vole.“ Jenže nikdo nešel a tipovací lístek zůstal prázdný.',
+      '„Řekni, co o tomhle zápase řekl Beckham.“ Nejdřív by ale musel někdo vůbec tipovat.',
+      'Pánové, bez sestavy se okres nehraje. A bez tipu se body taky nerozdávají.',
+      '„Vy mě nechcete za tipéra?“ Zápas skončil a na lístku po tobě nezůstala ani čárka.',
+      '„Talent máš, tipy ti chyběj.“ Tady konkrétně chyběl celý jeden tip.',
+      '„Ty si to v klidu dokuř, ty to máš za tisíc.“ Jenže tipovací lístek zůstal úplně prázdný.',
     ])];
 
   const winner = H > A ? m.home_team : m.away_team;
@@ -917,6 +924,36 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
     total: p.predicted_home + p.predicted_away,
   }));
 
+  const bohemkaSide = /bohem/i.test(m.home_team)
+    ? 'home'
+    : /bohem/i.test(m.away_team)
+      ? 'away'
+      : null;
+  const tippedBohemkaToWin = (prediction: F) =>
+    bohemkaSide === 'home'
+      ? prediction.predicted_home > prediction.predicted_away
+      : bohemkaSide === 'away'
+        ? prediction.predicted_away > prediction.predicted_home
+        : false;
+
+  const jablonecSide = /jablon/i.test(m.home_team)
+    ? 'home'
+    : /jablon/i.test(m.away_team)
+      ? 'away'
+      : null;
+  const tippedJablonecToWin = (prediction: F) =>
+    jablonecSide === 'home'
+      ? prediction.predicted_home > prediction.predicted_away
+      : jablonecSide === 'away'
+        ? prediction.predicted_away > prediction.predicted_home
+        : false;
+  const slovackoMatch = /slováck|slovack|synot/i.test(`${m.home_team} ${m.away_team}`);
+  const highGoalTips = facts.filter((prediction) => prediction.total >= 6);
+  const absurdTips = facts.filter(
+    (prediction) => prediction.total >= 7 || Math.abs(prediction.predicted_home - prediction.predicted_away) >= 4,
+  );
+  const oneNilDrawTips = H === 1 && A === 0 ? facts.filter((prediction) => prediction.predWin === 0) : [];
+
   const byBest = [...facts].sort((a, b) => b.points! - a.points! || a.dist - b.dist || a.name.localeCompare(b.name, 'cs'));
   const byWorst = [...facts].sort((a, b) => a.points! - b.points! || b.dist - a.dist || a.name.localeCompare(b.name, 'cs'));
   const hero = byBest[0];
@@ -932,30 +969,41 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
       'Nula od nuly — obě defenzivy zabetonovány, gólmani si stihli dát kafe. 🥱',
       'Bezgólová šachovnice: čistá konta a diváci v limbu.',
       'Vrchol antifotbalu, 0:0. Někdo měl vypnout přenos v poločase.',
+      '„Zelená je tjáva, fotbal, to je hja.“ Tady ale zůstalo jen 0:0 a dva autobusy.',
+      'Na okrese by po tomhle aspoň otevřeli klobásy. Tady zůstalo jen 0:0.',
     ]));
   else if (H + A >= 6)
     lines.push(pick([
       `Kanonáda ${score}! Obrany na dovolené, síť rudá jak Messiho tváře po penaltě. 🔥`,
       `Přestřelka jak na Divokém západě — ${score}, balóny v síti na běžícím pásu.`,
       `${score} — brankáři si dnes sáhli na dno pohárku hanby.`,
+      `Pánové, ${score}. Obrany šly na párek a zápis delegáta se nevešel na jednu stránku.`,
     ]));
   else if (diff >= 3)
     lines.push(pick([
       `${winner} přejelo ${loserTeam} parním válcem, ${score}. Debakl jak vyšitý.`,
       `Jednosměrka: ${winner} ${score}, ${loserTeam} si sáhlo na dno. Výprask jak řemen.`,
-      `${loserTeam} dostalo lekci ze základů fotbalu, ${score}. Bolestivé.`,
+      `„Když nastoupí špekáček, dostanete na fráček.“ ${loserTeam} právě dostalo lekci ${score}.`,
+      `${score}. Na svazu se tomu říká výsledek, v kabině regulérní poprava.`,
+      `„Víš, co se říká na vsi? Že silnější pes mrdá.“ ${winner} to předvedl výsledkem ${score}.`,
     ]));
   else if (diff === 0)
     lines.push(pick([
       `Dělba bodů ${score} — každý domů s bodem a čistým svědomím.`,
       `Remíza jako řemen ${score}: nikdo nevyhrál, všichni naštvaní.`,
       `${score}, spravedlivě rozdělené nervy. Klasická plichta.`,
+      `„Já bych tady, hele, Teplice kříž.“ A taky že jo: ${score}.`,
+      `${score}. Dva body se rozdělily a oba trenéři teď do telefonu vysvětlí, že byli lepší.`,
     ]));
   else
     lines.push(pick([
       `Těsňák ${score} — rozhodl jediný balón, zbytek nervy nadranc.`,
       `O gól, o nervy, o všechno — ${score} až do posledního hvizdu.`,
       `${score} na jeden mizerný odraz. Fotbal je krutý.`,
+      `${score}. Rozhodl detail, který se u piva do rána zvětší na celospolečenský problém.`,
+      `„Ty vole, to jsou nervy.“ Výsledek ${score} visel do posledního hvizdu na jedné niti.`,
+      `„Řekni, co o tomhle zápase řekl Beckham.“ Asi nic, ale ${score} bude okres rozebírat do úterý.`,
+      `„Ti volal Pelta, jo?“ Po výsledku ${score} se budou telefony na svazu přehřívat.`,
     ]));
 
   // ── 2) hrdina kola (nejvíc bodů) ──
@@ -967,6 +1015,18 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
       `Prorok kola ${hn} (10 b). Nabízí kurzy věštění, první hodina zdarma, ostatní beznadějně vyprodáno.`,
       `${hn} tipl ${score} na chlup — 10 bodů. Sázkovky mu už ruší účet, tohle je podezřelé.`,
       `${hn} to přečetl líp než VAR — přesných 10 bodů. Klobouk dolů, kouzelníku.`,
+      `„Vám se ten fotbal jako líbil?“ ${hn} trefil ${score} přesně a bere plných 10 bodů.`,
+      `${hn} poslal přesný tip, delegát ověřil zápis a zbytek party může jen tiše přikyvovat.`,
+      `„Milane, myslím, že ty mediální mrdky máme pořešený.“ ${hn} trefil ${score} přesně a bere deset bodů.`,
+      `„Tak poď vole.“ ${hn} šel a trefil ${score} přesně — deset bodů bez odvolání.`,
+      `„Volal Pelta.“ ${hn} trefil ${score} přesně a komise si vyžádala vysvětlení.`,
+      `„Když se daří a padá to tam, to umí každej blbec.“ ${hn} bere deset bodů a může dělat, že to byla rutina.`,
+    ]));
+  else if (hero.total >= 6 && hp >= 2)
+    lines.push(pick([
+      `„Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“ ${hn} čekal ${hero.tip} a odnáší si ${hp} body.`,
+      `„Já vyznávám útočnou kombinační filozofii.“ ${hn} poslal do zápisu ${hero.tip} a bere ${hp} body.`,
+      `„Dneska očekávám 2 body. Za výhru jsou ale 4 body.“ ${hn} tipem ${hero.tip} otevřel hřiště dokořán a získal ${hp}.`,
     ]));
   else if (hp >= 4)
     lines.push(pick([
@@ -986,14 +1046,26 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
   if (loser.name !== hero.name) {
     const ln = loser.name;
     const lp = loser.points!;
-    if (lp === 0)
-      lines.push(pick([
-        `${ln} tipl ${loser.tip}, přišlo ${score} — vedle jak ta jedle, 0 bodů. Radši ať zůstane u fantasy. 🙈`,
-        `${ln} (${loser.tip}) mířil do úplně jiného zápasu. Nula bodů a koktejl ostudy.`,
-        `Cena útěchy pro ${ln}: tip ${loser.tip}, realita ${score}. Aut, roh, nic. 🥴`,
-        `${ln} tipoval ${loser.tip} — analytik roku to teda nebude. Kulaťoučká nula.`,
-        `${ln} poslal balón do autu i s tipem ${loser.tip}. 0 bodů, hlava v dlaních.`,
-      ]));
+    if (lp === 0) {
+      if (tippedBohemkaToWin(loser))
+        lines.push(`„Bohemka no.“ ${ln} jí věřil s tipem ${loser.tip}, ale realita ${score} nechala v zápisu čistou nulu.`);
+      else if (loser.total >= 7 || Math.abs(loser.predicted_home - loser.predicted_away) >= 4)
+        lines.push(`„Kapříci připluli.“ ${ln} vytáhl tip ${loser.tip}, realita byla ${score} a komise zapsala nulu.`);
+      else
+        lines.push(pick([
+          `${ln} tipl ${loser.tip}, přišlo ${score} — vedle jak ta jedle, 0 bodů. Radši ať zůstane u fantasy. 🙈`,
+          `${ln} (${loser.tip}) mířil do úplně jiného zápasu. Nula bodů a koktejl ostudy.`,
+          `Cena útěchy pro ${ln}: tip ${loser.tip}, realita ${score}. Aut, roh, nic. 🥴`,
+          `${ln} tipoval ${loser.tip} — analytik roku to teda nebude. Kulaťoučká nula.`,
+          `${ln} poslal balón do autu i s tipem ${loser.tip}. 0 bodů, hlava v dlaních.`,
+          `Ten tip ${loser.tip} šel na který zápas? Realita byla ${score} a body žádné.`,
+          `${ln} zapsal ${loser.tip}; komise zasedla, zasmála se a ponechala nulu v platnosti.`,
+          `„To by člověk blil, Milane.“ ${ln} dal ${loser.tip}, realita ${score} a z toho čistá nula.`,
+          `„Loď se potápí, bárka de ke dnu.“ ${ln} s tipem ${loser.tip} právě opustil bodový přístav.`,
+          `„Vy mě nechcete za tipéra?“ Po výkonu ${ln} s tipem ${loser.tip} se komise zatvářila neurčitě.`,
+          `„Ty by nás sfoukli jako svíčku.“ ${ln} s tipem ${loser.tip} proti výsledku ${score} nezískal ani bod.`,
+        ]));
+    }
     else
       lines.push(pick([
         `Na chvostu ${ln} (${loser.tip} → ${score}, ${lp} b). Věštecká koule mu praskla. 🔮`,
@@ -1018,6 +1090,7 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
     perlicky.push(pick([
       `Perlička: gól v nastavení (${reg} → ${score}) přepsal body. Někomu spadl bod z kopaček rovnou do autu. ⏱️`,
       `V nastavení se ještě skórovalo a body se sesypaly. Kdo věřil stavu z 90. minuty, kousal se do rtu.`,
+      `Tohle už bylo takový baroko: jeden pozdní gól, tři přepsané tipy a telefonát na svaz.`,
     ]));
   if (realWin !== 0 && wrongWin.length >= Math.max(2, Math.ceil(facts.length * 0.6)))
     perlicky.push(`Perlička: na ${winner} vsadila jen hrstka — ${wrongWin.map((p) => p.name).join(', ')} tipli špatný tým. Stádo se mýlilo svorně. 🐑`);
@@ -1031,6 +1104,36 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
     perlicky.push(`Perlička: někdo čekal plichtu, ${winner} přitom válcovalo ${score}. Fotbalový jasnovidec v akci to nebyl.`);
   if (byBest[0].points! > 0 && byWorst[0].points === 0)
     perlicky.push(`Perlička: rozpětí od ${hero.name} po ${byWorst[0].name} — jak od Ligy mistrů k okresnímu přeboru. 📉`);
+  if (hero.points === 10 && loser.points === 0)
+    perlicky.push(`Perlička: ${hero.name} může mluvit, ${loser.name} zatím jen přikyvuje. Rozdíl deset bodů a jedna hodně dlouhá cesta z okresu.`);
+
+  const jablonecWinTips = facts.filter((prediction) => tippedJablonecToWin(prediction));
+  if (jablonecWinTips.length > 0)
+    perlicky.push(`Perlička: „Počkej pocem, nehrál tys divizi?“ ${jablonecWinTips.map((prediction) => `${prediction.name} (${prediction.tip})`).join(', ')} věřili výhře Jablonce.`);
+  if (slovackoMatch)
+    perlicky.push(`Perlička: „Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“ Zápas ${m.home_team} – ${m.away_team} se zkrátka netipuje v klidu.`);
+  if (oneNilDrawTips.length > 0)
+    perlicky.push(`Perlička: „Já koukal na ten teletext a najednou tam naskočilo 1:0.“ ${oneNilDrawTips.map((prediction) => `${prediction.name} (${prediction.tip})`).join(', ')} čekali remízu a obrazovka je poslala domů.`);
+  if (highGoalTips.length > 0) {
+    const productiveHighTips = highGoalTips.filter((prediction) => (prediction.points ?? 0) > 0);
+    if (productiveHighTips.length > 0)
+      perlicky.push(`Perlička: „Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“ ${productiveHighTips.map((prediction) => `${prediction.name} (${prediction.tip}, ${prediction.points} b)`).join(', ')} šli do přestřelky a něco z ní vytěžili.`);
+    else
+      perlicky.push(pick([
+        `Perlička: „Já vyznávám útočnou kombinační filozofii.“ ${highGoalTips.map((prediction) => `${prediction.name} (${prediction.tip})`).join(', ')} čekali kanonádu, body ale zůstaly v kabině.`,
+        `Perlička: „Dneska očekávám 2 body. Za výhru jsou ale 4 body.“ ${highGoalTips.map((prediction) => `${prediction.name} (${prediction.tip})`).join(', ')} rozjeli ofenzivu hlavně na papíře.`,
+      ]));
+  }
+  if (absurdTips.length > 0)
+    perlicky.push(`Perlička: „Kapříci připluli.“ ${absurdTips.map((prediction) => `${prediction.name} (${prediction.tip})`).join(', ')} poslali na komisi tip, který si žádá vlastní vyšetřovací spis.`);
+  if (diff === 0)
+    perlicky.push(`Perlička: „Já bych tady, hele, Teplice kříž.“ Remíza ${score} tentokrát nebyla hospodská teorie, ale správný směr.`);
+  if (facts.length >= 3 && facts.filter((p) => p.points === 0).length >= Math.ceil(facts.length * 0.6))
+    perlicky.push(`Perlička: „Loď se potápí, bárka de ke dnu.“ Většina tipů právě nabrala vodu zároveň.`);
+
+  const bohemkaZeros = facts.filter((p) => p.points === 0 && tippedBohemkaToWin(p));
+  if (bohemkaZeros.length > 0)
+    perlicky.push(`Perlička: „Bohemka no.“ ${bohemkaZeros.map((p) => p.name).join(', ')} jí věřili, ale tentokrát z toho nebyl ani bod.`);
 
   if (perlicky.length) lines.push(pick(perlicky));
 

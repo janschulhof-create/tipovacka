@@ -16,6 +16,7 @@ import {
 import { EmailForm } from '@/components/EmailForm';
 import { ChangePasswordForm } from '@/components/ChangePasswordForm';
 import { signOutAction } from '@/app/ucet/actions';
+import { NotificationSettings } from '@/components/ServiceWorkerRegister';
 
 export const dynamic = 'force-dynamic';
 
@@ -151,6 +152,10 @@ export default async function ProfilPage() {
 
       <section className="panel mt-6 p-5">
         <div className="eyebrow mb-4"><span className="flag-chip" /> Můj účet</div>
+
+        <div className="mb-5">
+          <NotificationSettings />
+        </div>
 
         <div className="grid gap-5 sm:grid-cols-2">
           <div>
