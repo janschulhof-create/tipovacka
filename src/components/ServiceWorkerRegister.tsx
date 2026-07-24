@@ -7,6 +7,7 @@ type PushStatus = {
   configured: boolean;
   publicKey: string;
   subscribed: boolean;
+  setupIssue?: string;
   preferences: { notify24h: boolean; notify3h: boolean; notifyResults: boolean };
 };
 
@@ -28,7 +29,38 @@ function isStandalone() {
   return window.matchMedia('(display-mode: standalone)').matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
 }
 
-async function fetchPushStatus(): Promise<PushStatus | null> {
+function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = window.setTimeout(() => reject(new Error(message)), milliseconds);
+    promise.then(
+      (value) => { window.clearTimeout(timer); resolve(value); },
+      (error) => { window.clearTimeout(timer); reject(error); },
+    );
+  });
+}
+
+async function getExistingServiceWorkerRegistration() {
+  return navigator.serviceWorker.getRegistration('/');
+}
+
+async function ensureReadyServiceWorker() {
+  let registration = await getExistingServiceWorkerRegistration();
+  if (!registration) registration = await navigator.serviceWorker.register('/sw.js');
+  if (registration.active) return registration;
+  return withTimeout(
+    navigator.serviceWorker.ready,
+    10_000,
+    'Service worker se nepodařilo připravit. Obnov stránku a zkus to znovu.',
+  );
+}
+
+async function currentSubscription() {
+  const registration = await getExistingServiceWorkerRegistration();
+  if (!registration) return null;
+  return registration.pushManager.getSubscription();
+}
+
+async function fetchPushStatus(): Promise<PushStatus> {
   let endpoint = '';
   try {
     endpoint = (await currentSubscription())?.endpoint || '';
@@ -36,18 +68,25 @@ async function fetchPushStatus(): Promise<PushStatus | null> {
     endpoint = '';
   }
   const query = endpoint ? `?endpoint=${encodeURIComponent(endpoint)}` : '';
-  const response = await fetch(`/api/push${query}`, { cache: 'no-store' });
-  if (!response.ok) return null;
-  return response.json();
-}
-
-async function currentSubscription() {
-  const registration = await navigator.serviceWorker.ready;
-  return registration.pushManager.getSubscription();
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), 8_000);
+  try {
+    const response = await fetch(`/api/push${query}`, { cache: 'no-store', signal: controller.signal });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(data?.error || 'Nastavení upozornění se nepodařilo načíst.');
+    return data as PushStatus;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Načítání upozornění trvalo příliš dlouho. Zkus stránku obnovit.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timer);
+  }
 }
 
 async function subscribeToPush(publicKey: string) {
-  const registration = await navigator.serviceWorker.ready;
+  const registration = await ensureReadyServiceWorker();
   const existing = await registration.pushManager.getSubscription();
   if (existing) return existing;
   return registration.pushManager.subscribe({
@@ -86,7 +125,7 @@ export function ServiceWorkerRegister() {
     if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return;
     if (window.location.pathname === '/prihlaseni') return;
     const timer = window.setTimeout(async () => {
-      const current = await fetchPushStatus();
+      const current = await fetchPushStatus().catch(() => null);
       setStatus(current);
       if (!current?.authenticated || !current.configured || current.subscribed || Notification.permission === 'denied') return;
       const snoozeUntil = Number(localStorage.getItem(SNOOZE_KEY) || 0);
@@ -148,14 +187,32 @@ export function ServiceWorkerRegister() {
 
 export function NotificationSettings() {
   const [status, setStatus] = useState<PushStatus | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const supported = useMemo(() => typeof window !== 'undefined' && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window, []);
 
-  useEffect(() => {
-    if (!supported) return;
-    fetchPushStatus().then(setStatus);
+  const loadStatus = useCallback(async () => {
+    if (!supported) {
+      setLoading(false);
+      return;
+    }
+    setLoading(true);
+    setLoadError('');
+    try {
+      setStatus(await fetchPushStatus());
+    } catch (error) {
+      setStatus(null);
+      setLoadError(error instanceof Error ? error.message : 'Nastavení upozornění se nepodařilo načíst.');
+    } finally {
+      setLoading(false);
+    }
   }, [supported]);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus]);
 
   const enable = async () => {
     if (!status?.publicKey) return;
@@ -212,8 +269,23 @@ export function NotificationSettings() {
   };
 
   if (!supported) return <p className="text-xs text-slate-300/55">Tento prohlížeč webová upozornění nepodporuje.</p>;
-  if (!status) return <p className="text-xs text-slate-300/55">Načítám nastavení upozornění…</p>;
-  if (!status.configured) return <p className="text-xs text-amber-300/75">Push notifikace ještě nejsou dokončené na serveru.</p>;
+  if (loading) return <p className="text-xs text-slate-300/55">Načítám nastavení upozornění…</p>;
+  if (loadError || !status) {
+    return (
+      <div className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-4">
+        <div className="text-xs font-semibold text-amber-200">Nastavení upozornění se nenačetlo</div>
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-300/60">{loadError || 'Zkus načtení zopakovat.'}</p>
+        <button type="button" onClick={() => void loadStatus()} className="mt-3 rounded-xl border border-amber-300/30 px-3 py-2 text-xs font-semibold text-amber-100">Zkusit znovu</button>
+      </div>
+    );
+  }
+  if (!status.configured) {
+    return (
+      <div className="rounded-2xl border border-amber-400/25 bg-amber-400/5 p-4 text-xs text-amber-200/85">
+        {status.setupIssue || 'Push notifikace ještě nejsou dokončené na serveru.'}
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-terrain-700 bg-terrain-900/45 p-4">
