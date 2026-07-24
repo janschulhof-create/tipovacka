@@ -72,13 +72,14 @@ export interface InsightData {
  * data předchozího utkání, ale při návratu na již načtený zápas chceme
  * okamžitý výsledek bez dalšího bliknutí a síťového dotazu.
  */
-const insightCache = new Map<number, InsightData>();
+const insightCache = new Map<number, { data: InsightData; fetchedAt: number }>();
+const insightInFlight = new Map<number, Promise<InsightData | null>>();
 
 /** Načte a nasdílí data pro právě vybraný zápas (H2H, Predikce i xB). */
 export function useInsight(matchId: number, enabled: boolean, pollMs = 0) {
   const [state, setState] = useState<{ matchId: number; data: InsightData | null }>(() => ({
     matchId,
-    data: insightCache.get(matchId) ?? null,
+    data: insightCache.get(matchId)?.data ?? null,
   }));
   const [loadingMatchId, setLoadingMatchId] = useState<number | null>(null);
 
@@ -90,8 +91,9 @@ export function useInsight(matchId: number, enabled: boolean, pollMs = 0) {
 
     const load = async (force = false) => {
       const cached = insightCache.get(matchId);
-      if (cached && !force) {
-        setState({ matchId, data: cached });
+      const maxAge = pollMs > 0 ? 45_000 : 5 * 60_000;
+      if (cached && (!force || Date.now() - cached.fetchedAt < maxAge)) {
+        setState({ matchId, data: cached.data });
         setLoadingMatchId(null);
         return;
       }
@@ -102,13 +104,16 @@ export function useInsight(matchId: number, enabled: boolean, pollMs = 0) {
       }
 
       try {
-        const response = await fetch(`/api/match-insight?match=${matchId}`, {
-          signal: controller.signal,
-          cache: 'no-store',
-        });
-        const nextData = response.ok ? await response.json() as InsightData : null;
+        let request = insightInFlight.get(matchId);
+        if (!request) {
+          request = fetch(`/api/match-insight?match=${matchId}`)
+            .then(async (response) => response.ok ? await response.json() as InsightData : null)
+            .finally(() => insightInFlight.delete(matchId));
+          insightInFlight.set(matchId, request);
+        }
+        const nextData = await request;
         if (!mounted || controller.signal.aborted) return;
-        if (nextData) insightCache.set(matchId, nextData);
+        if (nextData) insightCache.set(matchId, { data: nextData, fetchedAt: Date.now() });
         setState({ matchId, data: nextData });
       } catch (error: unknown) {
         if (!mounted || controller.signal.aborted) return;
@@ -122,7 +127,9 @@ export function useInsight(matchId: number, enabled: boolean, pollMs = 0) {
     };
 
     void load(false);
-    const timer = pollMs > 0 ? window.setInterval(() => void load(true), pollMs) : null;
+    const timer = pollMs > 0 ? window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load(true);
+    }, pollMs) : null;
 
     return () => {
       mounted = false;
@@ -131,7 +138,7 @@ export function useInsight(matchId: number, enabled: boolean, pollMs = 0) {
     };
   }, [enabled, matchId, pollMs]);
 
-  const data = state.matchId === matchId ? state.data : (insightCache.get(matchId) ?? null);
+  const data = state.matchId === matchId ? state.data : (insightCache.get(matchId)?.data ?? null);
   const loading = enabled && loadingMatchId === matchId && data === null;
 
   return { data, loading };

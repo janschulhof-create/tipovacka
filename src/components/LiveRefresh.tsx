@@ -9,18 +9,20 @@ import { useRouter } from 'next/navigation';
  *  - Auto-refresh: když běží živý zápas (hasLive), tiše obnovuje každých `intervalMs`.
  * Používá router.refresh() – server komponenty se přenačtou z DB bez plného reloadu.
  */
-export function LiveRefresh({ hasLive, intervalMs = 30000 }: { hasLive: boolean; intervalMs?: number }) {
+export function LiveRefresh({ hasLive, intervalMs = 90000 }: { hasLive: boolean; intervalMs?: number }) {
   const router = useRouter();
   const [pull, setPull] = useState(0); // aktuální vzdálenost stažení (px)
   const [busy, setBusy] = useState(false);
   const startY = useRef<number | null>(null);
   const armed = useRef(false); // začali jsme tahat z úplného vrchu?
+  const lastRefreshAt = useRef(Date.now());
 
   const THRESHOLD = 70; // px – kolik je potřeba stáhnout pro spuštění
   const MAX = 110;
 
   const doRefresh = useCallback(async () => {
     setBusy(true);
+    lastRefreshAt.current = Date.now();
     router.refresh();
     // krátká vizuální odezva, ať uživatel vidí, že se něco stalo
     window.setTimeout(() => {
@@ -32,18 +34,28 @@ export function LiveRefresh({ hasLive, intervalMs = 30000 }: { hasLive: boolean;
   // ── auto-refresh při živém zápasu ──
   useEffect(() => {
     if (!hasLive) return;
-    const id = window.setInterval(() => router.refresh(), intervalMs);
+    const id = window.setInterval(() => {
+      if (document.visibilityState !== 'visible') return;
+      lastRefreshAt.current = Date.now();
+      router.refresh();
+    }, intervalMs);
     return () => window.clearInterval(id);
   }, [hasLive, intervalMs, router]);
 
-  // ── obnovení při návratu na záložku (typicky přepnutí zpět do prohlížeče) ──
+  // Návrat do aplikace obnoví data jen během živých zápasů a pouze tehdy,
+  // když od posledního obnovení uběhl celý interval. Dříve se plný serverový
+  // render spouštěl při každém přepnutí aplikace, i když se nic nehrálo.
   useEffect(() => {
+    if (!hasLive) return;
     const onVis = () => {
-      if (document.visibilityState === 'visible') router.refresh();
+      if (document.visibilityState !== 'visible') return;
+      if (Date.now() - lastRefreshAt.current < intervalMs) return;
+      lastRefreshAt.current = Date.now();
+      router.refresh();
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [router]);
+  }, [hasLive, intervalMs, router]);
 
   // ── pull-to-refresh (touch) ──
   useEffect(() => {

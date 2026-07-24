@@ -9,8 +9,8 @@ import {
   getLiveMatches,
   getLivePointsByPlayer,
   getRoundLabels,
+  getRoundPredictions,
 } from '@/lib/pageQueries';
-import { getRoundPredictions } from '@/lib/queries';
 import { RoundPanel } from '@/components/RoundPanel';
 import { LigaDesktopBoard } from '@/components/LigaDesktopBoard';
 import { RoundSelector } from '@/components/RoundSelector';
@@ -74,7 +74,7 @@ export default async function Home({
       selectedRound != null ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
       getStandings(seasonId),
       getPlayers(),
-      getSeasonChartData(seasonId),
+      competition.key === 'liga' ? Promise.resolve({ matches: [], players: [] }) : getSeasonChartData(seasonId),
       getLiveMatches(seasonId),
       getLivePointsByPlayer(seasonId),
       getSessionPlayer(),

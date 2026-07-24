@@ -1,7 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useRouter } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Flag } from '@/components/Flag';
 import type { PlayerProfile } from '@/lib/queries';
 import type { XbPrediction } from '@/lib/predict';
@@ -11,6 +12,8 @@ type Tone = 'violet' | 'green' | 'blue' | 'amber' | 'pink';
 
 type XbVariant = { home: number; away: number; xb: XbPrediction };
 type ProfileInsightResponse = { xb: XbPrediction | null; xbVariants?: XbVariant[] };
+
+const profileInsightCache = new Map<string, { data: ProfileInsightResponse; expiresAt: number }>();
 
 export interface AICrowdSummary {
   count: number;
@@ -512,14 +515,33 @@ export function AIAnalysisSection({
   matches: AIAnalysisMatch[];
   roundTitle: string;
 }) {
+  const router = useRouter();
+  const sbRef = useRef<Promise<import('@supabase/supabase-js').SupabaseClient> | null>(null);
+  const getSupabase = useCallback(() => {
+    if (!sbRef.current) sbRef.current = import('@/lib/supabase/client').then((module) => module.createClient());
+    return sbRef.current;
+  }, []);
   const [selectedMatchId, setSelectedMatchId] = useState(matches[0]?.id ?? 0);
   const profileFallback = useMemo(() => parseScore(profile.most_common_tip?.tip), [profile.most_common_tip?.tip]);
   const [selectedByMatch, setSelectedByMatch] = useState<Record<number, Score>>({});
+  const [savedTipsByMatch, setSavedTipsByMatch] = useState<Record<number, Score | null>>(() =>
+    Object.fromEntries(matches.map((match) => [match.id, match.userTip])),
+  );
+  const [tipSaving, setTipSaving] = useState(false);
+  const [tipMessage, setTipMessage] = useState<string | null>(null);
+  const [canEditSelectedMatch, setCanEditSelectedMatch] = useState(false);
   const [officialXb, setOfficialXb] = useState<XbPrediction | null>(null);
   const [xbVariants, setXbVariants] = useState<Record<string, XbPrediction>>({});
   const [xbLoading, setXbLoading] = useState(false);
   const [xbError, setXbError] = useState(false);
-  const selectedMatch = matches.find((match) => match.id === selectedMatchId) ?? matches[0];
+  const displayMatches = useMemo(
+    () => matches.map((match) => ({
+      ...match,
+      userTip: savedTipsByMatch[match.id] !== undefined ? savedTipsByMatch[match.id] : match.userTip,
+    })),
+    [matches, savedTipsByMatch],
+  );
+  const selectedMatch = displayMatches.find((match) => match.id === selectedMatchId) ?? displayMatches[0];
   const crowd = selectedMatch?.crowd ?? emptyCrowd;
   const currentScore = useMemo(() => defaultScoreForMatch(selectedMatch, profileFallback), [profileFallback, selectedMatch]);
   const selected = selectedMatch ? selectedByMatch[selectedMatch.id] ?? currentScore : currentScore;
@@ -538,6 +560,20 @@ export function AIAnalysisSection({
     });
   }, [selectedMatch, profileFallback]);
 
+  useEffect(() => {
+    if (!selectedMatch) {
+      setCanEditSelectedMatch(false);
+      return;
+    }
+    const update = () => {
+      const kickoff = new Date(selectedMatch.kickoff).getTime();
+      setCanEditSelectedMatch(selectedMatch.status === 'scheduled' && Number.isFinite(kickoff) && kickoff > Date.now());
+    };
+    update();
+    const timer = window.setInterval(update, 60_000);
+    return () => window.clearInterval(timer);
+  }, [selectedMatch]);
+
   const handleMatchSelect = (id: number) => {
     const nextMatch = matches.find((match) => match.id === id);
     const fallbackScore = defaultScoreForMatch(nextMatch, profileFallback);
@@ -547,7 +583,40 @@ export function AIAnalysisSection({
 
   const handleSimulationSelect = (score: Score) => {
     if (!selectedMatch) return;
+    setTipMessage(null);
     setSelectedByMatch((prev) => ({ ...prev, [selectedMatch.id]: score }));
+  };
+
+  const saveSimulatedTip = async () => {
+    if (!selectedMatch || tipSaving) return;
+    const kickoff = new Date(selectedMatch.kickoff).getTime();
+    if (selectedMatch.status !== 'scheduled' || !Number.isFinite(kickoff) || kickoff <= Date.now()) {
+      setTipMessage('Zápas už není otevřený pro změnu tipu.');
+      return;
+    }
+
+    setTipSaving(true);
+    setTipMessage(null);
+    try {
+      const supabase = await getSupabase();
+      const { error } = await supabase.from('predictions').upsert({
+        player_id: profile.player_id,
+        match_id: selectedMatch.id,
+        predicted_home: selected.home,
+        predicted_away: selected.away,
+      }, { onConflict: 'player_id,match_id' });
+      if (error) throw error;
+
+      setSavedTipsByMatch((previous) => ({ ...previous, [selectedMatch.id]: selected }));
+      setSelectedByMatch((previous) => ({ ...previous, [selectedMatch.id]: selected }));
+      setTipMessage(`Tip změněn na ${scoreLabel(selected)}.`);
+      router.refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Tip se nepodařilo uložit.';
+      setTipMessage(`Chyba: ${message}`);
+    } finally {
+      setTipSaving(false);
+    }
   };
 
   const selectedMatchSignal = selectedMatch ? matchSignal(selectedMatch) : 0;
@@ -573,21 +642,32 @@ export function AIAnalysisSection({
     if (!selectedMatch) return;
     const controller = new AbortController();
     const scores = alternatives.map((score) => `${score.home}-${score.away}`).join(',');
+    const cacheKey = `${selectedMatch.id}|${scores}`;
+    const cached = profileInsightCache.get(cacheKey);
+    const applyData = (data: ProfileInsightResponse) => {
+      setOfficialXb(data.xb ?? null);
+      const next: Record<string, XbPrediction> = {};
+      for (const variant of data.xbVariants ?? []) next[`${variant.home}:${variant.away}`] = variant.xb;
+      setXbVariants(next);
+    };
+    if (cached && cached.expiresAt > Date.now()) {
+      applyData(cached.data);
+      setXbLoading(false);
+      setXbError(false);
+      return () => controller.abort();
+    }
     setXbLoading(true);
     setXbError(false);
     fetch(`/api/match-insight?match=${selectedMatch.id}&scores=${encodeURIComponent(scores)}`, {
       signal: controller.signal,
-      cache: 'no-store',
     })
       .then(async (response) => {
         if (!response.ok) throw new Error(`xB API ${response.status}`);
         return response.json() as Promise<ProfileInsightResponse>;
       })
       .then((data) => {
-        setOfficialXb(data.xb ?? null);
-        const next: Record<string, XbPrediction> = {};
-        for (const variant of data.xbVariants ?? []) next[`${variant.home}:${variant.away}`] = variant.xb;
-        setXbVariants(next);
+        profileInsightCache.set(cacheKey, { data, expiresAt: Date.now() + 5 * 60_000 });
+        applyData(data);
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
@@ -769,14 +849,14 @@ export function AIAnalysisSection({
     <section className="ai-analysis-section mb-6" aria-labelledby="ai-analysis-title">
       <h1 id="ai-analysis-title" className="sr-only">AI analýza</h1>
 
-      <MatchSwitcher matches={matches} selectedId={selectedMatch.id} onSelect={handleMatchSelect} roundTitle={roundTitle} />
+      <MatchSwitcher matches={displayMatches} selectedId={selectedMatch.id} onSelect={handleMatchSelect} roundTitle={roundTitle} />
 
         <div className="mb-3 rounded-[18px] border border-line-subtle/90 bg-[linear-gradient(145deg,rgba(12,24,41,.98),rgba(5,13,24,.98))] p-4 shadow-card">
           <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="eyebrow mb-1"><span className="flag-chip" /> Simulátor · {matchName}</div>
               <h3 className="font-display text-xl font-bold text-violet-300">Co když změním tip?</h3>
-              <p className="mt-1 text-[10px] text-copy-muted">Simulace je vždy navázaná na zápas vybraný nahoře. Nic se neukládá do skutečného tipu.</p>
+              <p className="mt-1 text-[10px] text-copy-muted">Simulace je vždy navázaná na zápas vybraný nahoře. Výběr varianty nic neukládá, změnu musíš potvrdit.</p>
             </div>
             <div className="grid min-w-[280px] grid-cols-3 overflow-hidden rounded-xl border border-line-subtle/80 bg-app-deep/35 text-center">
               <div className="px-3 py-2">
@@ -792,6 +872,16 @@ export function AIAnalysisSection({
               <div className="flex min-h-[82px] flex-col items-center justify-center px-3 py-2 text-center">
                 <span className="block text-[8px] text-copy-muted">Aktuální tip</span>
                 <strong className="mt-1 font-display text-2xl font-bold tabular-nums text-violet-300">{selectedMatch.userTip ? currentLabel : '–'}</strong>
+                {canEditSelectedMatch && (!selectedMatch.userTip || selectedLabel !== currentLabel) && (
+                  <button
+                    type="button"
+                    onClick={() => void saveSimulatedTip()}
+                    disabled={tipSaving}
+                    className="btn-pitch mt-2 !rounded-lg !px-3 !py-1.5 !text-[10px] !tracking-normal"
+                  >
+                    {tipSaving ? 'Ukládám…' : selectedMatch.userTip ? '🎯 Změnit tip' : '🎯 Uložit tip'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -819,7 +909,10 @@ export function AIAnalysisSection({
               );
             })}
           </div>
-          <p className="mt-3 text-[9px] leading-relaxed text-copy-muted"><b className="text-violet-200">Jednotný výpočet:</b> hodnoty xB v simulátoru pocházejí ze stejného modelu jako xB predikce na dashboardu. Kliknutí pouze přepočítá variantu, skutečný tip se nezmění.</p>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-[9px] leading-relaxed text-copy-muted"><b className="text-violet-200">Jednotný výpočet:</b> hodnoty xB v simulátoru pocházejí ze stejného modelu jako xB predikce na dashboardu. Výběr varianty tip nezmění, dokud nepotvrdíš tlačítko nahoře.</p>
+            {tipMessage && <p className={`text-[10px] font-semibold ${tipMessage.startsWith('Chyba') || tipMessage.startsWith('Zápas') ? 'text-state-danger' : 'text-state-success'}`}>{tipMessage}</p>}
+          </div>
         </div>
 
       <div key={selectedMatch.id} className="ai-analysis-grid">

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { revalidateTag } from 'next/cache';
 import { createAdminClient } from '@/lib/supabase/server';
 import { getCompetition, type CompetitionKey } from '@/lib/competitions';
 import {
@@ -994,5 +995,9 @@ export async function GET(req: NextRequest) {
   }
 
   const overallOk = keys.every((key) => (results[key] as { ok?: boolean } | undefined)?.ok !== false);
+  // Synchronizace je jediný okamžik, kdy se mění veřejná zápasová data.
+  // Dlouhé cache tak můžeme bezpečně invalidovat jedním tagem místo toho,
+  // aby se náročné dotazy znovu počítaly při každém otevření stránky.
+  revalidateTag('tipovacka-data');
   return NextResponse.json({ ok: overallOk, results, at: new Date().toISOString() });
 }

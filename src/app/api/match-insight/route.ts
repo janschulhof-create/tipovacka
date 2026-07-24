@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createServerAuthClient } from '@/lib/supabase/server';
-import { getSessionPlayer } from '@/lib/auth';
 import h2hData from '@/data/h2h.json';
 import historie from '@/data/historie.json';
 import { canonTeam } from '@/lib/teamAliases';
@@ -73,6 +72,59 @@ interface PlayedMatch {
   round: number;
 }
 
+type ArchiveDataset = {
+  season: string;
+  rounds: {
+    round: number;
+    matches: {
+      home: string;
+      away: string;
+      hs: number | null;
+      as: number | null;
+      tips: Record<string, { h: number; a: number; pts: number | null }>;
+    }[];
+  }[];
+};
+
+// Statický archiv se dříve při každém otevření xB znovu celý procházel.
+// Indexy vzniknou jednou při startu sdílené Fluid instance a další požadavky
+// už používají hotové páry i historii jednotlivých tipérů.
+const archiveDataset = historie as unknown as ArchiveDataset;
+const archivePairIndex = new Map<string, ArchiveMatch[]>();
+const archiveTipsByPlayer = new Map<string, XbHistoryRow[]>();
+const archiveAllPoints: number[] = [];
+
+for (const round of archiveDataset.rounds) {
+  for (const match of round.matches) {
+    if (match.hs != null && match.as != null) {
+      const row: ArchiveMatch = {
+        round: round.round,
+        home: canonTeam(match.home),
+        away: canonTeam(match.away),
+        hs: match.hs,
+        as: match.as,
+        tips: match.tips,
+      };
+      const pair = [row.home, row.away].sort().join('|');
+      const pairRows = archivePairIndex.get(pair) ?? [];
+      pairRows.push(row);
+      archivePairIndex.set(pair, pairRows);
+    }
+
+    for (const [name, tip] of Object.entries(match.tips)) {
+      if (tip.pts == null || !Number.isFinite(tip.pts)) continue;
+      archiveAllPoints.push(tip.pts);
+      if (match.hs == null || match.as == null) continue;
+      const rows = archiveTipsByPlayer.get(name) ?? [];
+      rows.push({ home: match.home, away: match.away, points: tip.pts });
+      archiveTipsByPlayer.set(name, rows);
+    }
+  }
+}
+for (const rows of archivePairIndex.values()) rows.sort((a, b) => b.round - a.round);
+const archivePriorAverage = archiveAllPoints.length
+  ? archiveAllPoints.reduce((sum, points) => sum + points, 0) / archiveAllPoints.length
+  : 3.2;
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
@@ -87,50 +139,25 @@ export async function GET(req: Request) {
   if (!matchId) return NextResponse.json({ error: 'bad request' }, { status: 400 });
 
   const sb = await createServerAuthClient();
-  const { data: match } = await sb
-    .from('matches')
-    .select('id, home_team, away_team, season_id, source_league, round')
-    .eq('id', matchId)
-    .single();
+  const [{ data: match }, { data: authData }] = await Promise.all([
+    sb
+      .from('matches')
+      .select('id, home_team, away_team, season_id, source_league, round')
+      .eq('id', matchId)
+      .single(),
+    sb.auth.getUser(),
+  ]);
   if (!match) return NextResponse.json({ error: 'not found' }, { status: 404 });
 
+  const { data: player } = authData.user
+    ? await sb.from('players').select('id, name').eq('auth_user_id', authData.user.id).maybeSingle()
+    : { data: null };
   const teams = { home: match.home_team as string, away: match.away_team as string };
-  const player = await getSessionPlayer();
   const currentPair = [canonTeam(teams.home), canonTeam(teams.away)].sort().join('|');
 
-  // Minulá Chance liga je hlavním zdrojem H2H. Zápasy čteme nezávisle na tom,
-  // zda je uživatel přihlášený; jeho tip a body se připojí jen tehdy, když existují.
-  const archive = historie as unknown as {
-    season: string;
-    rounds: {
-      round: number;
-      matches: {
-        home: string;
-        away: string;
-        hs: number | null;
-        as: number | null;
-        tips: Record<string, { h: number; a: number; pts: number | null }>;
-      }[];
-    }[];
-  };
-
-  const archivePairMatches: ArchiveMatch[] = archive.rounds
-    .flatMap((round) =>
-      round.matches.flatMap((m) => {
-        const archivedPair = [canonTeam(m.home), canonTeam(m.away)].sort().join('|');
-        if (archivedPair !== currentPair || m.hs == null || m.as == null) return [];
-        return [{
-          round: round.round,
-          home: canonTeam(m.home),
-          away: canonTeam(m.away),
-          hs: m.hs,
-          as: m.as,
-          tips: m.tips,
-        }];
-      }),
-    )
-    .sort((a, b) => b.round - a.round)
-    .slice(0, 6);
+  // Minulá Chance liga je hlavním zdrojem H2H. Statický archiv je
+  // předindexovaný mimo handler, takže se při každém požadavku znovu neskenuje.
+  const archivePairMatches: ArchiveMatch[] = (archivePairIndex.get(currentPair) ?? []).slice(0, 6);
 
   // U reprezentací / Evropy zůstává záložní historický dataset. Do UI i modelu
   // se použije jen tehdy, když pro dvojici nemáme archiv Chance ligy.
@@ -151,7 +178,7 @@ export async function GET(req: Request) {
           ph: tip?.h ?? null,
           pa: tip?.a ?? null,
           points: tip?.pts ?? null,
-          season: archive.season,
+          season: archiveDataset.season,
         };
       })
     : fallbackH2h.map((m) => ({
@@ -244,24 +271,8 @@ export async function GET(req: Request) {
   let xb = null;
   let xbVariants: { home: number; away: number; xb: ReturnType<typeof computePersonalXb> }[] = [];
   if (player && isCurrentChanceMatch) {
-    const archiveTips: XbHistoryRow[] = [...archive.rounds]
-      .sort((a, b) => a.round - b.round)
-      .flatMap((round) => round.matches.flatMap((m) => {
-        const tip = m.tips[player.name];
-        if (!tip || tip.pts == null || m.hs == null || m.as == null) return [];
-        return [{ home: m.home, away: m.away, points: tip.pts }];
-      }));
-
-    const allArchivePoints = archive.rounds.flatMap((round) =>
-      round.matches.flatMap((m) =>
-        Object.values(m.tips)
-          .map((tip) => tip.pts)
-          .filter((points): points is number => points != null && Number.isFinite(points)),
-      ),
-    );
-    const priorAverage = allArchivePoints.length
-      ? allArchivePoints.reduce((sum, points) => sum + points, 0) / allArchivePoints.length
-      : 3.2;
+    const archiveTips: XbHistoryRow[] = archiveTipsByPlayer.get(player.name) ?? [];
+    const priorAverage = archivePriorAverage;
 
     const regularFinished = modelPlayed;
     const regularIds = regularFinished.map((playedMatch) => playedMatch.id);
@@ -398,5 +409,12 @@ export async function GET(req: Request) {
     xbVariants,
     loggedIn: !!player,
     leagueTable,
+  }, {
+    headers: {
+      // Výsledek je osobní, proto pouze privátní cache prohlížeče; CDN jej
+      // nesdílí mezi tipéry. Krátká cache odstraní duplicitní otevření detailu.
+      'Cache-Control': 'private, max-age=45, stale-while-revalidate=60',
+      'Vary': 'Cookie',
+    },
   });
 }

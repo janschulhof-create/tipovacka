@@ -27,5 +27,9 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|api/sync).*)'],
+  // API routy si autentizaci řeší samy. Statické assety middleware vůbec
+  // nepotřebují. Tím se odstraní zbytečné Function Invocations i auth dotazy.
+  matcher: [
+    '/((?!api(?:/|$)|_next/static|_next/image|favicon.ico|apple-icon.png|icon.svg|manifest.webmanifest|sw.js|icons/|.*\\.(?:png|jpg|jpeg|gif|webp|svg|ico|css|js|woff2?)$).*)',
+  ],
 };

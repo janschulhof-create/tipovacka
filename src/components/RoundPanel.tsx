@@ -659,7 +659,7 @@ function MatchExpanded({
   const { data: intel, loading: intelLoading } = useInsight(
     m.id,
     active === 'h2h' || active === 'predikce' || active === 'xb' || active === 'tabulka',
-    active === 'tabulka' && m.status === 'live' ? 30000 : 0,
+    active === 'tabulka' && m.status === 'live' ? 60000 : 0,
   );
 
   return (
