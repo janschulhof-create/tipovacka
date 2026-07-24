@@ -858,26 +858,28 @@ export function AIAnalysisSection({
               <h3 className="font-display text-xl font-bold text-violet-300">Co když změním tip?</h3>
               <p className="mt-1 text-[10px] text-copy-muted">Simulace je vždy navázaná na zápas vybraný nahoře. Výběr varianty nic neukládá, změnu musíš potvrdit.</p>
             </div>
-            <div className="grid min-w-[280px] grid-cols-3 overflow-hidden rounded-xl border border-line-subtle/80 bg-app-deep/35 text-center">
+            <div className="grid w-full grid-cols-2 overflow-hidden rounded-xl border border-line-subtle/80 bg-app-deep/35 text-center sm:w-auto sm:min-w-[280px] sm:grid-cols-3">
               <div className="px-3 py-2">
                 <span className="block text-[8px] text-copy-muted">Domácí</span>
                 <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.homeTeam} className="h-9 w-9" /></div>
                 <strong className="mt-1 block text-[10px] text-white">{selectedMatch.homeTeam}</strong>
               </div>
-              <div className="border-x border-line-subtle/70 px-3 py-2">
+              <div className="border-l border-line-subtle/70 px-3 py-2 sm:border-x">
                 <span className="block text-[8px] text-copy-muted">Hosté</span>
                 <div className="mt-1 flex items-center justify-center"><Flag team={selectedMatch.awayTeam} className="h-9 w-9" /></div>
                 <strong className="mt-1 block text-[10px] text-white">{selectedMatch.awayTeam}</strong>
               </div>
-              <div className="flex min-h-[82px] flex-col items-center justify-center px-3 py-2 text-center">
-                <span className="block text-[8px] text-copy-muted">Aktuální tip</span>
-                <strong className="mt-1 font-display text-2xl font-bold tabular-nums text-violet-300">{selectedMatch.userTip ? currentLabel : '–'}</strong>
+              <div className="col-span-2 flex min-h-[60px] items-center justify-between gap-3 border-t border-line-subtle/70 px-3 py-2 text-left sm:col-span-1 sm:min-h-[82px] sm:flex-col sm:justify-center sm:border-t-0 sm:text-center">
+                <div className="flex min-w-0 items-baseline gap-2 sm:block">
+                  <span className="block shrink-0 text-[8px] text-copy-muted">Aktuální tip</span>
+                  <strong className="font-display text-2xl font-bold tabular-nums text-violet-300 sm:mt-1 sm:block">{selectedMatch.userTip ? currentLabel : '–'}</strong>
+                </div>
                 {canEditSelectedMatch && (!selectedMatch.userTip || selectedLabel !== currentLabel) && (
                   <button
                     type="button"
                     onClick={() => void saveSimulatedTip()}
                     disabled={tipSaving}
-                    className="btn-pitch mt-2 !rounded-lg !px-3 !py-1.5 !text-[10px] !tracking-normal"
+                    className="btn-pitch shrink-0 whitespace-nowrap !rounded-lg !px-4 !py-2 !text-[10px] !tracking-normal sm:mt-2 sm:!px-3 sm:!py-1.5"
                   >
                     {tipSaving ? 'Ukládám…' : selectedMatch.userTip ? '🎯 Změnit tip' : '🎯 Uložit tip'}
                   </button>
