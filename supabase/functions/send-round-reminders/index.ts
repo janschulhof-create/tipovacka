@@ -2,7 +2,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 
 const responseHeaders = { 'Content-Type': 'application/json' };
-const RESULT_WINDOW_MS = 6 * 60 * 60 * 1000;
+const RESULT_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 type PushRow = {
   id: number;
@@ -368,7 +368,8 @@ Deno.serve(async (request) => {
 
   const { data: season, error: seasonError } = await supabase
     .from('seasons')
-    .select('id, name')
+    .select('id, name, competition_key')
+    .eq('competition_key', 'liga')
     .eq('is_active', true)
     .maybeSingle();
   if (seasonError) return json({ error: seasonError.message }, 500);

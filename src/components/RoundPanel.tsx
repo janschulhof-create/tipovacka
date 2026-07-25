@@ -21,8 +21,11 @@ function europeanCompetitionLabel(source: string | null | undefined): string {
 }
 
 function liveStatus(minute: number | null | undefined, clock: string | null | undefined): string {
+  const cleaned = clock?.trim().replace(/^(?:živě|live)\s*/i, '').trim() ?? '';
+  if (/^(?:ht|half[ -]?time|poločas)$/i.test(cleaned)) return 'poločas';
+  // Clock má přednost v nastaveném čase, protože zachová například 90+4′.
+  if (cleaned && (/\+/.test(cleaned) || /(?:et|pen)/i.test(cleaned))) return `živě ${cleaned}`;
   if (minute != null && Number.isFinite(minute)) return `živě ${minute}′`;
-  const cleaned = clock?.trim().replace(/^(?:živě|live)\s*/i, '').trim();
   return cleaned ? `živě ${cleaned}` : 'živě';
 }
 

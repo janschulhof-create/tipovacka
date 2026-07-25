@@ -874,6 +874,22 @@ export async function GET(req: NextRequest) {
     const updates: { id: number; payload: Record<string, unknown>; pairingChanged: boolean }[] = [];
 
     for (const m of selected) {
+      const existing = existingBySourceId.get(`${m.source_league}|${m.external_api_id}`);
+
+      // Veřejný ligový web během poločasu, nastaveného času nebo krátkého
+      // přepnutí stavu někdy dočasně vrátí „Živě“ bez skóre a bez minuty.
+      // Nikdy proto nesnižujeme kvalitu již známých live dat: hotový zápas se
+      // nevrátí do live, rozehraný zápas se nevrátí na scheduled a známé skóre,
+      // minuta i clock zůstávají, dokud zdroj neposkytne novější hodnotu.
+      const incomingStatus = m.status;
+      const stableStatus = existing?.status === 'finished'
+        && incomingStatus !== 'cancelled'
+        && incomingStatus !== 'postponed'
+          ? 'finished'
+          : existing?.status === 'live' && incomingStatus === 'scheduled'
+            ? 'live'
+            : incomingStatus;
+      const keepKnownLiveData = stableStatus === 'live' || stableStatus === 'finished';
       const payload = {
         season_id: season.id,
         external_api_id: m.external_api_id,
@@ -883,20 +899,19 @@ export async function GET(req: NextRequest) {
         kickoff: m.kickoff,
         home_team: m.home_team,
         away_team: m.away_team,
-        home_score: m.home_score,
-        away_score: m.away_score,
-        status: m.status,
-        minute: m.minute,
-        clock: m.clock,
-        duration: m.duration,
-        extra_home: m.extra_home,
-        extra_away: m.extra_away,
-        pen_home: m.pen_home,
-        pen_away: m.pen_away,
+        home_score: keepKnownLiveData && m.home_score == null ? (existing?.home_score ?? null) : m.home_score,
+        away_score: keepKnownLiveData && m.away_score == null ? (existing?.away_score ?? null) : m.away_score,
+        status: stableStatus,
+        minute: stableStatus === 'live' ? (m.minute ?? existing?.minute ?? null) : null,
+        clock: stableStatus === 'live' ? (m.clock ?? existing?.clock ?? null) : null,
+        duration: m.duration ?? existing?.duration ?? null,
+        extra_home: keepKnownLiveData && m.extra_home == null ? (existing?.extra_home ?? null) : m.extra_home,
+        extra_away: keepKnownLiveData && m.extra_away == null ? (existing?.extra_away ?? null) : m.extra_away,
+        pen_home: keepKnownLiveData && m.pen_home == null ? (existing?.pen_home ?? null) : m.pen_home,
+        pen_away: keepKnownLiveData && m.pen_away == null ? (existing?.pen_away ?? null) : m.pen_away,
         selection_reason: m.selection_reason,
       };
 
-      const existing = existingBySourceId.get(`${m.source_league}|${m.external_api_id}`);
       if (!existing) {
         inserts.push(payload);
         continue;
