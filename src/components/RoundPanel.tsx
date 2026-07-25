@@ -20,6 +20,12 @@ function europeanCompetitionLabel(source: string | null | undefined): string {
   return sourceLabel(key);
 }
 
+function liveStatus(minute: number | null | undefined, clock: string | null | undefined): string {
+  if (minute != null && Number.isFinite(minute)) return `živě ${minute}′`;
+  const cleaned = clock?.trim().replace(/^(?:živě|live)\s*/i, '').trim();
+  return cleaned ? `živě ${cleaned}` : 'živě';
+}
+
 function dt(iso: string) {
   // pevná TZ → shodný výstup na serveru i v prohlížeči (jinak hydration mismatch)
   return new Date(iso).toLocaleString('cs-CZ', {
@@ -493,7 +499,7 @@ function MatchRow({
           </span>
         )}
         {live ? (
-          <><span className="live-dot" /> <span className="text-flag">živě{m.clock ? ` ${m.clock}` : m.minute != null ? ` ${m.minute}\u2032` : ''}</span></>
+          <><span className="live-dot" /> <span className="text-flag">{liveStatus(m.minute, m.clock)}</span></>
         ) : done ? 'konec' : locked ? '🔒 uzavřeno' : '🟢 otevřeno'}
       </span>
       <span className="flex flex-col items-end gap-0.5">
@@ -713,7 +719,7 @@ export function DesktopMatchDetail({
   const live = match.status === 'live';
   const matchPredictions = predictions.filter((prediction) => prediction.match_id === match.id);
   const myTip = selectedName ? matchPredictions.find((prediction) => prediction.name === selectedName) : undefined;
-  const status = live ? `živě${match.clock ? ` ${match.clock}` : match.minute != null ? ` ${match.minute}′` : ''}` : match.status === 'finished' ? 'konec' : 'otevřeno';
+  const status = live ? liveStatus(match.minute, match.clock) : match.status === 'finished' ? 'konec' : 'otevřeno';
 
   return (
     <section className="panel-flush w-full max-w-full min-w-0 overflow-hidden shadow-elevated">

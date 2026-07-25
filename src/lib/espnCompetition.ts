@@ -323,13 +323,18 @@ export function parseChanceLigaHtml(
       html.slice(Math.max(0, homeAnchor.start - 400), Math.min(html.length, awayAnchor.end + 500)),
     );
     const kickoffMs = new Date(kickoff).getTime();
-    const inLiveWindow = timeConfirmed && now >= kickoffMs - 10 * 60_000 && now <= kickoffMs + 4 * 3600_000;
+    const hasScore = score.home != null && score.away != null;
+    const hardFinished = timeConfirmed && hasScore && now >= kickoffMs + 3 * 3600_000;
+    const inLiveWindow = timeConfirmed && now >= kickoffMs - 10 * 60_000 && now < kickoffMs + 3 * 3600_000;
     let status: MatchStatus = 'scheduled';
     if (/odložen|postpon/i.test(aroundText)) status = 'postponed';
     else if (/zrušen|cancel|abandon/i.test(aroundText)) status = 'cancelled';
     else if (/konec|dohráno|finished/i.test(aroundText)) status = 'finished';
+    // Ligový zápas nemá prodloužení. Pokud oficiální stránka stále neobsahuje
+    // text „konec“, ale tři hodiny po výkopu už uvádí skóre, nenecháme jej
+    // viset ve stavu live jen kvůli zastaralému HTML.
+    else if (hardFinished) status = 'finished';
     else if (inLiveWindow) status = 'live';
-    else if (score.home != null && score.away != null && now > kickoffMs + 3.5 * 3600_000) status = 'finished';
 
     const fixture: CompetitionFixture = {
       external_api_id: externalId,
@@ -346,7 +351,9 @@ export function parseChanceLigaHtml(
       away_score: status === 'scheduled' ? null : score.away,
       status,
       minute: null,
-      clock: status === 'live' ? 'Živě' : null,
+      // Oficiální web neposkytuje spolehlivou minutu. Generické „Živě“
+      // neukládáme do clock, aby UI nevykreslilo „živě Živě“.
+      clock: null,
       duration: 'REGULAR',
       extra_home: null,
       extra_away: null,

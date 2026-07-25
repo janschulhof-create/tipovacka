@@ -633,6 +633,36 @@ export async function GET(req: NextRequest) {
     let existingRows = ((existingData as ExistingMatch[]) ?? []);
     const preparationCleanup: { removed: number; error: string | null } = { removed: 0, error: null };
 
+    // Bezpečnostní uzávěrka pro ligové zápasy. Veřejný zdroj může po konci
+    // několik hodin vracet pouze skóre bez explicitního stavu „finished“.
+    // Starší live okno navíc takový zápas po čase přestalo kontrolovat úplně.
+    // Ligový duel nemá prodloužení, proto jej se známým skóre po 3 hodinách
+    // od výkopu uzavřeme a vyčistíme zastaralou minutu/clock.
+    if (key === 'liga') {
+      const staleLiveRows = existingRows.filter((row) => {
+        const kickoffMs = new Date(row.kickoff).getTime();
+        return row.source_league === 'cze.1'
+          && row.status === 'live'
+          && row.home_score != null
+          && row.away_score != null
+          && Number.isFinite(kickoffMs)
+          && nowMs >= kickoffMs + 3 * 3600_000;
+      });
+      if (staleLiveRows.length > 0) {
+        const staleIds = staleLiveRows.map((row) => row.id);
+        const { error: staleLiveError } = await supabase
+          .from('matches')
+          .update({ status: 'finished', minute: null, clock: null, updated_at: now.toISOString() })
+          .in('id', staleIds);
+        if (!staleLiveError) {
+          const staleSet = new Set(staleIds);
+          existingRows = existingRows.map((row) => staleSet.has(row.id)
+            ? { ...row, status: 'finished', minute: null, clock: null, updated_at: now.toISOString() }
+            : row);
+        }
+      }
+    }
+
     // Jednorázový i opakovaně bezpečný úklid Přípravy. Predikce se odstraní
     // automaticky díky ON DELETE CASCADE na predictions.match_id.
     if (key === 'liga') {
