@@ -31,7 +31,7 @@ type ResultModalData = {
   blockKey: string;
   title: string;
   summary: string;
-  mood: string;
+  notificationText: string;
   matches: ResultModalMatch[];
 };
 
@@ -194,7 +194,12 @@ function ResultNotificationModal({
           <div className="space-y-4 p-4 sm:p-6">
             <div className="space-y-2">
               {data.matches.map((match) => (
-                <article key={match.id} className="rounded-2xl border border-terrain-700 bg-terrain-900/45 p-3.5 sm:p-4">
+                <a
+                  key={match.id}
+                  href={`/?soutez=liga&kolo=${data.round}&zapas=${match.id}`}
+                  aria-label={`Otevřít detail zápasu ${match.homeTeam} – ${match.awayTeam}`}
+                  className="group block rounded-2xl border border-terrain-700 bg-terrain-900/45 p-3.5 transition hover:border-violet-400/45 hover:bg-violet-500/10 focus:outline-none focus-visible:border-violet-300 focus-visible:ring-2 focus-visible:ring-violet-400/40 sm:p-4"
+                >
                   <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
                     <div className="min-w-0 text-center">
                       <Flag team={match.homeTeam} className="mx-auto h-8 w-8" />
@@ -214,17 +219,23 @@ function ResultNotificationModal({
                         ? <>Tvůj tip <strong className="font-display text-white">{match.predictedHome}:{match.predictedAway}</strong></>
                         : 'Bez uloženého tipu'}
                     </span>
-                    <span className={`rounded-full border px-2.5 py-1 font-bold tabular-nums ${resultPointsClass(match.points)}`}>
-                      {match.points} b
+                    <span className="flex items-center gap-2">
+                      <span className={`rounded-full border px-2.5 py-1 font-bold tabular-nums ${resultPointsClass(match.points)}`}>
+                        {match.points} b
+                      </span>
+                      <span className="text-base text-violet-300/55 transition-transform group-hover:translate-x-0.5 group-hover:text-violet-200" aria-hidden>›</span>
                     </span>
                   </div>
-                </article>
+                  <div className="mt-2 text-right text-[10px] font-semibold uppercase tracking-[0.14em] text-violet-300/45 transition group-hover:text-violet-200/75">
+                    Detail zápasu
+                  </div>
+                </a>
               ))}
             </div>
 
             <div className="rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-500/12 to-indigo-500/5 p-4 sm:p-5">
-              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300/65">🎙️ Baroko</div>
-              <p className="mt-2 font-display text-base font-semibold leading-relaxed text-violet-100 sm:text-lg">{data.mood}</p>
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300/65">Celé hodnocení</div>
+              <p className="mt-2 font-display text-base font-semibold leading-relaxed text-violet-100 sm:text-lg">{data.notificationText}</p>
             </div>
 
             <button

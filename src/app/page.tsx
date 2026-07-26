@@ -171,6 +171,7 @@ export default async function Home({
                   editable={!!sessionPlayer}
                   playerId={sessionPlayer?.id ?? ''}
                   showSelector={false}
+                  initialMatchId={!Number.isNaN(zapasParam) ? zapasParam : undefined}
                 />
               ) : (
                 <div className="panel"><Empty msg="Rozpis se načte po synchronizaci." /></div>
@@ -204,6 +205,7 @@ export default async function Home({
                   playerId={sessionPlayer?.id ?? ''}
                   showSelector={false}
                   groupBySource={competition.key === 'evropa'}
+                  initialMatchId={!Number.isNaN(zapasParam) ? zapasParam : undefined}
                 />
               ) : (
                 <div className="panel"><Empty msg="Rozpis se načte po synchronizaci." /></div>

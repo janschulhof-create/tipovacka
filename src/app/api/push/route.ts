@@ -85,50 +85,106 @@ function isOneNilAgainstDraw(match: ResultMatchRow, prediction: ResultPrediction
     && prediction.predicted_home === prediction.predicted_away;
 }
 
-function resultEvaluation(points: number, ...seed: Array<string | number>) {
+function matchesLabel(count: number) {
+  if (count === 1) return '1 zápas';
+  if (count >= 2 && count <= 4) return `${count} zápasy`;
+  return `${count} zápasů`;
+}
+
+function evaluation(points: number, ...seed: Array<string | number>) {
   if (points === 10) return stablePick([
-    '„Volal Pelta.“ Přesný zásah je potvrzený.',
+    'Přesný zásah! 🎯',
     '„Tak poď vole.“ Přesný zásah! 🎯',
-    '„Když se daří a padá to tam, to umí každej blbec.“ Deset bodů je doma.',
     'Tohle není baroko, to je fotbalová poezie.',
+    'Přesný zásah, tohle sedlo na chlup.',
+    '„Volal Pelta.“ Přesný zásah je potvrzený.',
+    '„Když se daří a padá to tam, to umí každej blbec.“ Deset bodů je doma.',
   ], ...seed, points);
   if (points >= 6) return stablePick([
-    'Parádní tip. Komise potvrzuje velmi slušnou práci.',
+    'Parádní tip.',
     'Na okrese by tě po tomhle nosili na ramenou.',
+    'Komise potvrzuje: velmi slušná práce.',
   ], ...seed, points);
   if (points >= 4) return stablePick([
-    'Správný vítěz. Funkcionářsky se to obhájit dá.',
+    'Správný vítěz.',
     'Jít štěstíčku naproti. Směr dobrý, provedení lehce okresní.',
+    'Výsledek nevyšel, ale funkcionářsky se to obhájit dá.',
   ], ...seed, points);
   if (points >= 2) return stablePick([
-    'Seděl alespoň počet gólů. Na oslavy to není, do tabulky se to počítá.',
-    'Dva body. Něco se zachránilo, úplné baroko to nebylo.',
+    'Seděl alespoň počet gólů.',
+    'Něco se zachránilo, úplné baroko to nebylo.',
+    'Dva body. Na zápis to stačí, na oslavy ne.',
   ], ...seed, points);
   return stablePick([
-    '„To by člověk blil, Milane.“ Komise zapsala nulu.',
-    '„Ty by nás sfoukli jako svíčku.“ Z tohohle nebyl ani bod.',
-    '„Vy mě nechcete za tipéra?“ Tohle se bude v kabině vysvětlovat těžko.',
+    'Tentokrát bez bodu.',
+    '„To by člověk blil, Milane.“ Tentokrát bez bodu.',
+    '„Loď se potápí, bárka de ke dnu.“ Tenhle tip právě nabral vodu.',
+    'Tohle je takový baroko. Nula bodů a dlouhá cesta domů.',
+    'Tenhle tip se nepovedl. Komise zavřela zápis.',
+    'Komise zasedla a ponechala nulu v platnosti.',
+    '„Vy mě nechcete za tipéra?“ Po téhle nule komise chvíli mlčela.',
+    '„Ty by nás sfoukli jako svíčku.“ Tenhle tip nepřežil ani bod.',
   ], ...seed, points);
 }
 
-function modalMood(matches: ResultMatchRow[], predictions: ResultPredictionRow[], playerId: number, blockKey: string) {
+function truncate(value: string, maxLength = 220) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function resultNotification(matches: ResultMatchRow[], predictions: ResultPredictionRow[], playerId: number, blockKey: string) {
   const byMatch = new Map(predictions.map((prediction) => [prediction.match_id, prediction]));
+  const resultList = matches
+    .map((match) => `${match.home_team} ${match.home_score}:${match.away_score} ${match.away_team}`)
+    .join(' · ');
+
   if (matches.length === 1) {
     const match = matches[0];
     const prediction = byMatch.get(match.id);
-    if (!prediction) return '„Talent máš, tipy ti chyběj.“ Tady chyběl přesně jeden a body jsou pryč.';
-    const points = prediction.points ?? 0;
-    if (points === 0 && tippedBohemkaToWin(match, prediction)) return '„Bohemka no.“';
-    if (points === 0 && isAbsurdPrediction(prediction)) return '„Kapříci připluli.“ Tohle byl tip pro vlastní vyšetřovací spis.';
-    if (isOneNilAgainstDraw(match, prediction)) return '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“';
-    if (tippedJablonecToWin(match, prediction)) return '„Počkej pocem, nehrál tys divizi?“';
-    if (isSlovackoMatch(match)) return '„Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“';
-    if (predictionTotal(prediction) >= 6 && points > 0 && points < 10) return stablePick([
-      '„Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“',
-      '„Já vyznávám útočnou kombinační filozofii.“',
-      '„Dneska očekávám 2 body. Za výhru jsou ale 4 body.“',
-    ], playerId, blockKey, match.id, 'modal-high-goals');
-    return resultEvaluation(points, playerId, blockKey, match.id);
+    const title = `Konec: ${match.home_team} ${match.home_score}:${match.away_score} ${match.away_team}`;
+    const quoteLead = prediction && isOneNilAgainstDraw(match, prediction)
+      ? '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“'
+      : prediction && tippedJablonecToWin(match, prediction)
+        ? '„Počkej pocem, nehrál tys divizi?“'
+        : isSlovackoMatch(match)
+          ? '„Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“'
+          : match.home_score === match.away_score
+            ? stablePick([
+              '„Já bych tady, hele, Teplice kříž.“',
+              '„Řekni, co o tomhle zápase řekl Beckham.“',
+            ], playerId, blockKey, match.id, 'draw-quote')
+            : Math.abs((match.home_score ?? 0) - (match.away_score ?? 0)) === 1
+              ? stablePick([
+                '„Ty vole, to jsou nervy.“',
+                '„Řekni, co o tomhle zápase řekl Beckham.“',
+              ], playerId, blockKey, match.id, 'tight-quote')
+              : stablePick([
+                '',
+                '„Řekni, co o tomhle zápase řekl Beckham.“',
+                '„Ti volal Pelta, jo?“',
+              ], playerId, blockKey, match.id, 'result-quote');
+    const predictionPoints = prediction?.points ?? 0;
+    const resultEvaluation = prediction && predictionPoints === 0 && tippedBohemkaToWin(match, prediction)
+      ? '„Bohemka no.“'
+      : prediction && predictionPoints === 0 && isAbsurdPrediction(prediction)
+        ? '„Kapříci připluli.“ Tohle byl tip pro vlastní vyšetřovací spis.'
+        : prediction && predictionPoints > 0 && predictionPoints < 10 && predictionTotal(prediction) >= 6
+          ? stablePick([
+            '„Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“',
+            '„Já vyznávám útočnou kombinační filozofii.“',
+            '„Dneska očekávám 2 body. Za výhru jsou ale 4 body.“',
+          ], playerId, blockKey, match.id, 'high-goals')
+          : evaluation(predictionPoints, playerId, blockKey, match.id);
+    const body = prediction
+      ? `${quoteLead ? `${quoteLead} ` : ''}Tvůj tip ${prediction.predicted_home}:${prediction.predicted_away} · ${pointsLabel(prediction.points ?? 0)}. ${resultEvaluation}`
+      : stablePick([
+        'Zápas skončil. Tip jsi neměl uložený.',
+        'Bez uloženého tipu se body nerozdávají.',
+        'Sestava bez tipu, tabulka bez bodů. Čistý okres.',
+        '„Vy mě nechcete za tipéra?“ Bez uloženého tipu je odpověď komise zatím neurčitá.',
+        '„Talent máš, tipy ti chyběj.“ Tady chyběl přesně jeden a body jsou pryč.',
+      ], playerId, blockKey, match.id, 'missing-tip');
+    return { title, body: truncate(body) };
   }
 
   const tipped = matches
@@ -136,33 +192,85 @@ function modalMood(matches: ResultMatchRow[], predictions: ResultPredictionRow[]
     .filter((prediction): prediction is ResultPredictionRow => Boolean(prediction));
   const totalPoints = tipped.reduce((sum, prediction) => sum + (prediction.points ?? 0), 0);
   const exact = tipped.filter((prediction) => prediction.points === 10).length;
-  const bohemkaZero = matches.some((match) => {
+  const missing = Math.max(0, matches.length - tipped.length);
+
+  const bohemkaZeros = matches.filter((match) => {
     const prediction = byMatch.get(match.id);
     return Boolean(prediction && (prediction.points ?? 0) === 0 && tippedBohemkaToWin(match, prediction));
-  });
-  const oneNilMiss = matches.some((match) => {
+  }).length;
+  const jablonecWinTips = matches.filter((match) => {
+    const prediction = byMatch.get(match.id);
+    return Boolean(prediction && tippedJablonecToWin(match, prediction));
+  }).length;
+  const slovackoMatches = matches.filter(isSlovackoMatch).length;
+  const highGoalTips = tipped.filter((prediction) => predictionTotal(prediction) >= 6).length;
+  const absurdZeroTips = tipped.filter(
+    (prediction) => (prediction.points ?? 0) === 0 && isAbsurdPrediction(prediction),
+  ).length;
+  const oneNilDrawMisses = matches.filter((match) => {
     const prediction = byMatch.get(match.id);
     return Boolean(prediction && isOneNilAgainstDraw(match, prediction));
-  });
-  const absurdZero = tipped.some((prediction) => (prediction.points ?? 0) === 0 && isAbsurdPrediction(prediction));
-  if (bohemkaZero) return '„Bohemka no.“ V tomhle bloku důvěra v klokany nepřinesla ani bod.';
-  if (exact > 0) return stablePick([
-    '„Volal Pelta.“ Přesný zásah je potvrzený.',
-    '„Tak poď vole.“ Přesný zásah je v zápisu.',
-    '„Když se daří a padá to tam, to umí každej blbec.“',
-  ], playerId, blockKey, 'modal-exact');
-  if (oneNilMiss) return '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“ Remízový tip zmizel ze zápisu.';
-  if (absurdZero) return '„Kapříci připluli.“ V bloku se objevil tip, který si žádá vlastní komisi.';
-  if (totalPoints === 0) return stablePick([
-    '„Loď se potápí, bárka de ke dnu.“ V tomhle bloku nepřiplul ani bod.',
-    '„To by člověk blil, Milane.“ Komise nenašla jediný bod.',
-    '„Ty by nás sfoukli jako svíčku.“ Tenhle blok skončil bez jediného bodu.',
-  ], playerId, blockKey, 'modal-zero');
-  return stablePick([
-    '„Ty vole, to jsou nervy.“ Něco cinklo, ale klid v kabině nebyl.',
-    'Trocha fotbalu, trocha baroka, body zůstaly.',
-    'Výkon obhajitelný, zápis podepsán.',
-  ], playerId, blockKey, 'modal-mid');
+  }).length;
+
+  let summary = tipped.length
+    ? `Získal jsi ${pointsLabel(totalPoints)} z ${matches.length} zápasů.`
+    : `${matchesLabel(matches.length)} skončily. Neměl jsi uložený žádný tip.`;
+  if (exact > 0) summary += ` Přesné tipy: ${exact}.`;
+  if (missing > 0 && tipped.length > 0) summary += ` Bez tipu: ${missing}.`;
+
+  const mood = bohemkaZeros > 0
+    ? stablePick([
+      '„Bohemka no.“ V tomhle bloku důvěra v klokany nepřinesla ani bod.',
+      '„Bohemka no.“ Komise zaznamenala odvážný tip a stejně odvážnou nulu.',
+    ], playerId, blockKey, 'multi-bohemka-zero')
+    : exact > 0
+      ? stablePick([
+        'Přesný zásah je v zápisu.',
+        '„Tak poď vole.“ Přesný zásah je v zápisu.',
+        '„Volal Pelta.“ Přesný zásah je potvrzený.',
+        '„Když se daří a padá to tam, to umí každej blbec.“ Přesný tip je v zápisu.',
+        '„Řekni, co o tomhle zápase řekl Beckham.“ Tohle mělo parametry.',
+        'Tohle nebylo baroko, tohle mělo parametry.',
+        'Kabina tleská, komise potvrzuje.',
+      ], playerId, blockKey, 'multi-exact')
+      : oneNilDrawMisses > 0
+        ? '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“ Remízový tip právě zmizel ze zápisu.'
+        : absurdZeroTips > 0
+          ? '„Kapříci připluli.“ V tomhle bloku se objevil tip, který si žádá vlastní komisi.'
+          : totalPoints === 0
+            ? stablePick([
+              'Psojedy neexistujou. A body v tomhle bloku taky ne.',
+              '„Loď se potápí, bárka de ke dnu.“ V tomhle bloku nepřiplul ani bod.',
+              '„To by člověk blil, Milane.“ Komise nenašla jediný bod.',
+              '„Ty by nás sfoukli jako svíčku.“ Tenhle blok skončil bez jediného bodu.',
+              'Tenhle blok radši nerozebírejme.',
+              'Komise nenašla jediný bod. Rozhodnutí je konečné.',
+            ], playerId, blockKey, 'multi-zero')
+            : jablonecWinTips > 0
+              ? '„Počkej pocem, nehrál tys divizi?“ V bloku se objevil tip na výhru Jablonce.'
+              : slovackoMatches > 0
+                ? '„Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“ Slovácko zase nedalo tipérům klid.'
+                : highGoalTips > 0
+                  ? stablePick([
+                    '„Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“ Ofenzivní papíry něco přinesly.',
+                    '„Já vyznávám útočnou kombinační filozofii.“ V tomhle bloku se tipovalo bez zatažené ruční brzdy.',
+                    '„Dneska očekávám 2 body. Za výhru jsou ale 4 body.“ Přestřelka na lístku nakonec něco cinkla.',
+                  ], playerId, blockKey, 'multi-high-goals')
+                  : stablePick([
+                    'Něco cinklo, na velkou tiskovku to ale není.',
+                    'Výkon obhajitelný, zápis podepsán.',
+                    '„Ty vole, to jsou nervy.“ Něco cinklo, ale klid v kabině nebyl.',
+                    'Trocha fotbalu, trocha baroka, body zůstaly.',
+                  ], playerId, blockKey, 'multi-mid');
+
+  return {
+    title: stablePick([
+      `Dohráno: ${matchesLabel(matches.length)}`,
+      'Blok zápasů je u konce',
+      `Komise uzavřela ${matchesLabel(matches.length)}`,
+    ], playerId, blockKey, 'multi-title'),
+    body: truncate(`${summary} ${mood} ${resultList}`),
+  };
 }
 
 async function resultModalResponse(request: NextRequest, playerId: number) {
@@ -206,11 +314,7 @@ async function resultModalResponse(request: NextRequest, playerId: number) {
   const totalPoints = predictionRows.reduce((sum, prediction) => sum + (prediction.points ?? 0), 0);
   const exact = predictionRows.filter((prediction) => prediction.points === 10).length;
   const missing = Math.max(0, matchRows.length - predictionRows.length);
-  const timeLabel = new Intl.DateTimeFormat('cs-CZ', {
-    timeZone: 'Europe/Prague',
-    hour: '2-digit',
-    minute: '2-digit',
-  }).format(blockDate);
+  const notification = resultNotification(matchRows, predictionRows, playerId, blockKey);
 
   const rows = matchRows.map((match) => {
     const prediction = byMatch.get(match.id);
@@ -231,15 +335,13 @@ async function resultModalResponse(request: NextRequest, playerId: number) {
     kind: 'result',
     round,
     blockKey,
-    title: matchRows.length === 1
-      ? `${matchRows[0].home_team} ${matchRows[0].home_score}:${matchRows[0].away_score} ${matchRows[0].away_team}`
-      : `Vyhodnocení bloku ${timeLabel}`,
+    title: notification.title,
     summary: matchRows.length === 1
       ? predictionRows.length
         ? `Tvůj tip ${predictionRows[0].predicted_home}:${predictionRows[0].predicted_away} · ${pointsLabel(totalPoints)}`
         : 'Tip nebyl uložený · 0 bodů'
       : `${matchRows.length} zápasy · ${pointsLabel(totalPoints)}${exact ? ` · ${exact} přesný tip${exact > 1 ? 'y' : ''}` : ''}${missing ? ` · ${missing} bez tipu` : ''}`,
-    mood: modalMood(matchRows, predictionRows, playerId, blockKey),
+    notificationText: notification.body,
     matches: rows,
   });
 }

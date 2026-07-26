@@ -70,6 +70,7 @@ export function RoundPanel({
   onMatchSelect,
   embedded = false,
   visibleMatchIds,
+  initialMatchId,
 }: {
   matches: Match[];
   players: Player[];
@@ -89,6 +90,8 @@ export function RoundPanel({
   embedded?: boolean;
   /** Volitelný filtr pouze pro vykreslení; ukládání dál pracuje se všemi zápasy kola. */
   visibleMatchIds?: number[];
+  /** Zápas otevřený po příchodu z odkazu, například z výsledkové notifikace. */
+  initialMatchId?: number;
 }) {
   // Supabase klient (~200 kB JS) se stáhne až ve chvíli, kdy je fakt potřeba
   // (načtení/uložení tipů) – ne při startu stránky. Výrazně zrychlí první vykreslení.
@@ -348,6 +351,7 @@ export function RoundPanel({
                 desktopListOnly={desktopListOnly}
                 desktopSelected={selectedMatchId === m.id}
                 onDesktopSelect={onMatchSelect}
+                initiallyOpen={initialMatchId === m.id}
               />
             </Fragment>
           );
@@ -472,6 +476,7 @@ function MatchRow({
   desktopListOnly = false,
   desktopSelected = false,
   onDesktopSelect,
+  initiallyOpen = false,
 }: {
   m: Match;
   locked: boolean;
@@ -486,8 +491,20 @@ function MatchRow({
   desktopListOnly?: boolean;
   desktopSelected?: boolean;
   onDesktopSelect?: (matchId: number) => void;
+  initiallyOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const rowRef = useRef<HTMLLIElement>(null);
+  const [open, setOpen] = useState(initiallyOpen);
+
+  useEffect(() => {
+    if (!initiallyOpen) return;
+    setOpen(true);
+    const frame = window.requestAnimationFrame(() => {
+      const row = rowRef.current;
+      if (row && row.offsetParent !== null) row.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [initiallyOpen]);
   const live = m.status === 'live';
   const done = m.status === 'finished';
   const myTip = selectedName ? preds.find((p) => p.name === selectedName) : undefined;
@@ -572,7 +589,7 @@ function MatchRow({
   );
 
   return (
-    <li>
+    <li ref={rowRef} className="scroll-mt-20">
       {/* celý box klikací (mobil-friendly) — políčka na tipování mají stopPropagation */}
       <div
         role="button"
