@@ -1079,32 +1079,37 @@ export async function fetchHighlightlyEvents(
   for (const eventValue of data) {
     const event = asMap(eventValue);
     const type = firstString(event.type, event.eventType, event.description).toLowerCase();
-    const side = teamSide(event.team, homeTeam, awayTeam);
-    if (!side) continue;
+    const eventSide = teamSide(event.team, homeTeam, awayTeam);
+    if (!eventSide) continue;
     const minRaw = firstString(event.time, event.minute, event.clock);
     const min = minRaw ? (minRaw.includes("'") ? minRaw : `${minRaw}'`) : '?';
     const isCancelledGoal = /cancel|disallow|no goal|missed penalty/.test(type);
     const isScoredGoal = /goal|penalty/.test(type) && !isCancelledGoal && !/var/.test(type);
     if (isScoredGoal) {
+      // U vlastního gólu Highlightly váže událost na tým hráče, který si dal
+      // vlastní branku. Pro skóre i průběh ale potřebujeme stranu, které byl
+      // gól připsán, proto ji otočíme.
+      const ownGoal = /own/.test(type);
+      const side = ownGoal ? (eventSide === 'home' ? 'away' : 'home') : eventSide;
       goals.push({
         min,
         side,
         player: playerName(event.player ?? event.scorer) || 'Neznámý střelec',
-        kind: /own/.test(type) ? 'own' : /penalt/.test(type) ? 'penalty' : 'goal',
+        kind: ownGoal ? 'own' : /penalt/.test(type) ? 'penalty' : 'goal',
       });
       if (side === 'home') eventHomeScore++;
       else eventAwayScore++;
     } else if (/yellow|red|card/.test(type)) {
       cards.push({
         min,
-        side,
+        side: eventSide,
         player: playerName(event.player) || 'Neznámý hráč',
         color: /red/.test(type) ? 'red' : 'yellow',
       });
     } else if (/substitut|change/.test(type)) {
       substitutions.push({
         min,
-        side,
+        side: eventSide,
         playerIn: playerName(event.playerIn ?? event.inPlayer ?? event.player),
         playerOut: playerName(event.playerOut ?? event.outPlayer ?? event.substituted ?? event.assistingPlayer),
       });

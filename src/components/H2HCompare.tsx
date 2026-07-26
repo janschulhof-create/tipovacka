@@ -40,9 +40,12 @@ function extras(rounds: SRound[], a: string, b: string) {
     for (const m of r.matches) {
       const ta = m.tips[a]?.pts;
       const tb = m.tips[b]?.pts;
-      if (ta == null && tb == null) continue; // zápas netipoval ani jeden
-      const va = ta ?? 0;
-      const vb = tb ?? 0;
+      // Přímý souboj má smysl jen v zápasech, které oba skutečně
+      // natipovali a byly vyhodnocené. Nový tipér se tak netrestá za dobu
+      // před svým vstupem do soutěže.
+      if (ta == null || tb == null) continue;
+      const va = ta;
+      const vb = tb;
       ptsA += va;
       ptsB += vb;
       if (va > vb) winsA++;

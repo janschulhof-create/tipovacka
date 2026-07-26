@@ -79,7 +79,7 @@ export function HallOfFameSection({
           </div>
           <div className="mt-1 font-display text-2xl font-bold text-white">{worst}</div>
           <div className="text-sm text-slate-100/60">
-            {s.stats[worst].zeros}× tip za nula bodů — největší smolař ({s.season}).
+            {s.stats[worst].zeros}× tip za nula bodů — slabej, slaboučkej tipér všech dob
           </div>
         </div>
       )}

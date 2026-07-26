@@ -205,24 +205,34 @@ export default async function SinSlavyPage() {
   const leagueTitleRows = buildTitleRows(leagueSlices);
   const msTitleRows = buildTitleRows(msSlices);
 
-  const msAnalytics = await Promise.all(msMeta.map(async (season) => {
-    const [stoppage, wizardContinents] = await Promise.all([
-      getStoppageStats(season.id),
-      getWizardAndContinentStats(season.id),
-    ]);
-    return { stoppage, wizardContinents };
-  }));
+  const [leagueStoppageRows, msAnalytics] = await Promise.all([
+    Promise.all(leagueDbMeta.map((season) => getStoppageStats(season.id))),
+    Promise.all(msMeta.map(async (season) => {
+      const [stoppage, wizardContinents] = await Promise.all([
+        getStoppageStats(season.id),
+        getWizardAndContinentStats(season.id),
+      ]);
+      return { stoppage, wizardContinents };
+    })),
+  ]);
 
-  const stoppage = mergeStoppage(msAnalytics.map((row) => row.stoppage));
+  const leagueStoppage = mergeStoppage(leagueStoppageRows);
+  const msStoppage = mergeStoppage(msAnalytics.map((row) => row.stoppage));
   const continents = mergeContinents(msAnalytics.map((row) => row.wizardContinents));
   const fmtBal = (balance: number) => (
     balance > 0 ? `+${balance} b` : balance < 0 ? `−${Math.abs(balance)} b` : '0 b'
   );
+  const leagueExtra = [{
+    icon: '⏱️',
+    label: 'Pán nastavení',
+    accent: 'text-green-400',
+    rows: leagueStoppage.map((row) => ({ name: row.name, val: fmtBal(row.balance), n: row.balance })),
+  }].filter((card) => card.rows.length > 0);
   const msExtra = [{
     icon: '⏱️',
     label: 'Pán nastavení',
     accent: 'text-green-400',
-    rows: stoppage.map((row) => ({ name: row.name, val: fmtBal(row.balance), n: row.balance })),
+    rows: msStoppage.map((row) => ({ name: row.name, val: fmtBal(row.balance), n: row.balance })),
   }].filter((card) => card.rows.length > 0);
 
   const msContinents = continents.map((continent) => ({
@@ -263,6 +273,7 @@ export default async function SinSlavyPage() {
               <HallOfFameSection
                 s={leagueAllTime}
                 titleRows={leagueTitleRows}
+                extraCards={leagueExtra}
                 regionalCards={leagueRegions}
               />
             </>

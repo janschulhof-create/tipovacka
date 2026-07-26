@@ -42,6 +42,8 @@ export interface HighlightlySyncMeta {
   statsFetchedAt?: string;
   halftimeDetailsAt?: string;
   finalDetailsAt?: string;
+  finalRepairAt?: string;
+  finalRepairAttempts?: number;
 }
 export interface TeamStats {
   xg?: string; // očekávané góly

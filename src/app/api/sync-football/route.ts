@@ -37,6 +37,8 @@ type ExistingMatch = {
   away_team: string;
   home_score: number | null;
   away_score: number | null;
+  reg_home: number | null;
+  reg_away: number | null;
   status: string;
   minute: number | null;
   clock: string | null;
@@ -129,6 +131,7 @@ type HighlightlyReport = {
     updated: number;
     details: number;
     scoreCorrections: number;
+    finalRepairs: number;
     league: string | null;
   };
   warnings: string[];
@@ -170,6 +173,47 @@ function scoreFromStoredGoals(detail: MatchDetail | null | undefined): { home: n
     else if (goal.side === 'away') away++;
   }
   return home + away > 0 ? { home, away } : null;
+}
+
+
+function isSecondHalfStoppageMinute(value: string): boolean {
+  const normalized = value.replace(/[’′]/g, "'").replace(/\s+/g, '');
+  const plus = normalized.match(/(\d{1,3})\+(\d+)/);
+  if (plus) return Number(plus[1]) >= 90 && Number(plus[2]) > 0;
+  const base = normalized.match(/\d{1,3}/);
+  if (!base) return false;
+  const minute = Number(base[0]);
+  // Některé zdroje zobrazí gól z nastavení pouze jako 90'. U ligového
+  // zápisu je proto 90 a vyšší považováno za nastavení druhého poločasu.
+  return minute >= 90;
+}
+
+function regularScoreFromDetail(
+  detail: MatchDetail | null | undefined,
+  finalHome: number | null,
+  finalAway: number | null,
+): { home: number; away: number } | null {
+  if (finalHome == null || finalAway == null || !detail?.goals?.length) return null;
+  const scored = scoreFromStoredGoals(detail);
+  if (!scored || scored.home !== finalHome || scored.away !== finalAway) return null;
+  let stoppageHome = 0;
+  let stoppageAway = 0;
+  for (const goal of detail.goals) {
+    if (!isSecondHalfStoppageMinute(goal.min)) continue;
+    if (goal.side === 'home') stoppageHome++;
+    else stoppageAway++;
+  }
+  const home = finalHome - stoppageHome;
+  const away = finalAway - stoppageAway;
+  return home >= 0 && away >= 0 ? { home, away } : null;
+}
+
+function detailHasProgress(detail: MatchDetail | null | undefined): boolean {
+  return !!detail && ((detail.goals?.length ?? 0) > 0 || (detail.cards?.length ?? 0) > 0 || (detail.substitutions?.length ?? 0) > 0);
+}
+
+function detailHasStats(detail: MatchDetail | null | undefined): boolean {
+  return !!detail?.stats && (Object.keys(detail.stats.home).length > 0 || Object.keys(detail.stats.away).length > 0);
 }
 
 function reconcileHighlightlyScore(
@@ -251,6 +295,7 @@ async function syncHighlightlyLiga(args: {
       updated: 0,
       details: 0,
       scoreCorrections: 0,
+      finalRepairs: 0,
       league: null,
     },
     warnings: [],
@@ -361,7 +406,7 @@ async function syncHighlightlyLiga(args: {
     const utcAnchor = new Date(`${today}T00:00:00.000Z`).getTime();
     const { data: dayData, error } = await args.supabase
       .from('matches')
-      .select('id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, status, minute, clock, duration, extra_home, extra_away, pen_home, pen_away, selection_reason, detail, updated_at')
+      .select('id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, reg_home, reg_away, status, minute, clock, duration, extra_home, extra_away, pen_home, pen_away, selection_reason, detail, updated_at')
       .eq('season_id', args.seasonId)
       // Širší UTC okno bezpečně pokryje český zimní i letní čas; přesný den
       // následně ověříme přes Europe/Prague.
@@ -372,6 +417,94 @@ async function syncHighlightlyLiga(args: {
     const dayRows = ((dayData as ExistingMatch[]) ?? []).filter((row) => pragueYmd(row.kickoff) === today);
     report.live.date = today;
     report.live.due = shouldPollHighlightly(dayRows, args.now.getTime(), pollMinutes, args.force);
+
+    // Zpětná oprava detailů dohraných ligových zápasů. Původní logika
+    // načítala události a statistiky jen v okamžiku, kdy Highlightly samo
+    // přepnulo zápas na finished. Když se zápas uzavřel naší časovou pojistkou,
+    // nebo API detail v tom okamžiku nebyl dostupný, průběh, statistiky i skóre
+    // v 90. minutě zůstaly navždy prázdné. Opravujeme proto nejvýše dva
+    // nedávné zápasy za běh, s třicetiminutovým odstupem mezi pokusy.
+    const repairFrom = new Date(args.now.getTime() - 36 * 3600_000).toISOString();
+    const { data: recentFinished, error: recentFinishedError } = await args.supabase
+      .from('matches')
+      .select('id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, reg_home, reg_away, status, minute, clock, duration, extra_home, extra_away, pen_home, pen_away, selection_reason, detail, updated_at')
+      .eq('season_id', args.seasonId)
+      .eq('source_league', 'cze.1')
+      .eq('status', 'finished')
+      .gte('kickoff', repairFrom)
+      .order('kickoff', { ascending: true });
+    if (recentFinishedError) {
+      report.warnings.push(`Oprava finálních detailů: ${recentFinishedError.message}`);
+    } else {
+      const repairCandidates = ((recentFinished as ExistingMatch[]) ?? [])
+        .filter((row) => {
+          const meta = hlMeta(row.detail);
+          if (!meta || meta.id <= 0 || row.home_score == null || row.away_score == null) return false;
+          const complete = detailHasProgress(row.detail) && detailHasStats(row.detail) && row.reg_home != null && row.reg_away != null;
+          if (complete) return false;
+          const lastAttempt = meta.finalRepairAt ? new Date(meta.finalRepairAt).getTime() : 0;
+          return args.force || !lastAttempt || args.now.getTime() - lastAttempt >= 30 * 60_000;
+        })
+        .sort((a, b) => {
+          const missingA = Number(!detailHasProgress(a.detail)) + Number(!detailHasStats(a.detail)) + Number(a.reg_home == null || a.reg_away == null);
+          const missingB = Number(!detailHasProgress(b.detail)) + Number(!detailHasStats(b.detail)) + Number(b.reg_home == null || b.reg_away == null);
+          return missingB - missingA || (b.home_score ?? 0) + (b.away_score ?? 0) - ((a.home_score ?? 0) + (a.away_score ?? 0));
+        })
+        .slice(0, args.force ? 6 : 2);
+
+      for (const row of repairCandidates) {
+        if (!canSpend()) break;
+        const meta = hlMeta(row.detail)!;
+        let repairedDetail = row.detail ?? { _highlightly: meta };
+        let detailRequests = 0;
+        try {
+          const needEvents = !detailHasProgress(repairedDetail) || row.reg_home == null || row.reg_away == null;
+          if (needEvents && canSpend()) {
+            const events = await fetchHighlightlyEvents(meta.id, row.home_team, row.away_team);
+            absorb(events);
+            detailRequests += events.requests;
+            repairedDetail = mergeDetail(repairedDetail, {
+              goals: events.goals?.length ? events.goals : repairedDetail.goals,
+              cards: events.cards?.length ? events.cards : repairedDetail.cards,
+              substitutions: events.substitutions?.length ? events.substitutions : repairedDetail.substitutions,
+            });
+          }
+          if (!detailHasStats(repairedDetail) && canSpend()) {
+            const stats = await fetchHighlightlyStatistics(meta.id, row.home_team, row.away_team);
+            absorb(stats);
+            detailRequests += stats.requests;
+            repairedDetail = mergeDetail(repairedDetail, { stats: stats.stats ?? repairedDetail.stats });
+          }
+        } catch (detailError) {
+          report.warnings.push(`Finální detail ${row.home_team}–${row.away_team}: ${String(detailError)}`);
+        }
+
+        const regular = regularScoreFromDetail(repairedDetail, row.home_score, row.away_score);
+        const complete = detailHasProgress(repairedDetail) && detailHasStats(repairedDetail) && regular != null;
+        repairedDetail = mergeDetail(repairedDetail, {
+          _highlightly: {
+            ...meta,
+            eventsFetchedAt: detailHasProgress(repairedDetail) ? args.now.toISOString() : meta.eventsFetchedAt,
+            statsFetchedAt: detailHasStats(repairedDetail) ? args.now.toISOString() : meta.statsFetchedAt,
+            finalRepairAt: args.now.toISOString(),
+            finalRepairAttempts: (meta.finalRepairAttempts ?? 0) + 1,
+            finalDetailsAt: complete ? args.now.toISOString() : meta.finalDetailsAt,
+          },
+        });
+        const updatePayload: Record<string, unknown> = { detail: repairedDetail };
+        if (regular) {
+          updatePayload.reg_home = regular.home;
+          updatePayload.reg_away = regular.away;
+        }
+        const { error: repairUpdateError } = await args.supabase.from('matches').update(updatePayload).eq('id', row.id);
+        if (repairUpdateError) report.warnings.push(`Uložení finálního detailu ${row.id}: ${repairUpdateError.message}`);
+        else {
+          report.live.finalRepairs++;
+          report.live.details += detailRequests;
+        }
+      }
+    }
+
     if (!report.live.due || !canSpend()) return report;
 
     // Throttle zapíšeme ještě před voláním API. I při 404/500 nebo nulovém
@@ -505,10 +638,23 @@ async function syncHighlightlyLiga(args: {
             report.warnings.push(`Statistiky ${row.home_team}–${row.away_team}: ${String(detailError)}`);
           }
         }
+        const finalRegular = detailMilestone === 'final'
+          ? regularScoreFromDetail(detail, match.homeScore ?? row.home_score, match.awayScore ?? row.away_score)
+          : null;
+        const finalComplete = detailMilestone === 'final'
+          && detailHasProgress(detail)
+          && detailHasStats(detail)
+          && finalRegular != null;
         detail = mergeDetail(detail, {
           _highlightly: {
             ...detail._highlightly!,
-            ...(detailMilestone === 'final' ? { finalDetailsAt: args.now.toISOString() } : { halftimeDetailsAt: args.now.toISOString() }),
+            ...(detailMilestone === 'final'
+              ? {
+                  finalRepairAt: args.now.toISOString(),
+                  finalRepairAttempts: (detail._highlightly?.finalRepairAttempts ?? 0) + 1,
+                  ...(finalComplete ? { finalDetailsAt: args.now.toISOString() } : {}),
+                }
+              : { halftimeDetailsAt: args.now.toISOString() }),
           },
         });
       } else if (
@@ -548,9 +694,16 @@ async function syncHighlightlyLiga(args: {
           + `${reconciledScore.home ?? '?'}:${reconciledScore.away ?? '?'} podle gólových událostí.`,
         );
       }
+      const finalHomeScore = reconciledScore.home ?? row.home_score;
+      const finalAwayScore = reconciledScore.away ?? row.away_score;
+      const regular = stableStatus === 'finished'
+        ? regularScoreFromDetail(detail, finalHomeScore, finalAwayScore)
+        : null;
       const payload = {
-        home_score: reconciledScore.home ?? row.home_score,
-        away_score: reconciledScore.away ?? row.away_score,
+        home_score: finalHomeScore,
+        away_score: finalAwayScore,
+        reg_home: regular?.home ?? row.reg_home,
+        reg_away: regular?.away ?? row.reg_away,
         status: stableStatus,
         minute: stableStatus === 'live' ? match.minute : null,
         clock: stableStatus === 'live' ? match.clock : null,
@@ -621,7 +774,7 @@ export async function GET(req: NextRequest) {
     const { data: existingData, error: existingError } = await supabase
       .from('matches')
       .select(
-        'id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, status, minute, clock, duration, extra_home, extra_away, pen_home, pen_away, selection_reason, detail, updated_at',
+        'id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, reg_home, reg_away, status, minute, clock, duration, extra_home, extra_away, pen_home, pen_away, selection_reason, detail, updated_at',
       )
       .eq('season_id', season.id);
 
