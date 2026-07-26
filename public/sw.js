@@ -1,5 +1,5 @@
 /* Tipovačka – service worker pro PWA, offline fallback a webové push notifikace. */
-const VERSION = 'tipovacka-v6-push-results';
+const VERSION = 'tipovacka-v7-push-result-modal';
 const STATIC_CACHE = `static-${VERSION}`;
 
 const OFFLINE_HTML = `<!doctype html><html lang="cs"><head><meta charset="utf-8">

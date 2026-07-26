@@ -14,6 +14,10 @@ export interface ActiveSeason {
   competition_key: CompetitionKey;
 }
 
+export interface CompetitionSeason extends ActiveSeason {
+  is_active: boolean;
+}
+
 export async function getActiveSeasonId(competitionKey: CompetitionKey = 'liga'): Promise<number | null> {
   const season = await getActiveSeason(competitionKey);
   return season?.id ?? null;
@@ -50,6 +54,17 @@ export async function getLatestSeason(competitionKey: CompetitionKey): Promise<A
 export async function getLatestSeasonId(competitionKey: CompetitionKey): Promise<number | null> {
   const season = await getLatestSeason(competitionKey);
   return season?.id ?? null;
+}
+
+/** Všechny uložené ročníky jedné soutěže, od nejstaršího po nejnovější. */
+export async function getCompetitionSeasons(competitionKey: CompetitionKey): Promise<CompetitionSeason[]> {
+  const sb = createServerReadClient();
+  const { data } = await sb
+    .from('seasons')
+    .select('id, name, competition_key, is_active')
+    .eq('competition_key', competitionKey)
+    .order('id', { ascending: true });
+  return (data as CompetitionSeason[]) ?? [];
 }
 
 /** Popisky kol uložené u zápasů (např. „Evropa · týden 31/2026"). */
@@ -695,14 +710,22 @@ export async function getPlayers(): Promise<Player[]> {
 
 /** Všechna kola sezóny v jednotném "tip" tvaru (pro detailní statistiky živé sezóny). */
 export async function getSeasonTipRounds(
-  seasonId: number
+  seasonId: number,
+  competitionKey?: CompetitionKey,
 ): Promise<{ round: number; matches: { home: string; away: string; hs: number | null; as: number | null; tips: Record<string, { h: number | null; a: number | null; pts: number | null }> }[] }[]> {
   const sb = createServerReadClient();
-  const { data: ms } = await sb
+  let matchQuery = sb
     .from('matches')
     .select('id, round, home_team, away_team, home_score, away_score')
-    .eq('season_id', seasonId)
-    .order('round', { ascending: true });
+    .eq('season_id', seasonId);
+
+  // V ligové Síni slávy se počítají pouze zápasy Chance ligy. Příprava ani
+  // případné evropské zápasy uložené vedle ligové sezóny sem nepatří.
+  if (competitionKey === 'liga') {
+    matchQuery = matchQuery.gt('round', 0).eq('source_league', 'cze.1');
+  }
+
+  const { data: ms } = await matchQuery.order('round', { ascending: true });
   type M = { id: number; round: number; home_team: string; away_team: string; home_score: number | null; away_score: number | null };
   const matches = (ms as M[]) ?? [];
   if (matches.length === 0) return [];

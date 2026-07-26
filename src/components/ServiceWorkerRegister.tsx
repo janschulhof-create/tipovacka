@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Flag } from './Flag';
 
 type PushStatus = {
   authenticated: boolean;
@@ -9,6 +10,29 @@ type PushStatus = {
   subscribed: boolean;
   setupIssue?: string;
   preferences: { notify24h: boolean; notify3h: boolean; notifyResults: boolean };
+};
+
+
+type ResultModalMatch = {
+  id: number;
+  homeTeam: string;
+  awayTeam: string;
+  homeScore: number;
+  awayScore: number;
+  predictedHome: number | null;
+  predictedAway: number | null;
+  points: number;
+  hadPrediction: boolean;
+};
+
+type ResultModalData = {
+  kind: 'result';
+  round: number;
+  blockKey: string;
+  title: string;
+  summary: string;
+  mood: string;
+  matches: ResultModalMatch[];
 };
 
 const SNOOZE_KEY = 'tipovacka-push-snooze-until';
@@ -106,12 +130,189 @@ async function postPush(body: Record<string, unknown>) {
   return data;
 }
 
-/** Registrace service workeru a jednorázová nenásilná nabídka upozornění. */
+function resultPointsClass(points: number) {
+  if (points === 10) return 'border-violet-400/35 bg-violet-500/15 text-violet-200';
+  if (points >= 4) return 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200';
+  if (points > 0) return 'border-amber-400/30 bg-amber-500/10 text-amber-200';
+  return 'border-rose-400/30 bg-rose-500/10 text-rose-200';
+}
+
+function ResultNotificationModal({
+  data,
+  loading,
+  error,
+  onClose,
+}: {
+  data: ResultModalData | null;
+  loading: boolean;
+  error: string;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[100] flex items-center justify-center bg-[#030712]/75 p-3 backdrop-blur-sm sm:p-6"
+      role="presentation"
+      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+    >
+      <section
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="push-result-title"
+        className="relative max-h-[88dvh] w-full max-w-xl overflow-y-auto rounded-[24px] border border-violet-400/25 bg-[#0d1830] shadow-[0_28px_90px_rgba(0,0,0,.55)]"
+        onClick={(event) => event.stopPropagation()}
+      >
+        <button
+          type="button"
+          onClick={onClose}
+          aria-label="Zavřít vyhodnocení"
+          className="absolute right-3 top-3 z-10 flex h-9 w-9 items-center justify-center rounded-full border border-slate-500/25 bg-[#091326]/85 text-xl leading-none text-slate-200/80 transition hover:border-violet-300/50 hover:text-white"
+        >
+          ×
+        </button>
+
+        <div className="border-b border-terrain-700/80 bg-gradient-to-br from-violet-500/10 via-transparent to-indigo-500/5 px-5 pb-5 pt-5 sm:px-6 sm:pb-6 sm:pt-6">
+          <div className="eyebrow pr-12"><span className="flag-chip" /> Vyhodnocení tipu</div>
+          {loading ? (
+            <div className="mt-5 space-y-3">
+              <div className="h-7 w-3/4 animate-pulse rounded-lg bg-slate-500/15" />
+              <div className="h-4 w-1/2 animate-pulse rounded-lg bg-slate-500/10" />
+            </div>
+          ) : error ? (
+            <div className="mt-5 pr-10">
+              <h2 id="push-result-title" className="font-display text-xl font-bold text-white">Vyhodnocení se nepodařilo otevřít</h2>
+              <p className="mt-2 text-sm leading-relaxed text-rose-200/75">{error}</p>
+            </div>
+          ) : data ? (
+            <div className="mt-4 pr-10">
+              <h2 id="push-result-title" className="font-display text-xl font-bold leading-tight text-white sm:text-2xl">{data.title}</h2>
+              <p className="mt-2 text-sm font-semibold text-violet-200/85">{data.summary}</p>
+            </div>
+          ) : null}
+        </div>
+
+        {!loading && data && (
+          <div className="space-y-4 p-4 sm:p-6">
+            <div className="space-y-2">
+              {data.matches.map((match) => (
+                <article key={match.id} className="rounded-2xl border border-terrain-700 bg-terrain-900/45 p-3.5 sm:p-4">
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 sm:gap-3">
+                    <div className="min-w-0 text-center">
+                      <Flag team={match.homeTeam} className="mx-auto h-8 w-8" />
+                      <div className="mt-1.5 truncate text-xs font-semibold text-white sm:text-sm">{match.homeTeam}</div>
+                    </div>
+                    <div className="rounded-xl border border-slate-500/20 bg-[#071225] px-3 py-2 font-display text-2xl font-bold tabular-nums text-white sm:px-4 sm:text-3xl">
+                      {match.homeScore}:{match.awayScore}
+                    </div>
+                    <div className="min-w-0 text-center">
+                      <Flag team={match.awayTeam} className="mx-auto h-8 w-8" />
+                      <div className="mt-1.5 truncate text-xs font-semibold text-white sm:text-sm">{match.awayTeam}</div>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between gap-3 border-t border-terrain-700/70 pt-3 text-xs">
+                    <span className="text-slate-300/60">
+                      {match.hadPrediction && match.predictedHome != null && match.predictedAway != null
+                        ? <>Tvůj tip <strong className="font-display text-white">{match.predictedHome}:{match.predictedAway}</strong></>
+                        : 'Bez uloženého tipu'}
+                    </span>
+                    <span className={`rounded-full border px-2.5 py-1 font-bold tabular-nums ${resultPointsClass(match.points)}`}>
+                      {match.points} b
+                    </span>
+                  </div>
+                </article>
+              ))}
+            </div>
+
+            <div className="rounded-2xl border border-violet-400/25 bg-gradient-to-br from-violet-500/12 to-indigo-500/5 p-4 sm:p-5">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-violet-300/65">🎙️ Baroko</div>
+              <p className="mt-2 font-display text-base font-semibold leading-relaxed text-violet-100 sm:text-lg">{data.mood}</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={onClose}
+              className="mx-auto block rounded-xl border border-terrain-600 bg-terrain-900/60 px-5 py-2.5 text-xs font-semibold text-slate-200 transition hover:border-violet-400/50 hover:text-white"
+            >
+              Zavřít
+            </button>
+          </div>
+        )}
+
+        {!loading && error && (
+          <div className="p-5 sm:p-6">
+            <button type="button" onClick={onClose} className="rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 px-5 py-2.5 text-xs font-bold text-white">Zavřít</button>
+          </div>
+        )}
+      </section>
+    </div>
+  );
+}
+
+/** Registrace service workeru, jednorázová nabídka upozornění a výsledkový modal. */
 export function ServiceWorkerRegister() {
   const [status, setStatus] = useState<PushStatus | null>(null);
   const [visible, setVisible] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [resultModal, setResultModal] = useState<ResultModalData | null>(null);
+  const [resultLoading, setResultLoading] = useState(false);
+  const [resultError, setResultError] = useState('');
+  const [resultOpen, setResultOpen] = useState(false);
+
+  const closeResultModal = useCallback(() => {
+    setResultOpen(false);
+    setResultModal(null);
+    setResultError('');
+    setResultLoading(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('push');
+    url.searchParams.delete('season');
+    url.searchParams.delete('round');
+    url.searchParams.delete('block');
+    window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
+  const loadResultFromUrl = useCallback(async () => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('push') !== 'result') return;
+    const season = params.get('season') || '';
+    const round = params.get('round') || params.get('kolo') || '';
+    const block = params.get('block') || '';
+    setResultOpen(true);
+    setResultLoading(true);
+    setResultError('');
+    setResultModal(null);
+    try {
+      const query = new URLSearchParams({ view: 'result', season, round, block });
+      const response = await fetch(`/api/push?${query.toString()}`, { cache: 'no-store' });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data?.error || 'Vyhodnocení se nepodařilo načíst.');
+      setResultModal(data as ResultModalData);
+    } catch (error) {
+      setResultError(error instanceof Error ? error.message : 'Vyhodnocení se nepodařilo načíst.');
+    } finally {
+      setResultLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadResultFromUrl();
+    window.addEventListener('popstate', loadResultFromUrl);
+    return () => window.removeEventListener('popstate', loadResultFromUrl);
+  }, [loadResultFromUrl]);
+
+  useEffect(() => {
+    if (!resultOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeResultModal();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', onKeyDown);
+    };
+  }, [closeResultModal, resultOpen]);
 
   useEffect(() => {
     if (!('serviceWorker' in navigator)) return;
@@ -161,27 +362,38 @@ export function ServiceWorkerRegister() {
     }
   }, [status]);
 
-  if (!visible) return null;
-
   return (
-    <aside className="fixed bottom-[76px] left-3 right-3 z-50 mx-auto max-w-md rounded-2xl border border-violet-400/30 bg-[#101a31]/95 p-4 shadow-2xl backdrop-blur lg:bottom-5 lg:left-auto lg:right-5">
-      <div className="flex items-start gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-xl">🔔</div>
-        <div className="min-w-0 flex-1">
-          <div className="font-display text-sm font-bold text-white">Nezapomeň na tipy</div>
-          <p className="mt-1 text-xs leading-relaxed text-slate-300/65">Upozorníme tě před kolem a po dohrání ti pošleme i stručné vyhodnocení tipů.</p>
-          {message && <p className="mt-2 text-xs text-amber-300/85">{message}</p>}
-          <div className="mt-3 flex gap-2">
-            <button type="button" onClick={enable} disabled={busy} className="rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
-              {busy ? 'Zapínám…' : 'Zapnout upozornění'}
-            </button>
-            <button type="button" onClick={() => { localStorage.setItem(SNOOZE_KEY, String(Date.now() + THIRTY_DAYS)); setVisible(false); }} className="rounded-xl border border-slate-600/60 px-3 py-2 text-xs text-slate-300/70">
-              Teď ne
-            </button>
+    <>
+      {resultOpen && (
+        <ResultNotificationModal
+          data={resultModal}
+          loading={resultLoading}
+          error={resultError}
+          onClose={closeResultModal}
+        />
+      )}
+
+      {visible && (
+        <aside className="fixed bottom-[76px] left-3 right-3 z-50 mx-auto max-w-md rounded-2xl border border-violet-400/30 bg-[#101a31]/95 p-4 shadow-2xl backdrop-blur lg:bottom-5 lg:left-auto lg:right-5">
+          <div className="flex items-start gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-500/15 text-xl">🔔</div>
+            <div className="min-w-0 flex-1">
+              <div className="font-display text-sm font-bold text-white">Nezapomeň na tipy</div>
+              <p className="mt-1 text-xs leading-relaxed text-slate-300/65">Upozorníme tě před kolem a po dohrání ti pošleme i stručné vyhodnocení tipů.</p>
+              {message && <p className="mt-2 text-xs text-amber-300/85">{message}</p>}
+              <div className="mt-3 flex gap-2">
+                <button type="button" onClick={enable} disabled={busy} className="rounded-xl bg-gradient-to-r from-violet-500 to-indigo-500 px-4 py-2 text-xs font-bold text-white disabled:opacity-50">
+                  {busy ? 'Zapínám…' : 'Zapnout upozornění'}
+                </button>
+                <button type="button" onClick={() => { localStorage.setItem(SNOOZE_KEY, String(Date.now() + THIRTY_DAYS)); setVisible(false); }} className="rounded-xl border border-slate-600/60 px-3 py-2 text-xs text-slate-300/70">
+                  Teď ne
+                </button>
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-    </aside>
+        </aside>
+      )}
+    </>
   );
 }
 

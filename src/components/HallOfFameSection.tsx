@@ -20,11 +20,15 @@ type Row = { name: string; val: string; n?: number };
 function positionCounts(s: HofSeason) {
   const counts: Record<string, number[]> = Object.fromEntries(s.players.map((p) => [p, [0, 0, 0, 0, 0, 0]]));
   for (const r of s.rounds) {
-    const pts: Record<string, number> = Object.fromEntries(s.players.map((p) => [p, 0]));
+    // V all-time přehledu se hráč porovnává pouze s účastníky daného ročníku.
+    // Nový tipér tak nedostane fiktivní umístění ani absence za sezonu, které se
+    // vůbec neúčastnil.
+    const roundPlayers = r.participants ?? s.players;
+    const pts: Record<string, number> = Object.fromEntries(roundPlayers.map((p) => [p, 0]));
     for (const m of r.matches)
       for (const [n, t] of Object.entries(m.tips)) if (t.pts != null && pts[n] != null) pts[n] += t.pts;
-    for (const p of s.players) {
-      const place = 1 + s.players.filter((q) => pts[q] > pts[p]).length;
+    for (const p of roundPlayers) {
+      const place = 1 + roundPlayers.filter((q) => pts[q] > pts[p]).length;
       if (place >= 1 && place <= 6) counts[p][place - 1]++;
     }
   }

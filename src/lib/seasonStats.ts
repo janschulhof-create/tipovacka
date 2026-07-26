@@ -5,7 +5,7 @@ import { canonTeam } from './teamAliases';
 
 export type Tip = { h: number | null; a: number | null; pts: number | null };
 export type SMatch = { home: string; away: string; hs: number | null; as: number | null; tips: Record<string, Tip> };
-export type SRound = { round: number; matches: SMatch[] };
+export type SRound = { round: number; matches: SMatch[]; participants?: string[]; seasonLabel?: string };
 export type RankRow = { name: string; val: string; n?: number };
 
 export type PerPlayer = {
@@ -23,11 +23,12 @@ export function computePerPlayer(rounds: SRound[], players: string[]): Record<st
   const scored: Record<string, number> = Object.fromEntries(players.map((p) => [p, 0]));
 
   for (const r of rounds) {
-    const rp: Record<string, number> = Object.fromEntries(players.map((p) => [p, 0]));
+    const roundPlayers = r.participants ?? players;
+    const rp: Record<string, number> = Object.fromEntries(roundPlayers.map((p) => [p, 0]));
     let anyPts = false;
     for (const m of r.matches) {
       const finished = m.hs != null && m.as != null;
-      for (const p of players) {
+      for (const p of roundPlayers) {
         const t = m.tips[p];
         if (t && t.h != null && t.a != null) {
           goals[p].sum += t.h + t.a;
@@ -47,11 +48,11 @@ export function computePerPlayer(rounds: SRound[], players: string[]): Record<st
         }
       }
     }
-    if (anyPts) {
-      const best = Math.max(...players.map((p) => rp[p]));
-      for (const p of players) {
-        if (rp[p] > acc[p].bestRound) { acc[p].bestRound = rp[p]; acc[p].bestRoundNo = r.round; }
-        if (rp[p] === best && best > 0) acc[p].roundWins += 1;
+    if (anyPts && roundPlayers.length > 0) {
+      const best = Math.max(...roundPlayers.map((p) => rp[p] ?? 0));
+      for (const p of roundPlayers) {
+        if ((rp[p] ?? 0) > acc[p].bestRound) { acc[p].bestRound = rp[p] ?? 0; acc[p].bestRoundNo = r.round; }
+        if ((rp[p] ?? 0) === best && best > 0) acc[p].roundWins += 1;
       }
     }
   }

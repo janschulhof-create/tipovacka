@@ -562,7 +562,14 @@ Deno.serve(async (request) => {
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
         tag: `liga-${season.id}-${block.round}-results-${Date.parse(block.blockKey)}`,
-        url: `/?soutez=liga&kolo=${block.round}`,
+        url: `/?${new URLSearchParams({
+          soutez: 'liga',
+          kolo: String(block.round),
+          push: 'result',
+          season: String(season.id),
+          round: String(block.round),
+          block: block.blockKey,
+        }).toString()}`,
       });
 
       const delivered = await sendToPlayer(
