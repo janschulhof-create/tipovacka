@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Flag } from './Flag';
 
 type PushStatus = {
@@ -268,12 +268,14 @@ export function ServiceWorkerRegister() {
   const [resultLoading, setResultLoading] = useState(false);
   const [resultError, setResultError] = useState('');
   const [resultOpen, setResultOpen] = useState(false);
+  const activeResultRequest = useRef('');
 
   const closeResultModal = useCallback(() => {
     setResultOpen(false);
     setResultModal(null);
     setResultError('');
     setResultLoading(false);
+    activeResultRequest.current = '';
     const url = new URL(window.location.href);
     url.searchParams.delete('push');
     url.searchParams.delete('season');
@@ -282,12 +284,29 @@ export function ServiceWorkerRegister() {
     window.history.replaceState(window.history.state, '', `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
-  const loadResultFromUrl = useCallback(async () => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('push') !== 'result') return;
+  const loadResultFromUrl = useCallback(async (sourceUrl?: string) => {
+    let url: URL;
+    try {
+      url = sourceUrl ? new URL(sourceUrl, window.location.origin) : new URL(window.location.href);
+    } catch {
+      return false;
+    }
+
+    const params = url.searchParams;
+    if (params.get('push') !== 'result') return false;
     const season = params.get('season') || '';
     const round = params.get('round') || params.get('kolo') || '';
     const block = params.get('block') || '';
+    const requestKey = `${season}|${round}|${block}`;
+
+    // Kliknutí může přijít současně přes URL i zprávu ze service workeru.
+    // Stejný modal proto nenačítáme dvakrát.
+    if (activeResultRequest.current === requestKey) {
+      setResultOpen(true);
+      return true;
+    }
+    activeResultRequest.current = requestKey;
+
     setResultOpen(true);
     setResultLoading(true);
     setResultError('');
@@ -303,12 +322,53 @@ export function ServiceWorkerRegister() {
     } finally {
       setResultLoading(false);
     }
+    return true;
   }, []);
 
   useEffect(() => {
-    void loadResultFromUrl();
-    window.addEventListener('popstate', loadResultFromUrl);
-    return () => window.removeEventListener('popstate', loadResultFromUrl);
+    const openFromCurrentUrl = () => { void loadResultFromUrl(); };
+    const onServiceWorkerMessage = (event: MessageEvent) => {
+      const message = event.data as { type?: string; url?: string } | null;
+      if (message?.type !== 'TIPOVACKA_OPEN_NOTIFICATION' || !message.url) return;
+
+      let opensResultModal = false;
+      try {
+        opensResultModal = new URL(message.url, window.location.origin).searchParams.get('push') === 'result';
+      } catch {
+        opensResultModal = false;
+      }
+
+      // Běžné upomínky se dál navigují na příslušné kolo. Přímé předání
+      // zachytáváme pouze u výsledkové notifikace, která otevírá modal.
+      if (!opensResultModal) {
+        event.ports?.[0]?.postMessage({ handled: false });
+        event.ports?.[0]?.close();
+        return;
+      }
+
+      // Odpověď service workeru odešleme hned. Modal se otevře synchronně
+      // ještě před dokončením síťového načtení jeho obsahu.
+      void loadResultFromUrl(message.url);
+      event.ports?.[0]?.postMessage({ handled: true });
+      event.ports?.[0]?.close();
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') openFromCurrentUrl();
+    };
+
+    openFromCurrentUrl();
+    window.addEventListener('popstate', openFromCurrentUrl);
+    window.addEventListener('pageshow', openFromCurrentUrl);
+    window.addEventListener('focus', openFromCurrentUrl);
+    document.addEventListener('visibilitychange', onVisibilityChange);
+    navigator.serviceWorker?.addEventListener('message', onServiceWorkerMessage);
+    return () => {
+      window.removeEventListener('popstate', openFromCurrentUrl);
+      window.removeEventListener('pageshow', openFromCurrentUrl);
+      window.removeEventListener('focus', openFromCurrentUrl);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
+      navigator.serviceWorker?.removeEventListener('message', onServiceWorkerMessage);
+    };
   }, [loadResultFromUrl]);
 
   useEffect(() => {

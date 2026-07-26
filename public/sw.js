@@ -1,5 +1,5 @@
 /* Tipovačka – service worker pro PWA, offline fallback a webové push notifikace. */
-const VERSION = 'tipovacka-v7-push-result-modal';
+const VERSION = 'tipovacka-v8-push-click-handoff';
 const STATIC_CACHE = `static-${VERSION}`;
 
 const OFFLINE_HTML = `<!doctype html><html lang="cs"><head><meta charset="utf-8">
@@ -35,18 +35,64 @@ self.addEventListener('push', (event) => {
   }));
 });
 
+function handOffNotificationClick(client, targetUrl) {
+  return new Promise((resolve) => {
+    let settled = false;
+    let responsePort = null;
+    const finish = (handled) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      responsePort?.close();
+      resolve(handled);
+    };
+    const timer = setTimeout(() => finish(false), 700);
+
+    try {
+      const channel = new MessageChannel();
+      responsePort = channel.port1;
+      responsePort.onmessage = (message) => finish(Boolean(message.data?.handled));
+      client.postMessage({ type: 'TIPOVACKA_OPEN_NOTIFICATION', url: targetUrl }, [channel.port2]);
+    } catch {
+      finish(false);
+    }
+  });
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = new URL(event.notification.data?.url || '/', self.location.origin).href;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
-    for (const client of windows) {
-      if ('focus' in client) {
-        if ('navigate' in client) await client.navigate(targetUrl);
-        return client.focus();
+    const client = windows.find((item) => item.focused)
+      || windows.find((item) => item.visibilityState === 'visible')
+      || windows[0];
+
+    if (!client) return self.clients.openWindow(targetUrl);
+
+    // Běžící PWA dostane kliknutí přímo. To je nutné hlavně na iOS,
+    // kde focus() funguje, ale navigate() může URL s parametry zahodit.
+    const handled = await handOffNotificationClick(client, targetUrl);
+    if (handled) return client.focus();
+
+    // Starší otevřená verze aplikace zprávu neumí přijmout. V takovém
+    // případě použijeme klasickou navigaci a po načtení se modal otevře z URL.
+    try {
+      if ('navigate' in client) {
+        const navigated = await client.navigate(targetUrl);
+        if (navigated) return navigated.focus();
       }
+    } catch {
+      // Některé PWA kontejnery navigate() odmítají; otevřeme nové okno níže.
     }
-    return self.clients.openWindow(targetUrl);
+
+    try {
+      await client.focus();
+      client.postMessage({ type: 'TIPOVACKA_OPEN_NOTIFICATION', url: targetUrl });
+      return client;
+    } catch {
+      return self.clients.openWindow(targetUrl);
+    }
   })());
 });
 
