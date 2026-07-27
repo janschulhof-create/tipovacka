@@ -55,6 +55,15 @@ const ALIASES: Record<string, string> = {
   Zbrojovka: 'Zbrojovka Brno',
   'SK Artis Brno': 'Artis Brno',
   Artis: 'Artis Brno',
+  // Klub před sezonou 2026/27 změnil název z Líšně na Artis. Některé live
+  // zdroje ale ještě používají historický název, proto musí obě identity
+  // skončit pod stejným kanonickým týmem.
+  'SK Líšeň': 'Artis Brno',
+  'SK Lisen': 'Artis Brno',
+  'SK Líšeň 2019': 'Artis Brno',
+  'SK Lisen 2019': 'Artis Brno',
+  Líšeň: 'Artis Brno',
+  Lisen: 'Artis Brno',
   'Zbrojovka Brno': 'Zbrojovka Brno',
   'FC SILON Táborsko': 'Táborsko',
   'FC Táborsko': 'Táborsko',

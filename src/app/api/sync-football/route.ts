@@ -578,6 +578,41 @@ async function syncHighlightlyLiga(args: {
       absorb(second);
       apiMatches.push(...second.data);
     }
+    // Po změně názvu klubu nebo při chybně zařazené soutěži může poskytovatel
+    // zápas vrátit mimo vybraný leagueId. Než duel vzdáme, ověříme jedním
+    // širším dotazem všechny české zápasy daného dne. Typický případ je
+    // Artis Brno, který některé zdroje stále vedou jako Líšeň / SK Líšeň 2019.
+    const listedPairs = new Set(apiMatches.map((match) => hlPair(match.home.name, match.away.name)));
+    const missingRows = dayRows.filter((row) => !listedPairs.has(hlPair(row.home_team, row.away_team)));
+    if (missingRows.length > 0 && canSpend()) {
+      try {
+        const broad = await fetchHighlightlyMatches({
+          date: today,
+          countryCode: 'CZ',
+          season: 2026,
+          limit: 100,
+        });
+        absorb(broad);
+        const byId = new Map(apiMatches.map((match) => [match.id, match]));
+        for (const match of broad.data) byId.set(match.id, match);
+        apiMatches.splice(0, apiMatches.length, ...byId.values());
+        if (broad.totalCount > broad.data.length && canSpend()) {
+          const broadSecond = await fetchHighlightlyMatches({
+            date: today,
+            countryCode: 'CZ',
+            season: 2026,
+            limit: 100,
+            offset: 100,
+          });
+          absorb(broadSecond);
+          for (const match of broadSecond.data) byId.set(match.id, match);
+          apiMatches.splice(0, apiMatches.length, ...byId.values());
+        }
+      } catch (fallbackError) {
+        report.warnings.push(`Highlightly širší live fallback: ${String(fallbackError)}`);
+      }
+    }
+
     report.live.fetched = apiMatches.length;
     const apiByPair = new Map(apiMatches.map((match) => [hlPair(match.home.name, match.away.name), match]));
     const apiById = new Map(apiMatches.map((match) => [match.id, match]));
