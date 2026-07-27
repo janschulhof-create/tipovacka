@@ -84,62 +84,107 @@ export async function getRoundLabels(seasonId: number): Promise<Record<number, s
   return out;
 }
 
-/** Aktuální kolo = nejbližší kolo s nejméně jedním nezačatým zápasem,
- *  jinak poslední odehrané. */
+const MATCH_ESTIMATED_DURATION_MS = 2 * 60 * 60 * 1000;
+const FINISHED_ROUND_GRACE_MS = 24 * 60 * 60 * 1000;
+
+type CurrentRoundRow = Pick<Match, 'round' | 'kickoff' | 'status'>;
+
+/**
+ * Vybere výchozí kolo podle času zápasů.
+ *
+ * Kolo zůstává aktuální po celou dobu jeho hraní a ještě 24 hodin po
+ * předpokládaném konci posledního zápasu. Protože databáze neukládá přesný
+ * čas závěrečného hvizdu, počítáme konec dvě hodiny po výkopu. Další kolo se
+ * tedy automaticky zobrazí až 26 hodin po výkopu posledního utkání.
+ */
+export function selectCurrentRound(
+  rows: CurrentRoundRow[],
+  nowMs: number = Date.now(),
+): number | null {
+  const byRound = new Map<number, CurrentRoundRow[]>();
+
+  for (const row of rows) {
+    const kickoffMs = new Date(row.kickoff).getTime();
+    if (!Number.isFinite(row.round) || !Number.isFinite(kickoffMs)) continue;
+    const bucket = byRound.get(row.round) ?? [];
+    bucket.push(row);
+    byRound.set(row.round, bucket);
+  }
+
+  const rounds = [...byRound.entries()].map(([round, matches]) => {
+    // Zrušený nebo odložený zápas nesmí držet celé kolo otevřené týdny.
+    const playable = matches.filter(
+      (match) => match.status !== 'cancelled' && match.status !== 'postponed',
+    );
+    const relevant = playable.length > 0 ? playable : matches;
+    const kickoffs = relevant
+      .map((match) => new Date(match.kickoff).getTime())
+      .filter(Number.isFinite);
+    const firstKickoff = Math.min(...kickoffs);
+    const lastKickoff = Math.max(...kickoffs);
+    const hasLiveMatch = relevant.some((match) => match.status === 'live');
+    const hasStarted = hasLiveMatch
+      || relevant.some((match) => match.status === 'finished')
+      || firstKickoff <= nowMs;
+
+    return {
+      round,
+      firstKickoff,
+      lastKickoff,
+      hasLiveMatch,
+      hasStarted,
+      retainUntil: lastKickoff + MATCH_ESTIMATED_DURATION_MS + FINISHED_ROUND_GRACE_MS,
+    };
+  }).filter((round) => Number.isFinite(round.firstKickoff) && Number.isFinite(round.lastKickoff));
+
+  if (rounds.length === 0) return null;
+
+  // Živý zápas má vždy přednost.
+  const liveRound = rounds
+    .filter((round) => round.hasLiveMatch)
+    .sort((a, b) => b.firstKickoff - a.firstKickoff)[0];
+  if (liveRound) return liveRound.round;
+
+  // Probíhající nebo čerstvě dohrané kolo držíme ještě 24 hodin.
+  const retainedRound = rounds
+    .filter((round) => round.hasStarted && nowMs <= round.retainUntil)
+    .sort((a, b) => b.firstKickoff - a.firstKickoff)[0];
+  if (retainedRound) return retainedRound.round;
+
+  // Poté se přepneme na nejbližší budoucí kolo.
+  const upcomingRound = rounds
+    .filter((round) => round.firstKickoff > nowMs)
+    .sort((a, b) => a.firstKickoff - b.firstKickoff)[0];
+  if (upcomingRound) return upcomingRound.round;
+
+  // Po konci sezóny zůstane poslední odehrané kolo.
+  return rounds.sort((a, b) => b.lastKickoff - a.lastKickoff)[0]?.round ?? null;
+}
+
+/** Aktuální kolo s 24hodinovou lhůtou po posledním zápase. */
 export async function getCurrentRound(seasonId: number): Promise<number | null> {
   const sb = createServerReadClient();
-  const { data: upcoming } = await sb
+  const { data } = await sb
     .from('matches')
-    .select('round')
+    .select('round, kickoff, status')
     .eq('season_id', seasonId)
-    .eq('status', 'scheduled')
-    .order('kickoff', { ascending: true })
-    .limit(1);
-  if (upcoming?.[0]) return upcoming[0].round;
+    .order('kickoff', { ascending: true });
 
-  const { data: last } = await sb
-    .from('matches')
-    .select('round')
-    .eq('season_id', seasonId)
-    .order('round', { ascending: false })
-    .limit(1);
-  return last?.[0]?.round ?? null;
+  return selectCurrentRound((data as CurrentRoundRow[]) ?? []);
 }
 
 /** Aktuální řádné kolo Chance ligy. Ignoruje přípravu i případné jiné zdroje zápasů. */
 export async function getCurrentChanceRound(seasonId: number): Promise<number | null> {
   const sb = createServerReadClient();
-  const { data: upcoming } = await sb
+  const { data } = await sb
     .from('matches')
-    .select('round')
+    .select('round, kickoff, status')
     .eq('season_id', seasonId)
     .eq('source_league', 'cze.1')
     .gt('round', 0)
-    .eq('status', 'scheduled')
-    .order('kickoff', { ascending: true })
-    .limit(1);
-  if (upcoming?.[0]) return upcoming[0].round;
+    .order('kickoff', { ascending: true });
 
-  const { data: live } = await sb
-    .from('matches')
-    .select('round')
-    .eq('season_id', seasonId)
-    .eq('source_league', 'cze.1')
-    .gt('round', 0)
-    .eq('status', 'live')
-    .order('kickoff', { ascending: true })
-    .limit(1);
-  if (live?.[0]) return live[0].round;
-
-  const { data: last } = await sb
-    .from('matches')
-    .select('round')
-    .eq('season_id', seasonId)
-    .eq('source_league', 'cze.1')
-    .gt('round', 0)
-    .order('round', { ascending: false })
-    .limit(1);
-  return last?.[0]?.round ?? null;
+  return selectCurrentRound((data as CurrentRoundRow[]) ?? []);
 }
 
 /** Předchozí kolo = nejvyšší číslo kola menší než `round`, které má zápasy. */

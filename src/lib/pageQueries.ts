@@ -2,6 +2,7 @@ import { unstable_cache } from 'next/cache';
 import type { CompetitionKey } from './competitions';
 import {
   getActiveSeason as readActiveSeason,
+  getCurrentChanceRound as readCurrentChanceRound,
   getCurrentRound as readCurrentRound,
   getGoalStats as readGoalStats,
   getLiveMatches as readLiveMatches,
@@ -44,7 +45,13 @@ export const getRoundLabels = unstable_cache(
 
 export const getCurrentRound = unstable_cache(
   async (seasonId: number) => readCurrentRound(seasonId),
-  ['page-current-round-v1'],
+  ['page-current-round-v2'],
+  { revalidate: 120, tags: ['tipovacka-data'] },
+);
+
+export const getCurrentChanceRound = unstable_cache(
+  async (seasonId: number) => readCurrentChanceRound(seasonId),
+  ['page-current-chance-round-v2'],
   { revalidate: 120, tags: ['tipovacka-data'] },
 );
 

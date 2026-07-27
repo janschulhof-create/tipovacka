@@ -1,5 +1,6 @@
 import {
   getActiveSeason,
+  getCurrentChanceRound,
   getCurrentRound,
   getSeasonRounds,
   getRoundMatches,
@@ -51,7 +52,7 @@ export default async function Home({
   const knockout = competition.kind === 'cup-knockout';
   const [allRounds, currentRound, roundLabels] = await Promise.all([
     getSeasonRounds(seasonId),
-    getCurrentRound(seasonId),
+    competition.key === 'liga' ? getCurrentChanceRound(seasonId) : getCurrentRound(seasonId),
     getRoundLabels(seasonId),
   ]);
 
