@@ -20,6 +20,7 @@ import { selectionReason } from '@/lib/cupSelection';
 import { runRoastBatch } from '@/lib/roastBatch';
 import { canonTeam } from '@/lib/teamAliases';
 import type { MatchDetail, HighlightlySyncMeta } from '@/lib/espn';
+import { getVerifiedMatchCorrection, mergeVerifiedMatchDetail } from '@/lib/verifiedMatchCorrections';
 
 export const dynamic = 'force-dynamic';
 export const maxDuration = 60;
@@ -422,9 +423,11 @@ async function syncHighlightlyLiga(args: {
     // načítala události a statistiky jen v okamžiku, kdy Highlightly samo
     // přepnulo zápas na finished. Když se zápas uzavřel naší časovou pojistkou,
     // nebo API detail v tom okamžiku nebyl dostupný, průběh, statistiky i skóre
-    // v 90. minutě zůstaly navždy prázdné. Opravujeme proto nejvýše dva
-    // nedávné zápasy za běh, s třicetiminutovým odstupem mezi pokusy.
-    const repairFrom = new Date(args.now.getTime() - 36 * 3600_000).toISOString();
+    // v 90. minutě zůstaly navždy prázdné. Opravujeme proto několik
+    // nedávných zápasů za běh, s třicetiminutovým odstupem mezi pokusy.
+    // Čtrnáctidenní okno zabrání tomu, aby zápas po krátkém výpadku zdroje
+    // vypadl z oprav dřív, než externí API detail skutečně zpřístupní.
+    const repairFrom = new Date(args.now.getTime() - 14 * 24 * 3600_000).toISOString();
     const { data: recentFinished, error: recentFinishedError } = await args.supabase
       .from('matches')
       .select('id, external_api_id, source_league, round, round_label, kickoff, home_team, away_team, home_score, away_score, reg_home, reg_away, status, minute, clock, duration, extra_home, extra_away, pen_home, pen_away, selection_reason, detail, updated_at')
@@ -439,27 +442,32 @@ async function syncHighlightlyLiga(args: {
       const repairCandidates = ((recentFinished as ExistingMatch[]) ?? [])
         .filter((row) => {
           const meta = hlMeta(row.detail);
-          if (!meta || meta.id <= 0 || row.home_score == null || row.away_score == null) return false;
+          const correction = getVerifiedMatchCorrection(row);
+          if ((!meta || meta.id <= 0) && !correction) return false;
+          if (row.home_score == null || row.away_score == null) return false;
           const complete = detailHasProgress(row.detail) && detailHasStats(row.detail) && row.reg_home != null && row.reg_away != null;
           if (complete) return false;
-          const lastAttempt = meta.finalRepairAt ? new Date(meta.finalRepairAt).getTime() : 0;
-          return args.force || !lastAttempt || args.now.getTime() - lastAttempt >= 30 * 60_000;
+          const lastAttempt = meta?.finalRepairAt ? new Date(meta.finalRepairAt).getTime() : 0;
+          return args.force || !!correction || !lastAttempt || args.now.getTime() - lastAttempt >= 30 * 60_000;
         })
         .sort((a, b) => {
+          const correctionPriority = Number(!!getVerifiedMatchCorrection(b)) - Number(!!getVerifiedMatchCorrection(a));
+          if (correctionPriority !== 0) return correctionPriority;
           const missingA = Number(!detailHasProgress(a.detail)) + Number(!detailHasStats(a.detail)) + Number(a.reg_home == null || a.reg_away == null);
           const missingB = Number(!detailHasProgress(b.detail)) + Number(!detailHasStats(b.detail)) + Number(b.reg_home == null || b.reg_away == null);
           return missingB - missingA || (b.home_score ?? 0) + (b.away_score ?? 0) - ((a.home_score ?? 0) + (a.away_score ?? 0));
         })
-        .slice(0, args.force ? 6 : 2);
+        .slice(0, args.force ? 8 : 3);
 
       for (const row of repairCandidates) {
-        if (!canSpend()) break;
-        const meta = hlMeta(row.detail)!;
+        const correction = getVerifiedMatchCorrection(row);
+        const meta = hlMeta(row.detail) ?? { id: 0 };
+        if (!correction && !canSpend()) break;
         let repairedDetail = row.detail ?? { _highlightly: meta };
         let detailRequests = 0;
         try {
           const needEvents = !detailHasProgress(repairedDetail) || row.reg_home == null || row.reg_away == null;
-          if (needEvents && canSpend()) {
+          if (needEvents && meta.id > 0 && canSpend()) {
             const events = await fetchHighlightlyEvents(meta.id, row.home_team, row.away_team);
             absorb(events);
             detailRequests += events.requests;
@@ -469,7 +477,7 @@ async function syncHighlightlyLiga(args: {
               substitutions: events.substitutions?.length ? events.substitutions : repairedDetail.substitutions,
             });
           }
-          if (!detailHasStats(repairedDetail) && canSpend()) {
+          if (!detailHasStats(repairedDetail) && meta.id > 0 && canSpend()) {
             const stats = await fetchHighlightlyStatistics(meta.id, row.home_team, row.away_team);
             absorb(stats);
             detailRequests += stats.requests;
@@ -479,7 +487,9 @@ async function syncHighlightlyLiga(args: {
           report.warnings.push(`Finální detail ${row.home_team}–${row.away_team}: ${String(detailError)}`);
         }
 
-        const regular = regularScoreFromDetail(repairedDetail, row.home_score, row.away_score);
+        repairedDetail = mergeVerifiedMatchDetail(repairedDetail, correction) ?? repairedDetail;
+        const regular = regularScoreFromDetail(repairedDetail, row.home_score, row.away_score)
+          ?? (correction ? { home: correction.regHome, away: correction.regAway } : null);
         const complete = detailHasProgress(repairedDetail) && detailHasStats(repairedDetail) && regular != null;
         repairedDetail = mergeDetail(repairedDetail, {
           _highlightly: {

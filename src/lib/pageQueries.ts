@@ -50,7 +50,7 @@ export const getCurrentRound = unstable_cache(
 
 export const getRoundMatches = unstable_cache(
   async (seasonId: number, round: number) => readRoundMatches(seasonId, round),
-  ['page-round-matches-v1'],
+  ['page-round-matches-v2'],
   { revalidate: 60, tags: ['tipovacka-data'] },
 );
 
@@ -116,7 +116,7 @@ export const getSeasonTipRounds = unstable_cache(
 
 export const getStoppageStats = unstable_cache(
   async (seasonId: number) => readStoppageStats(seasonId),
-  ['page-stoppage-v1'],
+  ['page-stoppage-v2'],
   { revalidate: 900, tags: ['tipovacka-data'] },
 );
 

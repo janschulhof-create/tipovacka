@@ -25,7 +25,7 @@ export async function runRoastBatch(
 
   const { data: needRoast } = await supabase
     .from('matches')
-    .select('id, home_team, away_team, home_score, away_score, reg_home, reg_away, duration')
+    .select('id, home_team, away_team, home_score, away_score, reg_home, reg_away, duration, detail')
     .eq('season_id', seasonId)
     .eq('status', 'finished')
     .is('roast', null)
@@ -42,6 +42,7 @@ export async function runRoastBatch(
     reg_home: number | null;
     reg_away: number | null;
     duration: string | null;
+    detail: { cards?: Array<{ side: 'home' | 'away'; player?: string; color: 'yellow' | 'red' }> } | null;
   };
   const batch = (needRoast as M[]) ?? [];
 
@@ -67,6 +68,9 @@ export async function runRoastBatch(
         reg: rm.reg_home != null && rm.reg_away != null ? `${rm.reg_home}:${rm.reg_away}` : null,
         duration: rm.duration,
         tips: list,
+        redCards: (rm.detail?.cards ?? [])
+          .filter((card) => card.color === 'red')
+          .map((card) => ({ side: card.side, player: card.player })),
         standings: stand,
       });
       return { id: rm.id, roast };

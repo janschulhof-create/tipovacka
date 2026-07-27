@@ -24,6 +24,7 @@ type MatchRow = {
   home_score: number | null;
   away_score: number | null;
   status: string;
+  detail: { cards?: Array<{ side: 'home' | 'away'; color: 'yellow' | 'red' }> } | null;
 };
 
 type PredictionRow = {
@@ -112,15 +113,24 @@ function isOneNilAgainstDraw(match: MatchRow, prediction: PredictionRow) {
     && prediction.predicted_home === prediction.predicted_away;
 }
 
+function tippedHomeWinButHomeLost(match: MatchRow, prediction: PredictionRow) {
+  return prediction.predicted_home > prediction.predicted_away
+    && (match.home_score ?? 0) < (match.away_score ?? 0);
+}
+
+function tippedTeamWhoseOpponentGotRed(match: MatchRow, prediction: PredictionRow) {
+  const redSides = new Set(
+    (match.detail?.cards ?? [])
+      .filter((card) => card.color === 'red')
+      .map((card) => card.side),
+  );
+  if (prediction.predicted_home > prediction.predicted_away) return redSides.has('away');
+  if (prediction.predicted_away > prediction.predicted_home) return redSides.has('home');
+  return false;
+}
+
 function evaluation(points: number, ...seed: Array<string | number>) {
-  if (points === 10) return stablePick([
-    'Přesný zásah! 🎯',
-    '„Tak poď vole.“ Přesný zásah! 🎯',
-    'Tohle není baroko, to je fotbalová poezie.',
-    'Přesný zásah, tohle sedlo na chlup.',
-    '„Volal Pelta.“ Přesný zásah je potvrzený.',
-    '„Když se daří a padá to tam, to umí každej blbec.“ Deset bodů je doma.',
-  ], ...seed, points);
+  if (points === 10) return '„Ty vole, v těhle letech ty tipy.“ Přesný zásah za 10 bodů je doma.';
   if (points >= 6) return stablePick([
     'Parádní tip.',
     'Na okrese by tě po tomhle nosili na ramenou.',
@@ -204,7 +214,7 @@ function truncate(value: string, maxLength = 220) {
   return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function resultNotification(block: ResultBlock, predictions: PredictionRow[], playerId: number) {
+function resultNotification(block: ResultBlock, predictions: PredictionRow[], playerId: number, playerName: string) {
   const byMatch = new Map(predictions.map((prediction) => [prediction.match_id, prediction]));
   const resultList = block.matches
     .map((match) => `${match.home_team} ${match.home_score}:${match.away_score} ${match.away_team}`)
@@ -214,27 +224,40 @@ function resultNotification(block: ResultBlock, predictions: PredictionRow[], pl
     const match = block.matches[0];
     const prediction = byMatch.get(match.id);
     const title = `Konec: ${match.home_team} ${match.home_score}:${match.away_score} ${match.away_team}`;
-    const quoteLead = prediction && isOneNilAgainstDraw(match, prediction)
-      ? '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“'
-      : prediction && tippedJablonecToWin(match, prediction)
-        ? '„Počkej pocem, nehrál tys divizi?“'
-        : isSlovackoMatch(match)
-          ? '„Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“'
-          : match.home_score === match.away_score
-            ? stablePick([
-              '„Já bych tady, hele, Teplice kříž.“',
-              '„Řekni, co o tomhle zápase řekl Beckham.“',
-            ], playerId, block.blockKey, match.id, 'draw-quote')
-            : Math.abs((match.home_score ?? 0) - (match.away_score ?? 0)) === 1
+    const specialLeads = prediction
+      ? [
+        tippedTeamWhoseOpponentGotRed(match, prediction)
+          ? `„Pane ${playerName}, vždyť já mám stejnej zájem jako vy.“ Soupeř tipovaného týmu dostal červenou.`
+          : '',
+        tippedHomeWinButHomeLost(match, prediction)
+          ? '„Von tleskal nad hlavou a já dělal, že to nevidím.“ Domácí přesto prohráli.'
+          : '',
+      ].filter(Boolean)
+      : [];
+    const standardLead = specialLeads.length > 0
+      ? ''
+      : prediction && isOneNilAgainstDraw(match, prediction)
+        ? '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“'
+        : prediction && tippedJablonecToWin(match, prediction)
+          ? '„Počkej pocem, nehrál tys divizi?“'
+          : isSlovackoMatch(match)
+            ? '„Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“'
+            : match.home_score === match.away_score
               ? stablePick([
-                '„Ty vole, to jsou nervy.“',
+                '„Já bych tady, hele, Teplice kříž.“',
                 '„Řekni, co o tomhle zápase řekl Beckham.“',
-              ], playerId, block.blockKey, match.id, 'tight-quote')
-              : stablePick([
-                '',
-                '„Řekni, co o tomhle zápase řekl Beckham.“',
-                '„Ti volal Pelta, jo?“',
-              ], playerId, block.blockKey, match.id, 'result-quote');
+              ], playerId, block.blockKey, match.id, 'draw-quote')
+              : Math.abs((match.home_score ?? 0) - (match.away_score ?? 0)) === 1
+                ? stablePick([
+                  '„Ty vole, to jsou nervy.“',
+                  '„Řekni, co o tomhle zápase řekl Beckham.“',
+                ], playerId, block.blockKey, match.id, 'tight-quote')
+                : stablePick([
+                  '',
+                  '„Řekni, co o tomhle zápase řekl Beckham.“',
+                  '„Ti volal Pelta, jo?“',
+                ], playerId, block.blockKey, match.id, 'result-quote');
+    const quoteLead = [...specialLeads, standardLead].filter(Boolean).join(' ');
     const predictionPoints = prediction?.points ?? 0;
     const resultEvaluation = prediction && predictionPoints === 0 && tippedBohemkaToWin(match, prediction)
       ? '„Bohemka no.“'
@@ -283,6 +306,26 @@ function resultNotification(block: ResultBlock, predictions: PredictionRow[], pl
     const prediction = byMatch.get(match.id);
     return Boolean(prediction && isOneNilAgainstDraw(match, prediction));
   }).length;
+
+  const homeWinLosses = block.matches.filter((match) => {
+    const prediction = byMatch.get(match.id);
+    return Boolean(prediction && tippedHomeWinButHomeLost(match, prediction));
+  }).length;
+  const redCardAdvantages = block.matches.filter((match) => {
+    const prediction = byMatch.get(match.id);
+    return Boolean(prediction && tippedTeamWhoseOpponentGotRed(match, prediction));
+  }).length;
+  const specialHighlights = [
+    redCardAdvantages > 0
+      ? `„Pane ${playerName}, vždyť já mám stejnej zájem jako vy.“ Soupeř tipovaného týmu dostal červenou.`
+      : '',
+    homeWinLosses > 0
+      ? '„Von tleskal nad hlavou a já dělal, že to nevidím.“ Domácí z tipovaného zápasu přesto prohráli.'
+      : '',
+    exact > 0
+      ? '„Ty vole, v těhle letech ty tipy.“ Přesný zásah za 10 bodů je v zápisu.'
+      : '',
+  ].filter(Boolean);
 
   let summary = tipped.length
     ? `Získal jsi ${pointsLabel(totalPoints)} z ${block.matches.length} zápasů.`
@@ -341,7 +384,7 @@ function resultNotification(block: ResultBlock, predictions: PredictionRow[], pl
       `Blok zápasů je u konce`,
       `Komise uzavřela ${matchesLabel(block.matches.length)}`,
     ], playerId, block.blockKey, 'multi-title'),
-    body: truncate(`${summary} ${mood} ${resultList}`),
+    body: truncate(`${specialHighlights.join(' ')} ${summary} ${mood} ${resultList}`.trim()),
   };
 }
 
@@ -377,7 +420,7 @@ Deno.serve(async (request) => {
 
   const { data: matches, error: matchesError } = await supabase
     .from('matches')
-    .select('id, round, kickoff, home_team, away_team, home_score, away_score, status')
+    .select('id, round, kickoff, home_team, away_team, home_score, away_score, status, detail')
     .eq('season_id', season.id)
     .gt('round', 0)
     .order('kickoff');
@@ -436,6 +479,13 @@ Deno.serve(async (request) => {
   if (subscriptionsError) return json({ error: subscriptionsError.message }, 500);
 
   const subscriptionRows = (subscriptions || []) as PushRow[];
+  const allPlayerIds = [...new Set(subscriptionRows.map((row) => row.player_id))];
+  const { data: playerRows } = allPlayerIds.length
+    ? await supabase.from('players').select('id, name').in('id', allPlayerIds)
+    : { data: [] as Array<{ id: number; name: string }> };
+  const playerNames = new Map(
+    ((playerRows || []) as Array<{ id: number; name: string }>).map((player) => [player.id, player.name]),
+  );
   let sent = 0;
   let invalidated = 0;
 
@@ -556,7 +606,7 @@ Deno.serve(async (request) => {
     }
 
     for (const playerId of pendingPlayerIds) {
-      const notification = resultNotification(block, predictionsByPlayer.get(playerId) || [], playerId);
+      const notification = resultNotification(block, predictionsByPlayer.get(playerId) || [], playerId, playerNames.get(playerId) || 'tipére');
       const payload = JSON.stringify({
         ...notification,
         icon: '/icons/icon-192.png',

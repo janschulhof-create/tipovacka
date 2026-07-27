@@ -20,6 +20,7 @@ type ResultMatchRow = {
   home_score: number | null;
   away_score: number | null;
   status: string;
+  detail: { cards?: Array<{ side: 'home' | 'away'; color: 'yellow' | 'red' }> } | null;
 };
 
 type ResultPredictionRow = {
@@ -85,6 +86,22 @@ function isOneNilAgainstDraw(match: ResultMatchRow, prediction: ResultPrediction
     && prediction.predicted_home === prediction.predicted_away;
 }
 
+function tippedHomeWinButHomeLost(match: ResultMatchRow, prediction: ResultPredictionRow) {
+  return prediction.predicted_home > prediction.predicted_away
+    && (match.home_score ?? 0) < (match.away_score ?? 0);
+}
+
+function tippedTeamWhoseOpponentGotRed(match: ResultMatchRow, prediction: ResultPredictionRow) {
+  const redSides = new Set(
+    (match.detail?.cards ?? [])
+      .filter((card) => card.color === 'red')
+      .map((card) => card.side),
+  );
+  if (prediction.predicted_home > prediction.predicted_away) return redSides.has('away');
+  if (prediction.predicted_away > prediction.predicted_home) return redSides.has('home');
+  return false;
+}
+
 function matchesLabel(count: number) {
   if (count === 1) return '1 zápas';
   if (count >= 2 && count <= 4) return `${count} zápasy`;
@@ -92,14 +109,7 @@ function matchesLabel(count: number) {
 }
 
 function evaluation(points: number, ...seed: Array<string | number>) {
-  if (points === 10) return stablePick([
-    'Přesný zásah! 🎯',
-    '„Tak poď vole.“ Přesný zásah! 🎯',
-    'Tohle není baroko, to je fotbalová poezie.',
-    'Přesný zásah, tohle sedlo na chlup.',
-    '„Volal Pelta.“ Přesný zásah je potvrzený.',
-    '„Když se daří a padá to tam, to umí každej blbec.“ Deset bodů je doma.',
-  ], ...seed, points);
+  if (points === 10) return '„Ty vole, v těhle letech ty tipy.“ Přesný zásah za 10 bodů je doma.';
   if (points >= 6) return stablePick([
     'Parádní tip.',
     'Na okrese by tě po tomhle nosili na ramenou.',
@@ -132,7 +142,7 @@ function truncate(value: string, maxLength = 220) {
   return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function resultNotification(matches: ResultMatchRow[], predictions: ResultPredictionRow[], playerId: number, blockKey: string) {
+function resultNotification(matches: ResultMatchRow[], predictions: ResultPredictionRow[], playerId: number, playerName: string, blockKey: string) {
   const byMatch = new Map(predictions.map((prediction) => [prediction.match_id, prediction]));
   const resultList = matches
     .map((match) => `${match.home_team} ${match.home_score}:${match.away_score} ${match.away_team}`)
@@ -142,27 +152,40 @@ function resultNotification(matches: ResultMatchRow[], predictions: ResultPredic
     const match = matches[0];
     const prediction = byMatch.get(match.id);
     const title = `Konec: ${match.home_team} ${match.home_score}:${match.away_score} ${match.away_team}`;
-    const quoteLead = prediction && isOneNilAgainstDraw(match, prediction)
-      ? '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“'
-      : prediction && tippedJablonecToWin(match, prediction)
-        ? '„Počkej pocem, nehrál tys divizi?“'
-        : isSlovackoMatch(match)
-          ? '„Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“'
-          : match.home_score === match.away_score
-            ? stablePick([
-              '„Já bych tady, hele, Teplice kříž.“',
-              '„Řekni, co o tomhle zápase řekl Beckham.“',
-            ], playerId, blockKey, match.id, 'draw-quote')
-            : Math.abs((match.home_score ?? 0) - (match.away_score ?? 0)) === 1
+    const specialLeads = prediction
+      ? [
+        tippedTeamWhoseOpponentGotRed(match, prediction)
+          ? `„Pane ${playerName}, vždyť já mám stejnej zájem jako vy.“ Soupeř tipovaného týmu dostal červenou.`
+          : '',
+        tippedHomeWinButHomeLost(match, prediction)
+          ? '„Von tleskal nad hlavou a já dělal, že to nevidím.“ Domácí přesto prohráli.'
+          : '',
+      ].filter(Boolean)
+      : [];
+    const standardLead = specialLeads.length > 0
+      ? ''
+      : prediction && isOneNilAgainstDraw(match, prediction)
+        ? '„Já koukal na ten teletext a najednou tam naskočilo 1:0.“'
+        : prediction && tippedJablonecToWin(match, prediction)
+          ? '„Počkej pocem, nehrál tys divizi?“'
+          : isSlovackoMatch(match)
+            ? '„Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“'
+            : match.home_score === match.away_score
               ? stablePick([
-                '„Ty vole, to jsou nervy.“',
+                '„Já bych tady, hele, Teplice kříž.“',
                 '„Řekni, co o tomhle zápase řekl Beckham.“',
-              ], playerId, blockKey, match.id, 'tight-quote')
-              : stablePick([
-                '',
-                '„Řekni, co o tomhle zápase řekl Beckham.“',
-                '„Ti volal Pelta, jo?“',
-              ], playerId, blockKey, match.id, 'result-quote');
+              ], playerId, blockKey, match.id, 'draw-quote')
+              : Math.abs((match.home_score ?? 0) - (match.away_score ?? 0)) === 1
+                ? stablePick([
+                  '„Ty vole, to jsou nervy.“',
+                  '„Řekni, co o tomhle zápase řekl Beckham.“',
+                ], playerId, blockKey, match.id, 'tight-quote')
+                : stablePick([
+                  '',
+                  '„Řekni, co o tomhle zápase řekl Beckham.“',
+                  '„Ti volal Pelta, jo?“',
+                ], playerId, blockKey, match.id, 'result-quote');
+    const quoteLead = [...specialLeads, standardLead].filter(Boolean).join(' ');
     const predictionPoints = prediction?.points ?? 0;
     const resultEvaluation = prediction && predictionPoints === 0 && tippedBohemkaToWin(match, prediction)
       ? '„Bohemka no.“'
@@ -211,6 +234,26 @@ function resultNotification(matches: ResultMatchRow[], predictions: ResultPredic
     const prediction = byMatch.get(match.id);
     return Boolean(prediction && isOneNilAgainstDraw(match, prediction));
   }).length;
+
+  const homeWinLosses = matches.filter((match) => {
+    const prediction = byMatch.get(match.id);
+    return Boolean(prediction && tippedHomeWinButHomeLost(match, prediction));
+  }).length;
+  const redCardAdvantages = matches.filter((match) => {
+    const prediction = byMatch.get(match.id);
+    return Boolean(prediction && tippedTeamWhoseOpponentGotRed(match, prediction));
+  }).length;
+  const specialHighlights = [
+    redCardAdvantages > 0
+      ? `„Pane ${playerName}, vždyť já mám stejnej zájem jako vy.“ Soupeř tipovaného týmu dostal červenou.`
+      : '',
+    homeWinLosses > 0
+      ? '„Von tleskal nad hlavou a já dělal, že to nevidím.“ Domácí z tipovaného zápasu přesto prohráli.'
+      : '',
+    exact > 0
+      ? '„Ty vole, v těhle letech ty tipy.“ Přesný zásah za 10 bodů je v zápisu.'
+      : '',
+  ].filter(Boolean);
 
   let summary = tipped.length
     ? `Získal jsi ${pointsLabel(totalPoints)} z ${matches.length} zápasů.`
@@ -269,11 +312,11 @@ function resultNotification(matches: ResultMatchRow[], predictions: ResultPredic
       'Blok zápasů je u konce',
       `Komise uzavřela ${matchesLabel(matches.length)}`,
     ], playerId, blockKey, 'multi-title'),
-    body: truncate(`${summary} ${mood} ${resultList}`),
+    body: truncate(`${specialHighlights.join(' ')} ${summary} ${mood} ${resultList}`.trim()),
   };
 }
 
-async function resultModalResponse(request: NextRequest, playerId: number) {
+async function resultModalResponse(request: NextRequest, playerId: number, playerName: string) {
   const seasonId = Number(request.nextUrl.searchParams.get('season'));
   const round = Number(request.nextUrl.searchParams.get('round'));
   const blockKey = request.nextUrl.searchParams.get('block') || '';
@@ -287,7 +330,7 @@ async function resultModalResponse(request: NextRequest, playerId: number) {
   const to = new Date(blockDate.getTime() + 60_000).toISOString();
   const { data: matches, error: matchesError } = await admin
     .from('matches')
-    .select('id, kickoff, home_team, away_team, home_score, away_score, status')
+    .select('id, kickoff, home_team, away_team, home_score, away_score, status, detail')
     .eq('season_id', seasonId)
     .eq('round', round)
     .gte('kickoff', from)
@@ -314,7 +357,7 @@ async function resultModalResponse(request: NextRequest, playerId: number) {
   const totalPoints = predictionRows.reduce((sum, prediction) => sum + (prediction.points ?? 0), 0);
   const exact = predictionRows.filter((prediction) => prediction.points === 10).length;
   const missing = Math.max(0, matchRows.length - predictionRows.length);
-  const notification = resultNotification(matchRows, predictionRows, playerId, blockKey);
+  const notification = resultNotification(matchRows, predictionRows, playerId, playerName, blockKey);
 
   const rows = matchRows.map((match) => {
     const prediction = byMatch.get(match.id);
@@ -383,7 +426,7 @@ export async function GET(request: NextRequest) {
   if (!player) return NextResponse.json({ authenticated: false, error: 'Pro zobrazení vyhodnocení se přihlas.' }, { status: 401 });
 
   if (request.nextUrl.searchParams.get('view') === 'result') {
-    return resultModalResponse(request, player.id);
+    return resultModalResponse(request, player.id, player.name);
   }
 
   const config = pushConfig();

@@ -28,6 +28,7 @@ export async function generateRoastLLM(input: {
   reg?: string | null; // skóre v 90:00 (Pán nastavení)
   duration?: string | null;
   tips: RoastTip[];
+  redCards?: Array<{ side: 'home' | 'away'; player?: string }>;
   standings?: string | null; // průběžné celkové pořadí (kontext)
 }): Promise<string | null> {
   const key = process.env.ANTHROPIC_API_KEY;
@@ -44,6 +45,9 @@ export async function generateRoastLLM(input: {
     .map((t) => `- ${t.name}: tipoval ${t.tip}, získal ${t.points ?? 0} b`)
     .join('\n');
   const standingsBlock = input.standings ? `\nPrůběžné celkové pořadí tipovačky: ${input.standings}` : '';
+  const redCardsBlock = input.redCards?.length
+    ? `\nČervené karty: ${input.redCards.map((card) => `${card.side === 'home' ? input.home : input.away}${card.player ? ` – ${card.player}` : ''}`).join(', ')}.`
+    : '';
 
   const prompt = `Jsi drzý fotbalový komentátor a rýpal. Napiš zhodnocení jednoho zápasu z tipovačky party kamarádů. PŘESNĚ 3 KRÁTKÉ VĚTY, každá jedna úderná pointa. Žádný sloh, žádný úvod, žádné omáčky.
 
@@ -55,9 +59,9 @@ Struktura těch 3 vět:
 Styl:
 - Míchej dvě polohy: syrový humor okresní kabiny a hospody po zápase + absurdně uhlazený tón českého fotbalového funkcionáře po telefonu.
 - Můžeš použít MAXIMÁLNĚ jednu krátkou autentickou hlášku z tohoto povoleného výběru:
-  Okresní přebor: „Tak poď vole.“, „Já bych tady, hele, Teplice kříž.“, „Řekni, co o tomhle zápase řekl Beckham.“, „Á, místní vtipálek.“, „Když nastoupí špekáček, dostanete na fráček.“, „Máme Roteiro!“, „Vy mě nechcete za tipéra?“, „Talent máš, tipy ti chyběj.“, „Bohemka no.“, „Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“, „Já vyznávám útočnou kombinační filozofii.“, „Dneska očekávám 2 body. Za výhru jsou ale 4 body.“, „Počkej pocem, nehrál tys divizi?“, „Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“, „Já koukal na ten teletext a najednou tam naskočilo 1:0.“, „Ty by nás sfoukli jako svíčku.“, „Ty vole, to jsou nervy.“, „Když se daří a padá to tam, to umí každej blbec.“
+  Okresní přebor: „Tak poď vole.“, „Já bych tady, hele, Teplice kříž.“, „Řekni, co o tomhle zápase řekl Beckham.“, „Á, místní vtipálek.“, „Když nastoupí špekáček, dostanete na fráček.“, „Máme Roteiro!“, „Vy mě nechcete za tipéra?“, „Talent máš, tipy ti chyběj.“, „Bohemka no.“, „Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“, „Já vyznávám útočnou kombinační filozofii.“, „Dneska očekávám 2 body. Za výhru jsou ale 4 body.“, „Počkej pocem, nehrál tys divizi?“, „Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“, „Já koukal na ten teletext a najednou tam naskočilo 1:0.“, „Ty by nás sfoukli jako svíčku.“, „Ty vole, to jsou nervy.“, „Když se daří a padá to tam, to umí každej blbec.“, „Von tleskal nad hlavou a já dělal, že to nevidím.“, „Pane [JMÉNO TIPÉRA], vždyť já mám stejnej zájem jako vy.“, „Ty vole, v těhle letech ty tipy.“
   Ivánku, kamaráde: „Mám strategii.“, „Vám se ten fotbal jako líbil?“, „To by člověk blil, Milane.“, „Loď se potápí, bárka de ke dnu.“, „Musíš to mít pod kontrolou.“, „Víš, co se říká na vsi? Že silnější pes mrdá.“, „Milane, myslím, že ty mediální mrdky máme pořešený.“, „Ti volal Pelta, jo?“, „Volal Pelta.“, „Kapříci připluli.“
-- Hlášku vybírej podle situace: Teplice kříž k remíze; Tak poď vole k odvážnému nebo přesnému tipu; Beckham či Pelta k absurdnímu průběhu; „Volal Pelta.“ a „Když se daří a padá to tam, to umí každej blbec.“ k přesnému tipu za 10 bodů; „Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“, „Já vyznávám útočnou kombinační filozofii.“ nebo „Dneska očekávám 2 body. Za výhru jsou ale 4 body.“ pouze k vysokému gólovému tipu (součet alespoň 6); „Kapříci připluli.“ k vyloženě absurdnímu tipu (součet alespoň 7 nebo rozdíl alespoň 4); „Počkej pocem, nehrál tys divizi?“ jen při tipu na výhru Jablonce; „Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“ jen u zápasu Slovácka; teletext pouze když zápas skončil 1:0 a hráč tipoval remízu; „Ty vole, to jsou nervy.“ k těsnému zápasu o jediný gól; „Ty by nás sfoukli jako svíčku.“ k nule bodů; loď či blití k propadáku; silnějšího psa jen k jasnému debaklu; mediální mrdky pouze k jednoznačně uzavřenému nebo perfektně trefenému zápasu; „Vy mě nechcete za tipéra?“ k ostudné nule či chybějícímu tipu a „Bohemka no.“ POUZE tehdy, když hráč tipoval vítězství Bohemians a získal 0 bodů. „Talent máš, tipy ti chyběj.“ používej jen při chybějícím tipu.
+- Hlášku vybírej podle situace: Teplice kříž k remíze; Tak poď vole k odvážnému nebo přesnému tipu; Beckham či Pelta k absurdnímu průběhu; „Volal Pelta.“ a „Když se daří a padá to tam, to umí každej blbec.“ k přesnému tipu za 10 bodů; „Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“, „Já vyznávám útočnou kombinační filozofii.“ nebo „Dneska očekávám 2 body. Za výhru jsou ale 4 body.“ pouze k vysokému gólovému tipu (součet alespoň 6); „Kapříci připluli.“ k vyloženě absurdnímu tipu (součet alespoň 7 nebo rozdíl alespoň 4); „Počkej pocem, nehrál tys divizi?“ jen při tipu na výhru Jablonce; „Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“ jen u zápasu Slovácka; teletext pouze když zápas skončil 1:0 a hráč tipoval remízu; „Ty vole, to jsou nervy.“ k těsnému zápasu o jediný gól; „Ty by nás sfoukli jako svíčku.“ k nule bodů; loď či blití k propadáku; silnějšího psa jen k jasnému debaklu; mediální mrdky pouze k jednoznačně uzavřenému nebo perfektně trefenému zápasu; „Vy mě nechcete za tipéra?“ k ostudné nule či chybějícímu tipu a „Bohemka no.“ POUZE tehdy, když hráč tipoval vítězství Bohemians a získal 0 bodů. „Talent máš, tipy ti chyběj.“ používej jen při chybějícím tipu. „Von tleskal nad hlavou a já dělal, že to nevidím.“ použij jen u tipéra, který tipoval výhru domácích a domácí prohráli. „Pane [JMÉNO TIPÉRA], vždyť já mám stejnej zájem jako vy.“ použij se skutečným jménem pouze tehdy, když tipér tipoval výhru týmu a soupeř tohoto týmu dostal červenou kartu. „Ty vole, v těhle letech ty tipy.“ použij při přesném tipu za 10 bodů.
 - Hlášku cituj přesně, nevymýšlej falešné pokračování a vždy ji přirozeně napoj na konkrétní výsledek či tip. Zbytek musí být původní text, ne přepis dialogů ani sled citací.
 
 Pravidla:
@@ -68,7 +72,7 @@ Pravidla:
 - Vrať POUZE ty 3 věty. Bez nadpisu, bez odrážek, bez uvozovek.
 
 Zápas: ${input.home} ${input.score} ${input.away}
-${drama}${standingsBlock}
+${drama}${redCardsBlock}${standingsBlock}
 
 Tipy hráčů v tomto zápase:
 ${tipsText}`;

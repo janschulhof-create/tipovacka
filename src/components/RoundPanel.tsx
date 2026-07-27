@@ -679,6 +679,14 @@ function MatchExpanded({
   ).filter((t): t is { id: TabId; label: string; mobileLabel: string } => t !== null);
 
   const [tab, setTab] = useState<TabId>(preferXb && isChanceLeague ? 'xb' : 'tipy');
+
+  // Desktopový panel zůstává při přepínání zápasů připojený, takže by si jinak
+  // pamatoval xB z předchozího zápasu. Každý nově vybraný zápas proto otevřeme
+  // na jeho zamýšlené výchozí záložce; dohraný a živý vždy na Tipech.
+  useEffect(() => {
+    setTab(preferXb && isChanceLeague && m.status === 'scheduled' ? 'xb' : 'tipy');
+  }, [m.id, m.status, preferXb, isChanceLeague]);
+
   const active = tabs.some((t) => t.id === tab) ? tab : tabs[0].id;
 
   // Data pro H2H / xB / predikci se načtou až při otevření příslušné záložky.
@@ -786,7 +794,7 @@ export function DesktopMatchDetail({
         live={live}
         preds={matchPredictions}
         selectedName={selectedName}
-        preferXb
+        preferXb={match.status === 'scheduled'}
         desktopDetail
       />
     </section>
@@ -1166,9 +1174,56 @@ function matchRoast(m: Match, preds: RoundPrediction[]): string[] {
   return lines;
 }
 
+function specialBarokoLines(m: Match, preds: RoundPrediction[]): string[] {
+  if (m.status !== 'finished' || m.home_score == null || m.away_score == null) return [];
+  const evaluated = preds.filter((prediction) => prediction.points != null);
+  const lines: string[] = [];
+
+  const homeWinBackers = m.home_score < m.away_score
+    ? evaluated.filter((prediction) => prediction.predicted_home > prediction.predicted_away)
+    : [];
+  if (homeWinBackers.length > 0) {
+    lines.push(`„Von tleskal nad hlavou a já dělal, že to nevidím.“ ${homeWinBackers.map((prediction) => `${prediction.name} (${prediction.predicted_home}:${prediction.predicted_away})`).join(', ')} ${homeWinBackers.length === 1 ? 'věřil' : 'věřili'} domácím, ale ti prohráli.`);
+  }
+
+  const redSides = new Set(
+    (m.detail?.cards ?? [])
+      .filter((card) => card.color === 'red')
+      .map((card) => card.side),
+  );
+  const redCardBackers = evaluated.filter((prediction) => (
+    prediction.predicted_home > prediction.predicted_away
+      ? redSides.has('away')
+      : prediction.predicted_away > prediction.predicted_home
+        ? redSides.has('home')
+        : false
+  ));
+  for (const prediction of redCardBackers) {
+    lines.push(`„Pane ${prediction.name}, vždyť já mám stejnej zájem jako vy.“ Soupeř tipovaného týmu dostal červenou kartu.`);
+  }
+
+  const exactHitters = evaluated.filter((prediction) => prediction.points === 10);
+  if (exactHitters.length > 0) {
+    lines.push(`„Ty vole, v těhle letech ty tipy.“ ${exactHitters.map((prediction) => prediction.name).join(', ')} ${exactHitters.length === 1 ? 'trefil' : 'trefili'} přesný výsledek za 10 bodů.`);
+  }
+
+  return lines;
+}
+
 function RoastContent({ m, preds }: { m: Match; preds: RoundPrediction[] }) {
   const llm = (m.roast ?? '').trim();
-  const paras = llm ? llm.split(/\n+/).filter(Boolean) : matchRoast(m, preds);
+  const baseParas = llm ? llm.split(/\n+/).filter(Boolean) : matchRoast(m, preds);
+  const existing = baseParas.join(' ').toLocaleLowerCase('cs');
+  const paras = [
+    ...baseParas,
+    ...specialBarokoLines(m, preds).filter((line) => {
+      const lower = line.toLocaleLowerCase('cs');
+      if (lower.includes('von tleskal nad hlavou')) return !existing.includes('von tleskal nad hlavou');
+      if (lower.includes('vždyť já mám stejnej zájem jako vy')) return !existing.includes('vždyť já mám stejnej zájem jako vy');
+      if (lower.includes('v těhle letech ty tipy')) return !existing.includes('v těhle letech ty tipy');
+      return true;
+    }),
+  ];
   if (paras.length === 0) return <p className="text-xs text-slate-300/40">Baroko se objeví po skončení zápasu.</p>;
   return (
     <div className="space-y-2">

@@ -1,5 +1,6 @@
 import { createServerReadClient } from '@/lib/supabase/server';
 import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player } from '@/lib/types';
+import type { MatchDetail } from './espn';
 import { calculatePoints } from './scoring';
 import { CONTINENTS, matchContinents, type ContinentKey } from './continents';
 import { LEAGUE_REGIONS, matchLeagueRegions, type LeagueRegionKey } from './leagueRegions';
@@ -7,6 +8,7 @@ import { CHANCE_LIGA_TOTAL_MATCHES, type CompetitionKey } from './competitions';
 import historie from '@/data/historie.json';
 import { computePersonalXb, predictMatch, type TeamForm, type XbHistoryRow } from './predict';
 import { canonTeam } from './teamAliases';
+import { applyVerifiedMatchCorrection } from './verifiedMatchCorrections';
 
 export interface ActiveSeason {
   id: number;
@@ -219,7 +221,7 @@ export async function getRoundMatches(seasonId: number, round: number): Promise<
     .eq('season_id', seasonId)
     .eq('round', round)
     .order('kickoff', { ascending: true });
-  return (data as Match[]) ?? [];
+  return ((data as Match[]) ?? []).map((match) => applyVerifiedMatchCorrection(match));
 }
 
 
@@ -935,15 +937,30 @@ export async function getStoppageStats(
   const sb = createServerReadClient();
   const { data: ms } = await sb
     .from('matches')
-    .select('id, home_score, away_score, reg_home, reg_away')
+    .select('id, kickoff, home_team, away_team, home_score, away_score, reg_home, reg_away, detail')
     .eq('season_id', seasonId)
     .eq('status', 'finished')
     .not('home_score', 'is', null)
-    .not('reg_home', 'is', null);
+    .not('away_score', 'is', null);
 
-  type M = { id: number; home_score: number; away_score: number; reg_home: number; reg_away: number };
-  const relevant = ((ms as M[]) ?? []).filter(
-    (m) => m.reg_home !== m.home_score || m.reg_away !== m.away_score
+  type M = {
+    id: number;
+    kickoff: string;
+    home_team: string;
+    away_team: string;
+    home_score: number;
+    away_score: number;
+    reg_home: number | null;
+    reg_away: number | null;
+    detail: MatchDetail | null;
+  };
+  const corrected = ((ms as M[]) ?? []).map((match) => applyVerifiedMatchCorrection(match));
+  const relevant = corrected.filter(
+    (m): m is M & { reg_home: number; reg_away: number } => (
+      m.reg_home != null
+      && m.reg_away != null
+      && (m.reg_home !== m.home_score || m.reg_away !== m.away_score)
+    )
   );
   if (relevant.length === 0) return [];
 
