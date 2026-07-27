@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { revalidateTag } from 'next/cache';
-import { createAdminClient } from '@/lib/supabase/server';
+import { createAdminClient, createServerAuthClient } from '@/lib/supabase/server';
 import { getCompetition, type CompetitionKey } from '@/lib/competitions';
 import {
   apiDateWindow,
@@ -18,7 +18,7 @@ import {
 } from '@/lib/espnCompetition';
 import { selectionReason } from '@/lib/cupSelection';
 import { runRoastBatch } from '@/lib/roastBatch';
-import { canonTeam } from '@/lib/teamAliases';
+import { canonTeam, externalTeamAliases } from '@/lib/teamAliases';
 import type { MatchDetail, HighlightlySyncMeta } from '@/lib/espn';
 import { getVerifiedMatchCorrection, mergeVerifiedMatchDetail } from '@/lib/verifiedMatchCorrections';
 
@@ -281,7 +281,7 @@ async function syncHighlightlyLiga(args: {
   bootstrapPrep: boolean;
   force: boolean;
 }): Promise<HighlightlyReport> {
-  const pollMinutes = Math.max(2, Number(process.env.HIGHLIGHTLY_LIVE_POLL_MINUTES ?? 2));
+  const pollMinutes = Math.max(2, Number(process.env.HIGHLIGHTLY_LIVE_POLL_MINUTES ?? 5));
   const reserve = Math.max(8, Number(process.env.HIGHLIGHTLY_RESERVE_REQUESTS ?? 12));
   const allowPreparationImport = false;
   const report: HighlightlyReport = {
@@ -613,42 +613,42 @@ async function syncHighlightlyLiga(args: {
       }
     }
 
-    // Poslední cílený fallback: u přejmenovaných klubů nemusí fungovat filtr
-    // soutěže ani země. Chybějící dnešní zápas proto hledáme přímo podle obou
-    // týmů. Dotazujeme i historické jméno Artisu, které Highlightly může stále
-    // používat. Tohle je levnější a spolehlivější než další široké stránkování.
-    const targetedAliases = (team: string): string[] => {
-      const canonical = canonTeam(team);
-      if (canonical === 'Artis Brno') return ['Artis Brno', 'SK Artis Brno', 'Lisen', 'SK Lisen', 'SK Lisen 2019'];
-      if (canonical === 'Boleslav') return ['Mlada Boleslav', 'FK Mlada Boleslav', 'Mladá Boleslav'];
-      return [team];
-    };
-    const knownPairs = new Set(apiMatches.map((match) => hlPair(match.home.name, match.away.name)));
-    for (const row of dayRows) {
-      if (knownPairs.has(hlPair(row.home_team, row.away_team)) || !canSpend()) continue;
+    // Poslední záchrana: cílený dotaz podle názvu domácího týmu. To řeší
+    // přejmenované nebo chybně zařazené kluby, které se nemusí objevit ani v
+    // seznamu podle leagueId/countryCode. Dotazujeme jen stále chybějící duely
+    // a nejvýše několik aliasů, abychom chránili denní API kvótu.
+    const pairsAfterBroad = new Set(apiMatches.map((match) => hlPair(match.home.name, match.away.name)));
+    const currentWindowRows = dayRows
+      .filter((row) => {
+        const kickoff = new Date(row.kickoff).getTime();
+        return Number.isFinite(kickoff)
+          && args.now.getTime() >= kickoff - 45 * 60_000
+          && args.now.getTime() <= kickoff + 4 * 3600_000;
+      })
+      .filter((row) => !pairsAfterBroad.has(hlPair(row.home_team, row.away_team)))
+      .slice(0, 2);
+    let targetedRequests = 0;
+    for (const row of currentWindowRows) {
+      if (!canSpend() || targetedRequests >= 4) break;
+      const homeAliases = externalTeamAliases(row.home_team).slice(0, 4);
       let found = false;
-      for (const homeName of targetedAliases(row.home_team)) {
-        for (const awayName of targetedAliases(row.away_team)) {
-          if (!canSpend()) break;
-          try {
-            const targeted = await fetchHighlightlyMatches({
-              date: today,
-              homeTeamName: homeName,
-              awayTeamName: awayName,
-              limit: 20,
-            });
-            absorb(targeted);
-            for (const match of targeted.data) {
-              if (!apiMatches.some((item) => item.id === match.id)) apiMatches.push(match);
-              knownPairs.add(hlPair(match.home.name, match.away.name));
-            }
-            if (targeted.data.some((match) => hlPair(match.home.name, match.away.name) === hlPair(row.home_team, row.away_team))) {
-              found = true;
-              break;
-            }
-          } catch (targetedError) {
-            report.warnings.push(`Highlightly cílené hledání ${homeName}–${awayName}: ${String(targetedError)}`);
+      for (const homeTeamName of homeAliases) {
+        if (!canSpend() || targetedRequests >= 4) break;
+        try {
+          const targeted = await fetchHighlightlyMatches({
+            date: today,
+            homeTeamName,
+            limit: 100,
+          });
+          absorb(targeted);
+          targetedRequests += targeted.requests;
+          for (const candidate of targeted.data) {
+            if (hlPair(candidate.home.name, candidate.away.name) !== hlPair(row.home_team, row.away_team)) continue;
+            if (!apiMatches.some((item) => item.id === candidate.id)) apiMatches.push(candidate);
+            found = true;
           }
+        } catch (targetedError) {
+          report.warnings.push(`Highlightly cílený dotaz ${homeTeamName}: ${String(targetedError)}`);
         }
         if (found) break;
       }
@@ -808,8 +808,8 @@ async function syncHighlightlyLiga(args: {
   return report;
 }
 
-export async function GET(req: NextRequest) {
-  if (!authorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+async function runSync(req: NextRequest, trustedUserLiveSync = false) {
+  if (!trustedUserLiveSync && !authorized(req)) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
 
   const keys = parseKeys(req.nextUrl.searchParams.get('competition'));
   const full = req.nextUrl.searchParams.get('full') === '1';
@@ -818,6 +818,7 @@ export async function GET(req: NextRequest) {
   const highlightlyBootstrap = false;
   const highlightlyForce = req.nextUrl.searchParams.get('highlightly_force') === '1';
   const requestedRange = parseRequestedRange(req.nextUrl.searchParams.get('dates'));
+  const liveOnly = req.nextUrl.searchParams.get('live_only') === '1';
   const supabase = createAdminClient();
   const results: Record<string, unknown> = {};
   const now = new Date();
@@ -853,6 +854,63 @@ export async function GET(req: NextRequest) {
         ok: false,
         error: 'no active season; run the multi-competition SQL migration first',
         detail: seasonError?.message ?? null,
+      };
+      continue;
+    }
+
+    // Rychlá živá synchronizace volaná přímo přihlášenou aplikací.
+    // Neprovádí plný import rozpisu ani generování Baroka; pouze dotáhne
+    // aktuální stav Chance ligy z Highlightly a invaliduje veřejná data.
+    if (liveOnly) {
+      if (key !== 'liga') {
+        results[key] = { ok: true, idle: true, reason: 'live sync is available only for liga' };
+        continue;
+      }
+      const highlightly = await syncHighlightlyLiga({
+        supabase, seasonId: season.id, now, bootstrapPrep: false, force: false,
+      });
+
+      // Live endpoint se vrací dříve než plná synchronizace, a proto se na něj
+      // dříve nevztahovala bezpečnostní uzávěrka níže. Pokud poskytovatel po
+      // závěrečném hvizdu dál vrací zastaralý stav live nebo zápas už vůbec
+      // nevrátí, uzavřeme ligový duel se známým skóre po 3 hodinách od výkopu.
+      // Chance liga nemá prodloužení, takže jde o bezpečný horní limit.
+      let forcedFinished = 0;
+      const { data: staleLiveData, error: staleLiveReadError } = await supabase
+        .from('matches')
+        .select('id, kickoff, home_score, away_score')
+        .eq('season_id', season.id)
+        .eq('source_league', 'cze.1')
+        .eq('status', 'live');
+      if (!staleLiveReadError) {
+        const staleIds = (staleLiveData ?? [])
+          .filter((row) => {
+            const kickoffMs = new Date(row.kickoff).getTime();
+            return row.home_score != null
+              && row.away_score != null
+              && Number.isFinite(kickoffMs)
+              && nowMs >= kickoffMs + 3 * 3600_000;
+          })
+          .map((row) => row.id);
+        if (staleIds.length > 0) {
+          const { error: staleLiveUpdateError } = await supabase
+            .from('matches')
+            .update({ status: 'finished', minute: null, clock: null, updated_at: now.toISOString() })
+            .in('id', staleIds);
+          if (!staleLiveUpdateError) forcedFinished = staleIds.length;
+          else highlightly.warnings.push(`Uzavření zastaralého live stavu: ${staleLiveUpdateError.message}`);
+        }
+      } else {
+        highlightly.warnings.push(`Kontrola zastaralého live stavu: ${staleLiveReadError.message}`);
+      }
+
+      results[key] = {
+        ok: highlightly.warnings.every((warning) => !/HTTP 401|HTTP 403|Chybí HIGHLIGHTLY_API_KEY/i.test(warning)),
+        liveOnly: true,
+        source: 'highlightly',
+        season: season.name,
+        forcedFinished,
+        highlightly,
       };
       continue;
     }
@@ -1284,4 +1342,24 @@ export async function GET(req: NextRequest) {
   // aby se náročné dotazy znovu počítaly při každém otevření stránky.
   revalidateTag('tipovacka-data');
   return NextResponse.json({ ok: overallOk, results, at: new Date().toISOString() });
+}
+
+
+export async function GET(req: NextRequest) {
+  return runSync(req, false);
+}
+
+/**
+ * Přihlášený klient může bezpečně spustit pouze omezenou živou synchronizaci.
+ * CRON_SECRET ani Highlightly klíč se do prohlížeče neposílají.
+ */
+export async function POST(req: NextRequest) {
+  const auth = await createServerAuthClient();
+  const { data: { user } } = await auth.auth.getUser();
+  if (!user) return NextResponse.json({ error: 'unauthorized' }, { status: 401 });
+
+  const url = new URL(req.url);
+  url.searchParams.set('competition', 'liga');
+  url.searchParams.set('live_only', '1');
+  return runSync(new NextRequest(url, { method: 'GET', headers: req.headers }), true);
 }

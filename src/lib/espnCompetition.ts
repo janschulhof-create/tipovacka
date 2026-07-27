@@ -737,10 +737,13 @@ function parseScoreText(value: unknown): { home: number | null; away: number | n
 }
 
 function highlightlyStatus(description: string): MatchStatus {
-  const text = description.toLowerCase();
+  const text = description.toLowerCase().trim();
   if (/cancel|abandon/.test(text)) return 'cancelled';
   if (/postpon|suspend|interrupt/.test(text)) return 'postponed';
-  if (/finish|full time|after penalties|after extra|awarded|ended/.test(text)) return 'finished';
+  // Highlightly používá podle soutěže více variant konečného stavu
+  // (např. Full-Time, FT, Final nebo Completed). Původní regulární výraz
+  // zachytil jen variantu „full time“ s mezerou a zápas tak mohl zůstat live.
+  if (/finish|full[\s-]?time|\bft\b|\bfinal\b|after penalties|after extra|awarded|ended|complete|completed|match over/.test(text)) return 'finished';
   if (/first half|second half|half.?time|extra time|penalt|break|in progress|live|playing/.test(text)) return 'live';
   return 'scheduled';
 }

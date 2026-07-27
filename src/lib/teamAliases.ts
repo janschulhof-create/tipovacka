@@ -155,3 +155,14 @@ export function canonTeam(name: string): string {
   const t = (name ?? '').trim();
   return ALIASES[t] ?? t;
 }
+
+
+/** Varianty názvu vhodné pro cílené dotazy do externích API. */
+export function externalTeamAliases(name: string): string[] {
+  const canonical = canonTeam(name);
+  const variants: Record<string, string[]> = {
+    'Artis Brno': ['Artis Brno', 'SK Artis Brno', 'Lisen', 'SK Lisen', 'SK Lisen 2019', 'Líšeň', 'SK Líšeň', 'SK Líšeň 2019'],
+    'Boleslav': ['Mlada Boleslav', 'Mladá Boleslav', 'FK Mlada Boleslav', 'FK Mladá Boleslav', 'Boleslav'],
+  };
+  return Array.from(new Set([name, canonical, ...(variants[canonical] ?? [])].map((value) => value.trim()).filter(Boolean)));
+}

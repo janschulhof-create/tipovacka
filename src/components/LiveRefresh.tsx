@@ -16,64 +16,71 @@ export function LiveRefresh({ hasLive, intervalMs = 90000 }: { hasLive: boolean;
   const startY = useRef<number | null>(null);
   const armed = useRef(false); // začali jsme tahat z úplného vrchu?
   const lastRefreshAt = useRef(Date.now());
+  const initialSyncDone = useRef(false);
 
   const THRESHOLD = 70; // px – kolik je potřeba stáhnout pro spuštění
   const MAX = 110;
 
-  const syncAndRefresh = useCallback(async () => {
+  const syncLiveData = useCallback(async () => {
+    if (!hasLive) return;
     try {
-      await fetch('/api/live-sync', { cache: 'no-store' });
+      await fetch('/api/sync-football?competition=liga&live_only=1', { method: 'POST', cache: 'no-store' });
     } catch {
-      // Databázová data přesto znovu načteme; synchronizace může běžet cronem.
+      // Samotné obnovení stránky zůstane funkční i při dočasném výpadku zdroje.
     }
-    router.refresh();
-  }, [router]);
+  }, [hasLive]);
 
   const doRefresh = useCallback(async () => {
     setBusy(true);
     lastRefreshAt.current = Date.now();
-    await syncAndRefresh();
+    await syncLiveData();
+    router.refresh();
     // krátká vizuální odezva, ať uživatel vidí, že se něco stalo
     window.setTimeout(() => {
       setBusy(false);
       setPull(0);
     }, 700);
-  }, [syncAndRefresh]);
+  }, [router, syncLiveData]);
 
-  // Při otevření stránky během živého zápasu nejprve skutečně stáhneme
-  // čerstvá data od poskytovatele; samotný router.refresh() by jen znovu načetl
-  // starý stav z databáze.
+  // První otevření živého zápasu musí skutečně dotáhnout zdrojová data;
+  // samotný router.refresh() by jen znovu přečetl starý stav z databáze.
   useEffect(() => {
-    if (!hasLive || document.visibilityState !== 'visible') return;
-    lastRefreshAt.current = Date.now();
-    void syncAndRefresh();
-  }, [hasLive, syncAndRefresh]);
+    if (!hasLive || initialSyncDone.current) return;
+    initialSyncDone.current = true;
+    void (async () => {
+      await syncLiveData();
+      lastRefreshAt.current = Date.now();
+      router.refresh();
+    })();
+  }, [hasLive, router, syncLiveData]);
 
   // ── auto-refresh při živém zápasu ──
   useEffect(() => {
     if (!hasLive) return;
-    const id = window.setInterval(() => {
+    const id = window.setInterval(async () => {
       if (document.visibilityState !== 'visible') return;
       lastRefreshAt.current = Date.now();
-      void syncAndRefresh();
+      await syncLiveData();
+      router.refresh();
     }, intervalMs);
     return () => window.clearInterval(id);
-  }, [hasLive, intervalMs, syncAndRefresh]);
+  }, [hasLive, intervalMs, router, syncLiveData]);
 
   // Návrat do aplikace obnoví data jen během živých zápasů a pouze tehdy,
   // když od posledního obnovení uběhl celý interval. Dříve se plný serverový
   // render spouštěl při každém přepnutí aplikace, i když se nic nehrálo.
   useEffect(() => {
     if (!hasLive) return;
-    const onVis = () => {
+    const onVis = async () => {
       if (document.visibilityState !== 'visible') return;
       if (Date.now() - lastRefreshAt.current < intervalMs) return;
       lastRefreshAt.current = Date.now();
-      void syncAndRefresh();
+      await syncLiveData();
+      router.refresh();
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [hasLive, intervalMs, syncAndRefresh]);
+  }, [hasLive, intervalMs, router, syncLiveData]);
 
   // ── pull-to-refresh (touch) ──
   useEffect(() => {
