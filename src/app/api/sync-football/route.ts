@@ -281,7 +281,7 @@ async function syncHighlightlyLiga(args: {
   bootstrapPrep: boolean;
   force: boolean;
 }): Promise<HighlightlyReport> {
-  const pollMinutes = Math.max(15, Number(process.env.HIGHLIGHTLY_LIVE_POLL_MINUTES ?? 20));
+  const pollMinutes = Math.max(2, Number(process.env.HIGHLIGHTLY_LIVE_POLL_MINUTES ?? 2));
   const reserve = Math.max(8, Number(process.env.HIGHLIGHTLY_RESERVE_REQUESTS ?? 12));
   const allowPreparationImport = false;
   const report: HighlightlyReport = {
@@ -610,6 +610,47 @@ async function syncHighlightlyLiga(args: {
         }
       } catch (fallbackError) {
         report.warnings.push(`Highlightly širší live fallback: ${String(fallbackError)}`);
+      }
+    }
+
+    // Poslední cílený fallback: u přejmenovaných klubů nemusí fungovat filtr
+    // soutěže ani země. Chybějící dnešní zápas proto hledáme přímo podle obou
+    // týmů. Dotazujeme i historické jméno Artisu, které Highlightly může stále
+    // používat. Tohle je levnější a spolehlivější než další široké stránkování.
+    const targetedAliases = (team: string): string[] => {
+      const canonical = canonTeam(team);
+      if (canonical === 'Artis Brno') return ['Artis Brno', 'SK Artis Brno', 'Lisen', 'SK Lisen', 'SK Lisen 2019'];
+      if (canonical === 'Boleslav') return ['Mlada Boleslav', 'FK Mlada Boleslav', 'Mladá Boleslav'];
+      return [team];
+    };
+    const knownPairs = new Set(apiMatches.map((match) => hlPair(match.home.name, match.away.name)));
+    for (const row of dayRows) {
+      if (knownPairs.has(hlPair(row.home_team, row.away_team)) || !canSpend()) continue;
+      let found = false;
+      for (const homeName of targetedAliases(row.home_team)) {
+        for (const awayName of targetedAliases(row.away_team)) {
+          if (!canSpend()) break;
+          try {
+            const targeted = await fetchHighlightlyMatches({
+              date: today,
+              homeTeamName: homeName,
+              awayTeamName: awayName,
+              limit: 20,
+            });
+            absorb(targeted);
+            for (const match of targeted.data) {
+              if (!apiMatches.some((item) => item.id === match.id)) apiMatches.push(match);
+              knownPairs.add(hlPair(match.home.name, match.away.name));
+            }
+            if (targeted.data.some((match) => hlPair(match.home.name, match.away.name) === hlPair(row.home_team, row.away_team))) {
+              found = true;
+              break;
+            }
+          } catch (targetedError) {
+            report.warnings.push(`Highlightly cílené hledání ${homeName}–${awayName}: ${String(targetedError)}`);
+          }
+        }
+        if (found) break;
       }
     }
 
