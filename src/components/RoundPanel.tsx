@@ -1198,8 +1198,12 @@ function specialBarokoLines(m: Match, preds: RoundPrediction[]): string[] {
         ? redSides.has('home')
         : false
   ));
-  for (const prediction of redCardBackers) {
-    lines.push(`„Pane ${prediction.name}, vždyť já mám stejnej zájem jako vy.“ Soupeř tipovaného týmu dostal červenou kartu.`);
+  const bestRedCardBacker = [...redCardBackers].sort((a, b) => (
+    (b.points ?? 0) - (a.points ?? 0)
+    || a.name.localeCompare(b.name, 'cs')
+  ))[0];
+  if (bestRedCardBacker) {
+    lines.push(`„Pane ${bestRedCardBacker.name}, vždyť já mám stejnej zájem jako vy.“ Soupeř tipovaného týmu dostal červenou kartu.`);
   }
 
   const exactHitters = evaluated.filter((prediction) => prediction.points === 10);
