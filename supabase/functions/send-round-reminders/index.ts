@@ -1,5 +1,6 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
+import { generateNotificationWithClaude } from '../_shared/ai-notifications.ts';
 
 const responseHeaders = { 'Content-Type': 'application/json' };
 const RESULT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -49,6 +50,21 @@ type ResultBlock = {
 
 function json(payload: unknown, status = 200) {
   return new Response(JSON.stringify(payload), { status, headers: responseHeaders });
+}
+
+// Zrcadlo referenčního src/lib/scoring.ts pro samostatně nasazovanou Edge Function.
+// Použije se jen jako read-time pojistka, když DB trigger ještě nestihl doplnit points.
+function calculatePoints(actualHome: number, actualAway: number, predHome: number, predAway: number): 0 | 2 | 4 | 6 | 10 {
+  if (predHome === actualHome && predAway === actualAway) return 10;
+  const actualTendency = Math.sign(actualHome - actualAway);
+  const predTendency = Math.sign(predHome - predAway);
+  if (actualTendency === predTendency) {
+    if (actualTendency === 0) return 6;
+    const diffCorrect = predHome - predAway === actualHome - actualAway;
+    const totalCorrect = predHome + predAway === actualHome + actualAway;
+    return diffCorrect || totalCorrect ? 6 : 4;
+  }
+  return predHome + predAway === actualHome + actualAway ? 2 : 0;
 }
 
 function pointsLabel(points: number) {
@@ -158,7 +174,7 @@ function evaluation(points: number, ...seed: Array<string | number>) {
   ], ...seed, points);
 }
 
-function reminderNotification(kind: ReminderDue['kind'], round: number, missing: number, total: number, playerId: number) {
+function fallbackReminderNotification(kind: ReminderDue['kind'], round: number, missing: number, total: number, playerId: number) {
   if (missing > 0) {
     const missingText = `Chybí ti ${missing} z ${total} tipů.`;
     if (kind === 'round_24h') {
@@ -214,7 +230,7 @@ function truncate(value: string, maxLength = 220) {
   return `${value.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
 }
 
-function resultNotification(block: ResultBlock, predictions: PredictionRow[], playerId: number, playerName: string) {
+function fallbackResultNotification(block: ResultBlock, predictions: PredictionRow[], playerId: number, playerName: string) {
   const byMatch = new Map(predictions.map((prediction) => [prediction.match_id, prediction]));
   const resultList = block.matches
     .map((match) => `${match.home_team} ${match.home_score}:${match.away_score} ${match.away_team}`)
@@ -399,6 +415,8 @@ Deno.serve(async (request) => {
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
   const publicKey = Deno.env.get('VAPID_PUBLIC_KEY') || '';
   const privateKey = Deno.env.get('VAPID_PRIVATE_KEY') || '';
+  const anthropicKey = Deno.env.get('ANTHROPIC_API_KEY') || '';
+  const anthropicModel = Deno.env.get('ANTHROPIC_ROAST_MODEL') || 'claude-sonnet-4-6';
   const subject = Deno.env.get('VAPID_SUBJECT') || 'mailto:admin@obtipovacka.cz';
   if (!supabaseUrl || !serviceKey || !publicKey || !privateKey) {
     return json({ error: 'Chybí serverové proměnné pro push notifikace.' }, 500);
@@ -545,7 +563,21 @@ Deno.serve(async (request) => {
       const missing = Math.max(0, item.matchIds.length - completed);
       if (item.kind === 'round_3h' && missing === 0) continue;
 
-      const notification = reminderNotification(item.kind, item.round, missing, item.matchIds.length, playerId);
+      const fallback = fallbackReminderNotification(item.kind, item.round, missing, item.matchIds.length, playerId);
+      const notification = await generateNotificationWithClaude({
+        apiKey: anthropicKey,
+        model: anthropicModel,
+        type: 'reminder',
+        facts: {
+          playerName: playerNames.get(playerId) || 'tipére',
+          round: item.round,
+          reminder: item.kind,
+          totalTips: item.matchIds.length,
+          missingTips: missing,
+          completedTips: completed,
+        },
+        fallback,
+      });
       const payload = JSON.stringify({
         ...notification,
         icon: '/icons/icon-192.png',
@@ -606,7 +638,53 @@ Deno.serve(async (request) => {
     }
 
     for (const playerId of pendingPlayerIds) {
-      const notification = resultNotification(block, predictionsByPlayer.get(playerId) || [], playerId, playerNames.get(playerId) || 'tipére');
+      const matchById = new Map(block.matches.map((match) => [match.id, match] as const));
+      const playerPredictions = (predictionsByPlayer.get(playerId) || []).map((prediction) => {
+        if (prediction.points != null) return prediction;
+        const finishedMatch = matchById.get(prediction.match_id);
+        if (finishedMatch?.home_score == null || finishedMatch.away_score == null) return prediction;
+        return {
+          ...prediction,
+          points: calculatePoints(
+            finishedMatch.home_score,
+            finishedMatch.away_score,
+            prediction.predicted_home,
+            prediction.predicted_away,
+          ),
+        };
+      });
+      const playerName = playerNames.get(playerId) || 'tipére';
+      const fallback = fallbackResultNotification(block, playerPredictions, playerId, playerName);
+      const predictionByMatch = new Map(playerPredictions.map((prediction) => [prediction.match_id, prediction] as const));
+      const resultFacts = block.matches.map((match) => {
+        const prediction = predictionByMatch.get(match.id);
+        return {
+          matchId: match.id,
+          home: match.home_team,
+          away: match.away_team,
+          score: `${match.home_score}:${match.away_score}`,
+          redCards: (match.detail?.cards ?? []).filter((card) => card.color === 'red').length,
+          tip: prediction ? `${prediction.predicted_home}:${prediction.predicted_away}` : null,
+          points: prediction?.points ?? null,
+        };
+      });
+      const allowedScores = new Set(resultFacts.flatMap((row) => [row.score, ...(row.tip ? [row.tip] : [])]));
+      const notification = await generateNotificationWithClaude({
+        apiKey: anthropicKey,
+        model: anthropicModel,
+        type: 'result',
+        facts: {
+          playerName,
+          round: block.round,
+          matches: resultFacts,
+          totalPoints: playerPredictions.reduce((sum, prediction) => sum + (prediction.points ?? 0), 0),
+          exactHits: playerPredictions.filter((prediction) => prediction.points === 10).length,
+          zeroTips: playerPredictions.filter((prediction) => prediction.points === 0).length,
+          missingTips: Math.max(0, block.matches.length - playerPredictions.length),
+        },
+        fallback,
+        allowedScores,
+      });
       const payload = JSON.stringify({
         ...notification,
         icon: '/icons/icon-192.png',

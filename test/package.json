@@ -1,0 +1,4 @@
+{
+  "$comment": "Určuje typ modulů POUZE pro adresář test/. Záměrně se nepřidává \"type\": \"module\" do kořenového package.json – ovlivnilo by to build i pomocné skripty (seed:*, push:keys, prebuild), které běží jako CommonJS.",
+  "type": "module"
+}

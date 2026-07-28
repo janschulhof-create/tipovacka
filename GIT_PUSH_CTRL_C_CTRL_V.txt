@@ -1,0 +1,251 @@
+GIT PUSH – JEN CTRL+C A CTRL+V
+================================
+
+PRAVIDLO:
+U každého kroku označ MYŠÍ pouze řádek s příkazem.
+Stiskni Ctrl+C.
+Klikni do PowerShellu.
+Stiskni Ctrl+V.
+Stiskni Enter.
+
+Pokud Ctrl+V ve tvém starém PowerShellu vůbec nefunguje, zavři ho a otevři Windows Terminal:
+Start -> napiš Windows Terminal -> Enter -> otevři PowerShell.
+V něm Ctrl+V funguje normálně.
+
+
+1. OTESTUJ, ŽE MÁŠ GIT
+----------------------
+Zkopíruj tento jeden řádek:
+
+git --version
+
+Výsledek má vypadat například:
+git version 2.45.1
+
+Pokud píše, že git není rozpoznán, nainstaluj Git for Windows:
+https://git-scm.com/download/win
+Po instalaci PowerShell/Terminal zavři a otevři znovu.
+
+
+2. OTEVŘI SPRÁVNOU SLOŽKU
+-------------------------
+ZIP rozbal například do:
+C:\tipovacka
+
+Pak otevři složku:
+C:\tipovacka\tipovacka-main
+
+V Průzkumníku klikni nahoře do adresního řádku, napiš:
+
+powershell
+
+stiskni Enter.
+PowerShell se otevře rovnou ve správné složce.
+
+
+3. OVĚŘ, ŽE JSI VE SPRÁVNÉ SLOŽCE
+---------------------------------
+Zkopíruj:
+
+dir
+
+Musíš vidět package.json a složku src.
+
+
+4. OVĚŘ SECURITY A PROJEKT
+--------------------------
+Zkopíruj postupně vždy JEDEN řádek, vlož Ctrl+V a potvrď Enter:
+
+npm.cmd ci
+
+npm.cmd run ci
+
+Pokud některý příkaz skončí chybou, NIC NEPOSÍLEJ NA GITHUB.
+
+
+5. POKUD GITHUB REPOZITÁŘ UŽ EXISTUJE
+-------------------------------------
+Na GitHubu otevři repozitář -> Code -> HTTPS -> Copy.
+Adresa bude vypadat například:
+https://github.com/tvoje-jmeno/tipovacka.git
+
+Pak v PowerShellu postupně kopíruj tyto řádky:
+
+git init
+
+git config user.name "TVOJE JMENO"
+
+git config user.email "TVUJ_EMAIL"
+
+git remote -v
+
+Pokud se po git remote -v nevypíše žádný origin, použij:
+
+git remote add origin ADRESA_REPOZITARE
+
+Pokud origin existuje, ale má špatnou adresu, použij:
+
+git remote set-url origin ADRESA_REPOZITARE
+
+Místo ADRESA_REPOZITARE vlož skutečnou HTTPS adresu z GitHubu.
+
+Pak pokračuj:
+
+git branch -M main
+
+git status
+
+Zkontroluj, že tam NENÍ .env, node_modules ani .next.
+
+Pak:
+
+git add .
+
+git status
+
+git commit -m "xB aktualni sezona a Dohrano kola"
+
+git push -u origin main
+
+Po pushi otevři GitHub -> Actions -> CI.
+CI musí být zelené.
+
+
+6. POKUD GITHUB REPOZITÁŘ JEŠTĚ NEMÁŠ
+-------------------------------------
+Na github.com:
+1. Klikni +
+2. New repository
+3. Repository name: tipovacka
+4. Doporučeno: Private
+5. NEZAŠKRTÁVEJ README, .gitignore ani licenci
+6. Create repository
+7. Zkopíruj HTTPS adresu přes tlačítko Copy
+
+Pak v PowerShellu kopíruj po jednom:
+
+git init
+
+git config user.name "TVOJE JMENO"
+
+git config user.email "TVUJ_EMAIL"
+
+git remote add origin ADRESA_REPOZITARE
+
+git branch -M main
+
+npm.cmd ci
+
+npm.cmd run ci
+
+git status
+
+git add .
+
+git status
+
+git commit -m "xB aktualni sezona a Dohrano kola"
+
+git push -u origin main
+
+
+7. KDYŽ NAPÍŠE: remote origin already exists
+-------------------------------------------
+Použij:
+
+git remote set-url origin ADRESA_REPOZITARE
+
+Pak:
+
+git push -u origin main
+
+
+8. KDYŽ NAPÍŠE: rejected non-fast-forward
+-----------------------------------------
+NEPOUŽÍVEJ force push.
+Zkopíruj:
+
+git pull --rebase origin main
+
+Pokud proběhne bez konfliktu:
+
+git push origin main
+
+Pokud vypíše konflikt, ZASTAV SE a pošli přesné znění chyby.
+
+
+9. KDYŽ NAPÍŠE: nothing to commit
+---------------------------------
+Zkopíruj:
+
+git status
+
+Pak:
+
+git log --oneline -5
+
+Je možné, že už je vše commitnuté.
+
+
+10. KONTROLA .ENV PŘED PUSH
+---------------------------
+Zkopíruj:
+
+git status
+
+Pak:
+
+git ls-files | Select-String ".env"
+
+.env.example je v pořádku.
+Skutečný .env, .env.local, .env.production, .env.staging atd. se odesílat nesmí.
+
+Pokud by byl .env pouze připravený ke commitu a ještě nebyl commitnutý:
+
+git restore --staged .env
+
+Pokud se skutečné tajemství už dostalo na GitHub, nestačí ho jen smazat. Klíč/heslo je nutné okamžitě změnit.
+
+
+NEJKRATŠÍ VERZE – REPOZITÁŘ UŽ MÁŠ
+===================================
+Po jednom Ctrl+C -> Ctrl+V -> Enter:
+
+git --version
+
+npm.cmd ci
+
+npm.cmd run ci
+
+git init
+
+git config user.name "TVOJE JMENO"
+
+git config user.email "TVUJ_EMAIL"
+
+git remote add origin ADRESA_REPOZITARE
+
+git branch -M main
+
+git status
+
+git add .
+
+git status
+
+git commit -m "xB aktualni sezona a Dohrano kola"
+
+git push -u origin main
+
+POZOR:
+Pokud git remote add origin napíše, že origin už existuje, nepokračuj tímto příkazem podruhé. Použij:
+
+git remote set-url origin ADRESA_REPOZITARE
+
+
+HOTOVO JE AŽ KDYŽ:
+[ ] npm.cmd run ci prošel
+[ ] git status neobsahuje skutečný .env
+[ ] git push skončil bez chyby
+[ ] na GitHubu vidíš soubory
+[ ] GitHub Actions -> CI je zelené

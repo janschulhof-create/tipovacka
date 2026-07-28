@@ -42,14 +42,14 @@ alter table public.players
 alter table public.players
   add column if not exists email text unique;
 
--- Nový tipér pro sezonu 2026/27. Auth účet vytvoří `npm run seed:mele`.
+-- Nový tipér pro sezonu 2026/27. Auth účet vytvoří bezpečný `npm run seed:player` s údaji z environment variables.
 insert into public.players (name, is_active, email)
 values ('Mele', true, 'mele@obtipovacka.local')
 on conflict (name) do update
 set is_active = true,
     email = coalesce(players.email, excluded.email);
 
--- Nový tipér Víčko. Auth účet vytvoří `npm run seed:vicko`.
+-- Nový tipér Víčko. Auth účet vytvoří bezpečný `npm run seed:player` s údaji z environment variables.
 insert into public.players (name, is_active, email)
 values ('Víčko', true, 'vicko@obtipovacka.local')
 on conflict (name) do update

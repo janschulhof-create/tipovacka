@@ -10,6 +10,7 @@ import {
   type TeamForm,
   type XbHistoryRow,
 } from '@/lib/predict';
+import { buildPersonalXbHistory, isMatchBeforeTarget } from '@/lib/xbHistory';
 
 export const dynamic = 'force-dynamic';
 
@@ -94,7 +95,7 @@ const archivePairIndex = new Map<string, ArchiveMatch[]>();
 const archiveTipsByPlayer = new Map<string, XbHistoryRow[]>();
 const archiveAllPoints: number[] = [];
 
-for (const round of archiveDataset.rounds) {
+for (const round of [...archiveDataset.rounds].sort((a, b) => a.round - b.round)) {
   for (const match of round.matches) {
     if (match.hs != null && match.as != null) {
       const row: ArchiveMatch = {
@@ -116,7 +117,7 @@ for (const round of archiveDataset.rounds) {
       archiveAllPoints.push(tip.pts);
       if (match.hs == null || match.as == null) continue;
       const rows = archiveTipsByPlayer.get(name) ?? [];
-      rows.push({ home: match.home, away: match.away, points: tip.pts });
+      rows.push({ home: match.home, away: match.away, points: tip.pts, source: 'archive' });
       archiveTipsByPlayer.set(name, rows);
     }
   }
@@ -142,7 +143,7 @@ export async function GET(req: Request) {
   const [{ data: match }, { data: authData }] = await Promise.all([
     sb
       .from('matches')
-      .select('id, home_team, away_team, season_id, source_league, round')
+      .select('id, home_team, away_team, season_id, source_league, round, kickoff')
       .eq('id', matchId)
       .single(),
     sb.auth.getUser(),
@@ -165,34 +166,33 @@ export async function GET(req: Request) {
   const fallbackH2h: H2HMatch[] = ((h2hData as unknown as Record<string, H2HMatch[]>)[pairKey] ?? [])
     .slice(0, 6);
 
-  const mutualMatches: MutualMatchRow[] = archivePairMatches.length
-    ? archivePairMatches.map((m) => {
-        const tip = player ? m.tips[player.name] : undefined;
-        return {
-          round: m.round,
-          date: null,
-          home: m.home,
-          away: m.away,
-          hs: m.hs,
-          as: m.as,
-          ph: tip?.h ?? null,
-          pa: tip?.a ?? null,
-          points: tip?.pts ?? null,
-          season: archiveDataset.season,
-        };
-      })
-    : fallbackH2h.map((m) => ({
-        round: null,
-        date: m.date,
-        home: canonTeam(m.home),
-        away: canonTeam(m.away),
-        hs: m.hs,
-        as: m.as,
-        ph: null,
-        pa: null,
-        points: null,
-        season: m.comp ?? null,
-      }));
+  const archiveMutualMatches: MutualMatchRow[] = archivePairMatches.map((m) => {
+    const tip = player ? m.tips[player.name] : undefined;
+    return {
+      round: m.round,
+      date: null,
+      home: m.home,
+      away: m.away,
+      hs: m.hs,
+      as: m.as,
+      ph: tip?.h ?? null,
+      pa: tip?.a ?? null,
+      points: tip?.pts ?? null,
+      season: archiveDataset.season,
+    };
+  });
+  const fallbackMutualMatches: MutualMatchRow[] = fallbackH2h.map((m) => ({
+    round: null,
+    date: m.date,
+    home: canonTeam(m.home),
+    away: canonTeam(m.away),
+    hs: m.hs,
+    as: m.as,
+    ph: null,
+    pa: null,
+    points: null,
+    season: m.comp ?? null,
+  }));
 
   const { data: playedData } = await sb
     .from('matches')
@@ -210,9 +210,34 @@ export async function GET(req: Request) {
   // U Chance ligy se do formy, ligového průměru ani osobního xB nesmí dostat
   // přípravné zápasy. Ochrana funguje i před spuštěním databázové migrace.
   const isCurrentChanceMatch = match.source_league === 'cze.1' && Number(match.round) > 0;
+  const playedBeforeTarget = played.filter((m) => isMatchBeforeTarget(
+    m,
+    { id: match.id, kickoff: String(match.kickoff ?? '') },
+  ));
   const modelPlayed = isCurrentChanceMatch
-    ? played.filter((m) => m.source_league === 'cze.1' && Number(m.round) > 0)
-    : played;
+    ? playedBeforeTarget.filter((m) => m.source_league === 'cze.1' && Number(m.round) > 0)
+    : playedBeforeTarget;
+
+  // H2H už není zamrzlé na statickém archivu. Každý dokončený vzájemný
+  // zápas aktuální sezony se přidá před starší archivní duely.
+  const currentMutualMatches: MutualMatchRow[] = modelPlayed
+    .filter((m) => [canonTeam(m.home_team), canonTeam(m.away_team)].sort().join('|') === currentPair)
+    .map((m) => ({
+      round: m.round,
+      date: m.kickoff,
+      home: m.home_team,
+      away: m.away_team,
+      hs: m.home_score,
+      as: m.away_score,
+      ph: null,
+      pa: null,
+      points: null,
+      season: 'Aktuální sezona',
+    }));
+
+  let mutualMatches: MutualMatchRow[] = currentMutualMatches.length || archiveMutualMatches.length
+    ? [...currentMutualMatches, ...archiveMutualMatches].slice(0, 6)
+    : fallbackMutualMatches;
 
   const lastMatches = (team: string) =>
     modelPlayed.filter((m) => m.home_team === team || m.away_team === team).slice(0, 5);
@@ -279,17 +304,48 @@ export async function GET(req: Request) {
     const { data: seasonPredictions } = regularIds.length
       ? await sb
           .from('predictions')
-          .select('match_id, points')
+          .select('match_id, predicted_home, predicted_away, points')
           .eq('player_id', player.id)
           .in('match_id', regularIds)
       : { data: [] };
-    const seasonPointMap = new Map(
-      (((seasonPredictions as unknown as { match_id: number; points: number | null }[]) ?? []))
-        .filter((row) => row.points != null && Number.isFinite(row.points))
-        .map((row) => [row.match_id, row.points as number]),
-    );
-    // Chybějící tip na dohraném ligovém zápase je skutečných 0 bodů.
-    const seasonPoints = regularFinished.map((playedMatch) => seasonPointMap.get(playedMatch.id) ?? 0);
+    const personalHistory = buildPersonalXbHistory({
+      archiveTips,
+      finishedMatches: regularFinished.map((playedMatch) => ({
+        id: playedMatch.id,
+        kickoff: playedMatch.kickoff,
+        home_team: playedMatch.home_team,
+        away_team: playedMatch.away_team,
+        home_score: playedMatch.home_score,
+        away_score: playedMatch.away_score,
+      })),
+      predictions: ((seasonPredictions as unknown as {
+        match_id: number;
+        predicted_home: number;
+        predicted_away: number;
+        points: number | null;
+      }[]) ?? []),
+    });
+    const seasonPoints = personalHistory.currentSeason.map((row) => row.points);
+
+    // Do H2H detailu doplníme i osobní tip z aktuální sezony. Zápasy před
+    // vstupem nováčka zůstávají týmovou historií, ale nejsou jeho osobním vzorkem.
+    mutualMatches = mutualMatches.map((row) => {
+      if (!row.date) return row;
+      const playedMatch = regularFinished.find((m) => m.kickoff === row.date
+        && canonTeam(m.home_team) === canonTeam(row.home)
+        && canonTeam(m.away_team) === canonTeam(row.away));
+      if (!playedMatch) return row;
+      const predictionRow = personalHistory.predictionByMatch.get(playedMatch.id);
+      if (!personalHistory.eligibleMatchIds.has(playedMatch.id)) return row;
+      const historyRow = personalHistory.currentSeason.find((item) => item.matchId === playedMatch.id);
+      return {
+        ...row,
+        ph: predictionRow?.predicted_home ?? null,
+        pa: predictionRow?.predicted_away ?? null,
+        points: historyRow?.points ?? 0,
+      };
+    });
+
     const { data: currentPrediction } = await sb
       .from('predictions')
       .select('predicted_home, predicted_away')
@@ -311,7 +367,7 @@ export async function GET(req: Request) {
       return computePersonalXb({
         home: teams.home,
         away: teams.away,
-        archiveTips,
+        archiveTips: personalHistory.combined,
         priorAverage,
         seasonPoints,
         tipExpectedPoints,
@@ -319,16 +375,15 @@ export async function GET(req: Request) {
         contextValue,
         contextSample: prediction?.sample ?? 0,
         contextDescription,
-        // Ligový graf používá až 280 tipů. Týmové grafy filtrují pouze zápasy,
-        // v nichž nastoupil daný klub, a zobrazují maximálně 35 utkání.
-        trendPoints: archiveTips.map((row) => row.points),
-        teamTrendPoints: {
-          home: archiveTips
-            .filter((row) => canonTeam(row.home) === canonTeam(teams.home) || canonTeam(row.away) === canonTeam(teams.home))
-            .map((row) => row.points),
-          away: archiveTips
-            .filter((row) => canonTeam(row.home) === canonTeam(teams.away) || canonTeam(row.away) === canonTeam(teams.away))
-            .map((row) => row.points),
+        // Graf už pokračuje i v aktuální sezoně. Jeden kanonický dataset
+        // napájí celkový trend, týmové faktory i H2H, takže sample nemůže
+        // zůstat omylem zamrzlý na historie.json.
+        trendRows: personalHistory.combined,
+        teamTrendRows: {
+          home: personalHistory.combined
+            .filter((row) => canonTeam(row.home) === canonTeam(teams.home) || canonTeam(row.away) === canonTeam(teams.home)),
+          away: personalHistory.combined
+            .filter((row) => canonTeam(row.home) === canonTeam(teams.away) || canonTeam(row.away) === canonTeam(teams.away)),
         },
       });
     };

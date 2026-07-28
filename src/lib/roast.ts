@@ -1,3 +1,6 @@
+import { generateAnthropicText } from './anthropicText';
+import { BAROKO_STYLE_GUIDE, validateBarokoText } from './barokoPhrases';
+
 /**
  * Generátor vtipného zhodnocení zápasu přes Anthropic API.
  * Model lze měnit přes env ANTHROPIC_ROAST_MODEL (default Sonnet – lepší čeština
@@ -9,8 +12,6 @@ export interface RoastTip {
   tip: string; // "2:1"
   points: number | null;
 }
-
-const ROAST_MODEL = process.env.ANTHROPIC_ROAST_MODEL || 'claude-sonnet-4-6';
 
 /** Kompaktní text průběžného pořadí pro kontext v hodnocení. */
 export function standingsToText(rows: { name: string; points: number }[]): string {
@@ -56,13 +57,14 @@ Struktura těch 3 vět:
 2) Vyzdvihni frajera s NEJVÍC body — jménem, klidně přehnaně ("věštec", "prorok") — NEBO místo toho vypíchni zajímavý moment zápasu (např. drama v prodloužení / gól v nastavení a kdo kvůli němu přišel o body).
 3) Pořádně a kamarádsky si rýpni do toho s NEJMÍŇ body — jménem a přes jeho konkrétní tip, ať to bolí.
 
-Styl:
-- Míchej dvě polohy: syrový humor okresní kabiny a hospody po zápase + absurdně uhlazený tón českého fotbalového funkcionáře po telefonu.
-- Můžeš použít MAXIMÁLNĚ jednu krátkou autentickou hlášku z tohoto povoleného výběru:
-  Okresní přebor: „Tak poď vole.“, „Já bych tady, hele, Teplice kříž.“, „Řekni, co o tomhle zápase řekl Beckham.“, „Á, místní vtipálek.“, „Když nastoupí špekáček, dostanete na fráček.“, „Máme Roteiro!“, „Vy mě nechcete za tipéra?“, „Talent máš, tipy ti chyběj.“, „Bohemka no.“, „Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“, „Já vyznávám útočnou kombinační filozofii.“, „Dneska očekávám 2 body. Za výhru jsou ale 4 body.“, „Počkej pocem, nehrál tys divizi?“, „Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“, „Já koukal na ten teletext a najednou tam naskočilo 1:0.“, „Ty by nás sfoukli jako svíčku.“, „Ty vole, to jsou nervy.“, „Když se daří a padá to tam, to umí každej blbec.“, „Von tleskal nad hlavou a já dělal, že to nevidím.“, „Pane [JMÉNO TIPÉRA], vždyť já mám stejnej zájem jako vy.“, „Ty vole, v těhle letech ty tipy.“
-  Ivánku, kamaráde: „Mám strategii.“, „Vám se ten fotbal jako líbil?“, „To by člověk blil, Milane.“, „Loď se potápí, bárka de ke dnu.“, „Musíš to mít pod kontrolou.“, „Víš, co se říká na vsi? Že silnější pes mrdá.“, „Milane, myslím, že ty mediální mrdky máme pořešený.“, „Ti volal Pelta, jo?“, „Volal Pelta.“, „Kapříci připluli.“
-- Hlášku vybírej podle situace: Teplice kříž k remíze; Tak poď vole k odvážnému nebo přesnému tipu; Beckham či Pelta k absurdnímu průběhu; „Volal Pelta.“ a „Když se daří a padá to tam, to umí každej blbec.“ k přesnému tipu za 10 bodů; „Jak vidíte, čím víc gólů tipujeme, tím víc bodů máme.“, „Já vyznávám útočnou kombinační filozofii.“ nebo „Dneska očekávám 2 body. Za výhru jsou ale 4 body.“ pouze k vysokému gólovému tipu (součet alespoň 6); „Kapříci připluli.“ k vyloženě absurdnímu tipu (součet alespoň 7 nebo rozdíl alespoň 4); „Počkej pocem, nehrál tys divizi?“ jen při tipu na výhru Jablonce; „Ten Synot, ty Slovácí, jsou schopný vole ještě vyhrát.“ jen u zápasu Slovácka; teletext pouze když zápas skončil 1:0 a hráč tipoval remízu; „Ty vole, to jsou nervy.“ k těsnému zápasu o jediný gól; „Ty by nás sfoukli jako svíčku.“ k nule bodů; loď či blití k propadáku; silnějšího psa jen k jasnému debaklu; mediální mrdky pouze k jednoznačně uzavřenému nebo perfektně trefenému zápasu; „Vy mě nechcete za tipéra?“ k ostudné nule či chybějícímu tipu a „Bohemka no.“ POUZE tehdy, když hráč tipoval vítězství Bohemians a získal 0 bodů. „Talent máš, tipy ti chyběj.“ používej jen při chybějícím tipu. „Von tleskal nad hlavou a já dělal, že to nevidím.“ použij jen u tipéra, který tipoval výhru domácích a domácí prohráli. „Pane [JMÉNO TIPÉRA], vždyť já mám stejnej zájem jako vy.“ použij se skutečným jménem pouze tehdy, když tipér tipoval výhru týmu a soupeř tohoto týmu dostal červenou kartu. Pokud podmínku splňuje více tipérů, použij hlášku jen jednou a vyber tipéra s nejvyšším počtem bodů za zápas; při shodě vyber pouze jednoho. „Ty vole, v těhle letech ty tipy.“ použij při přesném tipu za 10 bodů.
-- Hlášku cituj přesně, nevymýšlej falešné pokračování a vždy ji přirozeně napoj na konkrétní výsledek či tip. Zbytek musí být původní text, ne přepis dialogů ani sled citací.
+Styl a závazný katalog hlášek:
+${BAROKO_STYLE_GUIDE}
+
+Specificky pro jeden zápas:
+- použij nejvýše JEDNU autentickou hlášku,
+- pozitivní hlášku važ jen na skutečný bodový úspěch; negativní jen na skutečnou nulu/propadák,
+- týmově specifické hlášky smíš použít jen v přesném kontextu definovaném katalogem,
+- při chybějícím tipu pracuj jen s tím, co je skutečně v datech; nic nedopočítávej.
 
 Pravidla:
 - Uráž kamarádsky, ale drsně a vtipně — jsou to kámoši, snesou to, nebonzuj se.
@@ -77,29 +79,19 @@ ${drama}${redCardsBlock}${standingsBlock}
 Tipy hráčů v tomto zápase:
 ${tipsText}`;
 
-  try {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        'x-api-key': key,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: ROAST_MODEL,
-        max_tokens: 320,
-        messages: [{ role: 'user', content: prompt }],
-      }),
-    });
-    if (!res.ok) return null;
-    const data = (await res.json()) as { content?: { type?: string; text?: string }[] };
-    const text = (data?.content ?? [])
-      .filter((b) => b.type === 'text')
-      .map((b) => b.text ?? '')
-      .join('')
-      .trim();
-    return text || null;
-  } catch {
-    return null;
-  }
+  const generated = await generateAnthropicText(prompt, 320);
+  if (!generated) return null;
+
+  const cleaned = generated.trim();
+  const valid = validateBarokoText({
+    text: cleaned,
+    allowedScores: [
+      input.score,
+      ...(input.reg ? [input.reg] : []),
+      ...input.tips.map((tip) => tip.tip),
+    ],
+    maxPhrases: 1,
+    maxLength: 1600,
+  });
+  return valid ? cleaned : null;
 }

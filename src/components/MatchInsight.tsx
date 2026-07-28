@@ -1,6 +1,6 @@
-'use client';
+﻿'use client';
 
-import { useEffect, useState, useRef, type ReactNode } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { pointsBadgeClass } from '@/lib/points';
 import { Flag } from './Flag';
@@ -17,7 +17,7 @@ function fmtDate(iso: string): string {
 function Empty({ text }: { text: string }) {
   return <p className="rounded-xl border border-terrain-700 bg-terrain-900/40 px-3 py-4 text-center text-[13px] text-slate-300/50">{text}</p>;
 }
-function tipWord(n: number) { return n === 1 ? 'tip' : n < 5 ? 'tipy' : 'tipů'; }
+function tipWord(n: number) { return n === 1 ? 'tip' : n < 5 ? 'tipy' : 'tipĹŻ'; }
 
 function ScoreChip({ hs, as }: { hs: number; as: number }) {
   const hc = hs > as ? 'text-green-400' : hs < as ? 'text-slate-400' : 'text-slate-200';
@@ -65,8 +65,8 @@ function Bilance({ h2h, teamA, teamB }: { h2h: H2HMatch[]; teamA: string; teamB:
     <div className="mb-2 flex items-center gap-3 rounded-xl border border-terrain-700 bg-terrain-900/40 px-3 py-2">
       <span className="flex shrink-0 items-center gap-1 text-[11px]">
         <Flag team={teamA} />
-        <b className="tabular-nums text-slate-200">{w}</b><span className="text-slate-500">–</span>
-        <b className="tabular-nums text-slate-200">{d}</b><span className="text-slate-500">–</span>
+        <b className="tabular-nums text-slate-200">{w}</b><span className="text-slate-500">â€“</span>
+        <b className="tabular-nums text-slate-200">{d}</b><span className="text-slate-500">â€“</span>
         <b className="tabular-nums text-slate-200">{l}</b>
         <Flag team={teamB} />
       </span>
@@ -97,7 +97,7 @@ function teamRows(form: FormRow[], team: string): TP[] {
     });
 }
 
-// Pevné sloupce vpravo (skóre / tip / body) → řádky se zarovnají pod sebe
+// PevnĂ© sloupce vpravo (skĂłre / tip / body) â†’ Ĺ™Ăˇdky se zarovnajĂ­ pod sebe
 function FormRowList({ r }: { r: TP }) {
   return (
     <div className="flex items-center gap-2 border-b border-terrain-800/60 px-3 py-2.5 last:border-0">
@@ -117,7 +117,7 @@ function SubHead({ team, count, top }: { team: string; count: number; top?: bool
   return (
     <div className={`flex items-center gap-1.5 bg-terrain-900/40 px-3 py-1.5 text-[11px] text-slate-300/60 ${top ? 'border-t border-terrain-800/60' : ''}`}>
       <Flag team={team} /><span className="min-w-0 truncate">{team}</span>
-      {count > 0 && <span className="text-slate-500">· {count}</span>}
+      {count > 0 && <span className="text-slate-500">Â· {count}</span>}
     </div>
   );
 }
@@ -134,7 +134,7 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
     setData(null); setErr(false); setTab('h2h');
     fetch(`/api/match-insight?match=${matchId}`)
       .then((r) => r.json())
-      .then((d) => { if (alive) (d?.error ? setErr(true) : setData(d)); })
+      .then((d) => { if (alive) { if (d?.error) setErr(true); else setData(d); } })
       .catch(() => { if (alive) setErr(true); });
     return () => { alive = false; };
   }, [matchId]);
@@ -174,38 +174,38 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
               {data ? (
                 <>
                   <Flag team={data.teams.home} />
-                  <span className="truncate">{data.teams.home} – {data.teams.away}</span>
+                  <span className="truncate">{data.teams.home} â€“ {data.teams.away}</span>
                   <Flag team={data.teams.away} />
                 </>
-              ) : 'Detail zápasu'}
+              ) : 'Detail zĂˇpasu'}
             </h3>
-            <button onClick={onClose} aria-label="Zavřít" className="shrink-0 rounded-lg px-2 py-1 text-slate-300/55 transition hover:bg-terrain-800 hover:text-white">✕</button>
+            <button onClick={onClose} aria-label="ZavĹ™Ă­t" className="shrink-0 rounded-lg px-2 py-1 text-slate-300/55 transition hover:bg-terrain-800 hover:text-white">âś•</button>
           </div>
         </div>
 
         {!data && !err && (
           <div className="space-y-2 py-6">{[0, 1, 2].map((i) => <div key={i} className="h-10 animate-pulse rounded-xl bg-terrain-800/70" />)}</div>
         )}
-        {err && <p className="py-8 text-center text-sm text-slate-300/55">Nepodařilo se načíst data zápasu.</p>}
+        {err && <p className="py-8 text-center text-sm text-slate-300/55">NepodaĹ™ilo se naÄŤĂ­st data zĂˇpasu.</p>}
 
         {data && (
           <div className="mt-4">
             <div className="mb-3 flex gap-1 rounded-lg border border-terrain-700 bg-terrain-900/50 p-1 text-[12px]">
-              <button onClick={() => setTab('h2h')} className={tabCls(tab === 'h2h')}>⚽️ Vzájemné</button>
-              <button onClick={() => setTab('form')} className={tabCls(tab === 'form')}>🎯 Tvoje forma</button>
+              <button onClick={() => setTab('h2h')} className={tabCls(tab === 'h2h')}>âš˝ď¸Ź VzĂˇjemnĂ©</button>
+              <button onClick={() => setTab('form')} className={tabCls(tab === 'form')}>đźŽŻ Tvoje forma</button>
             </div>
 
             {tab === 'h2h' ? (
-              data.h2h.length === 0 ? <Empty text="Pro tyhle týmy zatím nemáme historii vzájemných zápasů." /> : (
+              data.h2h.length === 0 ? <Empty text="Pro tyhle tĂ˝my zatĂ­m nemĂˇme historii vzĂˇjemnĂ˝ch zĂˇpasĹŻ." /> : (
                 <>
                   <Bilance h2h={data.h2h} teamA={data.teams.home} teamB={data.teams.away} />
                   <div className="overflow-hidden rounded-xl border border-terrain-700">{data.h2h.map((m, i) => <H2HRow key={i} m={m} />)}</div>
                 </>
               )
             ) : !data.loggedIn ? (
-              <Empty text="Přihlas se a uvidíš svoje tipy na tyhle týmy." />
+              <Empty text="PĹ™ihlas se a uvidĂ­Ĺˇ svoje tipy na tyhle tĂ˝my." />
             ) : data.form.length === 0 ? (
-              <Empty text="Tyhle dva týmy jsi zatím v tipovačce netipoval." />
+              <Empty text="Tyhle dva tĂ˝my jsi zatĂ­m v tipovaÄŤce netipoval." />
             ) : (
               <>
                 <div className="overflow-hidden rounded-xl border border-terrain-700">
@@ -215,16 +215,16 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
                     return (
                       <>
                         <SubHead team={data.teams.home} count={a.length} />
-                        {a.length ? a.map((r) => <FormRowList key={r.matchId} r={r} />) : <p className="px-3 py-2.5 text-[12px] text-slate-300/40">žádné tipy</p>}
+                        {a.length ? a.map((r) => <FormRowList key={r.matchId} r={r} />) : <p className="px-3 py-2.5 text-[12px] text-slate-300/40">ĹľĂˇdnĂ© tipy</p>}
                         <SubHead team={data.teams.away} count={b.length} top />
-                        {b.length ? b.map((r) => <FormRowList key={r.matchId} r={r} />) : <p className="px-3 py-2.5 text-[12px] text-slate-300/40">žádné tipy</p>}
+                        {b.length ? b.map((r) => <FormRowList key={r.matchId} r={r} />) : <p className="px-3 py-2.5 text-[12px] text-slate-300/40">ĹľĂˇdnĂ© tipy</p>}
                       </>
                     );
                   })()}
                 </div>
                 <div className="mt-2 flex items-center justify-between px-1 text-[12px]">
                   <span className="text-slate-300/55">Celkem za {data.form.length} {tipWord(data.form.length)}</span>
-                  <span className="font-semibold text-pitch-light">{total} b · Ø {avg}</span>
+                  <span className="font-semibold text-pitch-light">{total} b Â· Ă {avg}</span>
                 </div>
               </>
             )}
@@ -236,3 +236,4 @@ export function MatchInsight({ matchId, onClose }: { matchId: number; onClose: (
 
   return typeof document !== 'undefined' ? createPortal(modal, document.body) : null;
 }
+

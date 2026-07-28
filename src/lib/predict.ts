@@ -43,6 +43,12 @@ export interface XbHistoryRow {
   home: string;
   away: string;
   points: number;
+  /** Match id je dostupné u živé sezony; archiv ho historicky nemá. */
+  matchId?: number | null;
+  /** ISO kickoff pro chronologii živé sezony. */
+  kickoff?: string | null;
+  /** Zdroj umožní v grafu označit hranici mezi archivem a aktuální sezonou. */
+  source?: 'archive' | 'database';
 }
 
 export interface XbFactor {
@@ -62,6 +68,7 @@ export interface XbTrendPoint {
   index: number;
   value: number;
   actual: number;
+  source?: 'archive' | 'database';
 }
 
 export interface XbPrediction {
@@ -96,12 +103,19 @@ export interface PersonalXbInput {
   contextValue?: number | null;
   contextSample?: number;
   contextDescription?: string;
-  /** Historické body v chronologickém pořadí pro graf vývoje osobního xB. */
+  /** Starší kompatibilní vstup: samotné body v chronologickém pořadí. */
   trendPoints?: number[];
-  /** Historické body omezené na zápasy jednotlivých týmů v chronologickém pořadí. */
+  /** Preferovaný vstup: plná osobní historie včetně rozlišení archiv / aktuální sezona. */
+  trendRows?: XbHistoryRow[];
+  /** Starší kompatibilní týmové body. */
   teamTrendPoints?: {
     home?: number[];
     away?: number[];
+  };
+  /** Preferovaná týmová historie včetně aktuální sezony. */
+  teamTrendRows?: {
+    home?: XbHistoryRow[];
+    away?: XbHistoryRow[];
   };
 }
 
@@ -139,7 +153,7 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
       value: overallRaw,
       sample: archiveTips.length,
       description: archiveTips.length
-        ? 'Tvůj dlouhodobý průměr bodů ze všech dostupných ligových tipů. Slouží jako stabilní základ celého odhadu.'
+        ? 'Tvůj dlouhodobý průměr bodů ze všech dostupných dokončených ligových tipů včetně aktuální sezony. Slouží jako stabilní základ celého odhadu.'
         : 'Pro tohoto tipéra zatím nemáme vlastní minulou sezonu, proto model používá průměr celé party jako neutrální základ.',
     },
     {
@@ -147,14 +161,14 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
       label: `Jak ti sedí ${input.home}`,
       value: shrink(avgPoints(homeRows), homeRows.length, 8),
       sample: homeRows.length,
-      description: `Kolik bodů jsi historicky získával v zápasech, kde nastupoval ${input.home}, bez ohledu na soupeře a pořadí doma/venku.`,
+      description: `Kolik bodů získáváš v dokončených ligových zápasech, kde nastupoval ${input.home}, napříč archivem i aktuální sezonou.`,
     },
     {
       key: 'away',
       label: `Jak ti sedí ${input.away}`,
       value: shrink(avgPoints(awayRows), awayRows.length, 8),
       sample: awayRows.length,
-      description: `Kolik bodů jsi historicky získával v zápasech, kde nastupoval ${input.away}. Malý vzorek se tlumí tvým dlouhodobým průměrem.`,
+      description: `Kolik bodů získáváš v dokončených ligových zápasech, kde nastupoval ${input.away}, včetně aktuální sezony. Malý vzorek se tlumí tvým dlouhodobým průměrem.`,
     },
   ];
 
@@ -164,7 +178,7 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
       label: 'Vzájemné zápasy',
       value: shrink(avgPoints(pairRows), pairRows.length, 3),
       sample: pairRows.length,
-      description: 'Tvoje body z minulých zápasů stejné dvojice soupeřů. Je to nejkonkrétnější faktor, ale u jednoho či dvou zápasů ho model záměrně nepřeceňuje.',
+      description: 'Tvoje body z dokončených zápasů stejné dvojice soupeřů napříč sezonami. Je to nejkonkrétnější faktor, ale u malého vzorku ho model záměrně nepřeceňuje.',
     });
   }
 
@@ -238,15 +252,28 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
   const strongestPositive = meaningfulImpacts.filter((factor) => factor.impact > 0).sort((a, b) => b.impact - a.impact)[0];
   const strongestNegative = meaningfulImpacts.filter((factor) => factor.impact < 0).sort((a, b) => a.impact - b.impact)[0];
 
-  const buildTrend = (points: number[] | undefined, limit: number): XbTrendPoint[] => {
-    const source = (points ?? [])
-      .filter((point) => Number.isFinite(point))
-      .map(clamp10);
+  const buildTrend = (
+    rows: XbHistoryRow[] | undefined,
+    points: number[] | undefined,
+    limit: number,
+  ): XbTrendPoint[] => {
+    const source = rows?.length
+      ? rows
+          .filter((row) => Number.isFinite(row.points))
+          .map((row) => ({ actual: clamp10(row.points), source: row.source }))
+      : (points ?? [])
+          .filter((point) => Number.isFinite(point))
+          .map((point) => ({ actual: clamp10(point), source: undefined }));
     let rolling = priorAverage;
-    const all = source.map((actual, index) => {
+    const all = source.map((row, index) => {
       // Citlivější exponenciální forma: poslední zápasy hýbou odhadem, ale jeden extrém ho nerozbije.
-      rolling = rolling * 0.68 + actual * 0.32;
-      return { index: index + 1, value: Number(clamp10(rolling).toFixed(1)), actual };
+      rolling = rolling * 0.68 + row.actual * 0.32;
+      return {
+        index: index + 1,
+        value: Number(clamp10(rolling).toFixed(1)),
+        actual: row.actual,
+        source: row.source,
+      };
     });
     return all.slice(-limit).map((row, index) => ({ ...row, index: index + 1 }));
   };
@@ -257,10 +284,10 @@ export function computePersonalXb(input: PersonalXbInput): XbPrediction {
     high: Number(Math.min(10, rounded + spread).toFixed(1)),
     confidence,
     factors,
-    trend: buildTrend(input.trendPoints, CHANCE_LIGA_TOTAL_MATCHES),
+    trend: buildTrend(input.trendRows, input.trendPoints, CHANCE_LIGA_TOTAL_MATCHES),
     teamTrends: {
-      home: buildTrend(input.teamTrendPoints?.home, CHANCE_LIGA_TEAM_TREND_MATCHES),
-      away: buildTrend(input.teamTrendPoints?.away, CHANCE_LIGA_TEAM_TREND_MATCHES),
+      home: buildTrend(input.teamTrendRows?.home, input.teamTrendPoints?.home, CHANCE_LIGA_TEAM_TREND_MATCHES),
+      away: buildTrend(input.teamTrendRows?.away, input.teamTrendPoints?.away, CHANCE_LIGA_TEAM_TREND_MATCHES),
     },
     explanation: strongestPositive || strongestNegative
       ? [

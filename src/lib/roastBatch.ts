@@ -1,5 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { generateRoastLLM, standingsToText } from './roast';
+import { calculatePoints } from './scoring';
 
 type Client = SupabaseClient;
 
@@ -53,13 +54,13 @@ export async function runRoastBatch(
         .select('predicted_home, predicted_away, points, players(name)')
         .eq('match_id', rm.id);
       type TR = { predicted_home: number; predicted_away: number; points: number | null; players: { name: string } | { name: string }[] | null };
-      const list = ((tips as TR[]) ?? [])
-        .filter((t) => t.points != null)
-        .map((t) => ({
-          name: Array.isArray(t.players) ? t.players[0]?.name ?? '?' : t.players?.name ?? '?',
-          tip: `${t.predicted_home}:${t.predicted_away}`,
-          points: t.points,
-        }));
+      const list = ((tips as TR[]) ?? []).map((t) => ({
+        name: Array.isArray(t.players) ? t.players[0]?.name ?? '?' : t.players?.name ?? '?',
+        tip: `${t.predicted_home}:${t.predicted_away}`,
+        // Roast nesmí vzniknout jen z části tipů kvůli krátkému zpoždění DB triggeru.
+        // Finální skóre už známe, proto body pro čtení dopočítáme referenční funkcí.
+        points: t.points ?? calculatePoints(rm.home_score, rm.away_score, t.predicted_home, t.predicted_away),
+      }));
       if (list.length === 0) return { id: rm.id, roast: null as string | null };
       const roast = await generateRoastLLM({
         home: rm.home_team,

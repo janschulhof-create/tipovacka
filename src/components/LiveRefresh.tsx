@@ -4,6 +4,37 @@ import { useEffect, useRef, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 
 /**
+ * ⚠️ TECHNICKÝ DLUH (etapa 6 refaktoru) — klientem spouštěná synchronizace.
+ *
+ * Prohlížeč tu spouští synchronizaci s poskytovatelem (při načtení, každých
+ * `intervalMs`, při návratu do aplikace a při pull-to-refresh). To má dva
+ * zásadní důsledky:
+ *   1) Data se aktualizují jen tehdy, když má někdo otevřenou aplikaci.
+ *   2) Osm přihlášených lidí spustí osm souběžných běhů — a sync nemá zámek.
+ *
+ * Cílový stav: synchronizaci vlastní server (cron) + lease proti souběhu,
+ * prohlížeč pouze čte (`router.refresh()`).
+ *
+ * POSTUP VYPNUTÍ (záměrně až po ověření serverového cronu):
+ *   1) nasadit a ověřit serverový cron,
+ *   2) nastavit `NEXT_PUBLIC_CLIENT_SYNC=0` → klientský trigger se vypne,
+ *      pull-to-refresh i auto-refresh dál fungují (jen bez volání syncu),
+ *   3) po ověření odstranit tento blok úplně.
+ * ROLLBACK: smazat proměnnou nebo nastavit `NEXT_PUBLIC_CLIENT_SYNC=1`.
+ *
+ * Výchozí hodnota je ZAPNUTO, aby se současné chování nezměnilo.
+ * Regresní test `test/regression/r7-klient-nespousti-sync.test.ts` zůstává
+ * záměrně červený, dokud tento blok existuje.
+ */
+const CLIENT_SYNC_ENABLED = process.env.NEXT_PUBLIC_CLIENT_SYNC !== '0';
+
+export const __technicalDebt_clientSync = {
+  enabled: CLIENT_SYNC_ENABLED,
+  removeInStage: 6,
+  reason: 'Synchronizace nesmí záviset na otevřené aplikaci ani běžet bez zámku.',
+} as const;
+
+/**
  * Obnovení dat bez zavírání appky:
  *  - Pull-to-refresh: vědomé stažení palcem dolů z úplného vrchu stránky (mobil i myš/trackpad).
  *  - Auto-refresh: když běží živý zápas (hasLive), tiše obnovuje každých `intervalMs`.
@@ -22,13 +53,15 @@ export function LiveRefresh({ hasLive, intervalMs = 90000 }: { hasLive: boolean;
   const MAX = 110;
 
   const syncLiveData = useCallback(async () => {
-    if (!hasLive) return;
+    // Viz TECHNICKÝ DLUH výše – vypínatelné přes NEXT_PUBLIC_CLIENT_SYNC=0.
+    if (!CLIENT_SYNC_ENABLED || !hasLive) return;
     try {
       await fetch('/api/sync-football?competition=liga&live_only=1', { method: 'POST', cache: 'no-store' });
     } catch {
       // Samotné obnovení stránky zůstane funkční i při dočasném výpadku zdroje.
     }
   }, [hasLive]);
+
 
   const doRefresh = useCallback(async () => {
     setBusy(true);
