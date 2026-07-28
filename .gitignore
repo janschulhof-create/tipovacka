@@ -1,0 +1,21 @@
+# závislosti
+/node_modules
+
+# sestavení
+/.next
+/out
+/build
+*.tsbuildinfo
+
+# běhové a dočasné
+.source-integrity.json
+.DS_Store
+*.log
+
+# prostředí — tajemství NIKDY do repozitáře
+.env
+.env.*
+!.env.example
+
+# nasazení
+.vercel

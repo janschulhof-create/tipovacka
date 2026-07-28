@@ -1,0 +1,45 @@
+{
+  "name": "chance-liga-tipovacka",
+  "version": "0.1.60",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint --max-warnings=13",
+    "test": "node scripts/run-test-suite.mjs green",
+    "push:keys": "node scripts/generate-vapid-keys.mjs",
+    "test:watch": "node scripts/run-test-suite.mjs all --watch",
+    "lint:ci": "next lint --no-cache --max-warnings=13 --format=compact",
+    "verify:sources": "node scripts/verify-source-integrity.mjs snapshot && npm run build && node scripts/verify-source-integrity.mjs verify",
+    "test:kontraktni": "node scripts/run-test-suite.mjs contract",
+    "test:red": "node scripts/run-test-suite.mjs red",
+    "test:vse": "node scripts/run-test-suite.mjs all",
+    "ci": "npm run security:check && npm run lint:ci && npx tsc --noEmit && npm test && npm run test:red:check && npm run verify:sources",
+    "test:red:check": "node scripts/check-red-suites.mjs",
+    "seed:player": "node scripts/seed-player.mjs",
+    "security:check": "node scripts/check-secrets.mjs"
+  },
+  "dependencies": {
+    "@supabase/ssr": "^0.5.2",
+    "@supabase/supabase-js": "^2.45.4",
+    "next": "15.1.9",
+    "react": "19.0.3",
+    "react-dom": "19.0.3",
+    "styled-jsx": "^5.1.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.1.9",
+    "postcss": "^8.4.49",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22.6 <23"
+  }
+}
