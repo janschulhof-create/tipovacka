@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getSessionPlayer } from '@/lib/auth';
 import { createAdminClient } from '@/lib/supabase/server';
+import { generateResultNotificationText } from '@/lib/notificationRoast';
+import { calculatePoints } from '@/lib/scoring';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -352,12 +354,44 @@ async function resultModalResponse(request: NextRequest, playerId: number, playe
     .in('match_id', matchIds);
   if (predictionsError) return NextResponse.json({ error: predictionsError.message }, { status: 500 });
 
-  const predictionRows = (predictions || []) as ResultPredictionRow[];
+  const rawPredictionRows = (predictions || []) as ResultPredictionRow[];
+  const matchById = new Map(matchRows.map((match) => [match.id, match] as const));
+  const predictionRows = rawPredictionRows.map((prediction) => {
+    if (prediction.points != null) return prediction;
+    const match = matchById.get(prediction.match_id);
+    if (match?.home_score == null || match.away_score == null) return prediction;
+    return {
+      ...prediction,
+      points: calculatePoints(
+        match.home_score,
+        match.away_score,
+        prediction.predicted_home,
+        prediction.predicted_away,
+      ),
+    };
+  });
   const byMatch = new Map(predictionRows.map((prediction) => [prediction.match_id, prediction]));
   const totalPoints = predictionRows.reduce((sum, prediction) => sum + (prediction.points ?? 0), 0);
   const exact = predictionRows.filter((prediction) => prediction.points === 10).length;
   const missing = Math.max(0, matchRows.length - predictionRows.length);
   const notification = resultNotification(matchRows, predictionRows, playerId, playerName, blockKey);
+  const aiNotification = await generateResultNotificationText({
+    playerName,
+    totalPoints,
+    exactHits: exact,
+    missingTips: missing,
+    matches: matchRows.map((match) => {
+      const prediction = byMatch.get(match.id);
+      return {
+        home: match.home_team,
+        away: match.away_team,
+        score: `${match.home_score}:${match.away_score}`,
+        tip: prediction ? `${prediction.predicted_home}:${prediction.predicted_away}` : null,
+        points: prediction?.points ?? 0,
+        redCards: (match.detail?.cards ?? []).filter((card) => card.color === 'red').length,
+      };
+    }),
+  });
 
   const rows = matchRows.map((match) => {
     const prediction = byMatch.get(match.id);
@@ -384,7 +418,7 @@ async function resultModalResponse(request: NextRequest, playerId: number, playe
         ? `Tvůj tip ${predictionRows[0].predicted_home}:${predictionRows[0].predicted_away} · ${pointsLabel(totalPoints)}`
         : 'Tip nebyl uložený · 0 bodů'
       : `${matchRows.length} zápasy · ${pointsLabel(totalPoints)}${exact ? ` · ${exact} přesný tip${exact > 1 ? 'y' : ''}` : ''}${missing ? ` · ${missing} bez tipu` : ''}`,
-    notificationText: notification.body,
+    notificationText: aiNotification ?? notification.body,
     matches: rows,
   });
 }

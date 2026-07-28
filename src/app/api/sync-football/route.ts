@@ -1044,7 +1044,7 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       warnings.push({ source: 'highlightly', error: 'Parametr highlightly_bootstrap je ignorován; Příprava je vypnutá.' });
     }
     let requests = 0;
-    let requestsRemaining: number | null = null;
+    const requestsRemaining: number | null = null;
 
     if (mode !== 'idle') {
       if (mode === 'live-ids') {

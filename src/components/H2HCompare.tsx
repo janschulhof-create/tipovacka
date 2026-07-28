@@ -278,8 +278,8 @@ export function H2HCompare({
       </div>
 
       <p className="text-[11px] leading-snug text-slate-300/40">
-        Zvýrazněná hodnota = kdo je v dané statistice lepší. U „Král nuličky", „Mr. Alzheimer",
-        „Blamáž" a „Faktor smůly" vyhrává ten, kdo má míň.
+        Zvýrazněná hodnota = kdo je v dané statistice lepší. U „Král nuličky“, „Mr. Alzheimer“,
+        „Blamáž“ a „Faktor smůly“ vyhrává ten, kdo má míň.
       </p>
     </div>
   );

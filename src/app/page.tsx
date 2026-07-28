@@ -24,6 +24,7 @@ import { StandingsChart } from '@/components/StandingsChart';
 import { Suspense } from 'react';
 import { SeasonStatsSection, SeasonStatsSkeleton, UnifiedStandingsSection, UnifiedStandingsSkeleton } from '@/components/SeasonStatsSection';
 import { LiveRefresh } from '@/components/LiveRefresh';
+import { RoundRecapSection, RoundRecapSkeleton } from '@/components/RoundRecapSection';
 import Link from 'next/link';
 import { getSessionPlayer } from '@/lib/auth';
 
@@ -100,6 +101,9 @@ export default async function Home({
 
   // závisí na zápasech, proto až teď
   const predictions = await getRoundPredictions(matches.map((m) => m.id));
+  const selectedRoundTitle = selectedRound != null
+    ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout))
+    : 'Aktuální kolo';
 
   const roundOpen = matches.some(
     (m) => m.status === 'scheduled' && new Date(m.kickoff).getTime() > Date.now()
@@ -134,7 +138,7 @@ export default async function Home({
               predictions={predictions}
               editable={!!sessionPlayer}
               playerId={sessionPlayer?.id ?? ''}
-              roundTitle={selectedRound != null ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
+              roundTitle={selectedRoundTitle}
               seasonName={season.name}
               rounds={rounds}
               selectedRound={selectedRound ?? currentRound ?? rounds[0] ?? 0}
@@ -223,6 +227,20 @@ export default async function Home({
             )}
           </aside>
         </div>
+      )}
+
+      {competition.key === 'liga' && (
+        <Suspense fallback={<RoundRecapSkeleton />}>
+          <RoundRecapSection
+            matches={matches}
+            players={players}
+            predictions={predictions}
+            standings={standings}
+            roundTitle={selectedRoundTitle}
+            seasonName={season.name}
+            includeStandingMovement={selectedRound === currentRound}
+          />
+        </Suspense>
       )}
 
       {/* ---------- STATISTIKY SEZÓNY: pod zápasy, na celou šířku (desktop); na mobilu stejné pořadí ---------- */}

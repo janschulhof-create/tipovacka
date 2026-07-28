@@ -47,10 +47,10 @@ interface XbPrediction {
   high: number;
   confidence: number;
   factors: XbFactor[];
-  trend: { index: number; value: number; actual: number }[];
+  trend: { index: number; value: number; actual: number; source?: 'archive' | 'database' }[];
   teamTrends?: {
-    home: { index: number; value: number; actual: number }[];
-    away: { index: number; value: number; actual: number }[];
+    home: { index: number; value: number; actual: number; source?: 'archive' | 'database' }[];
+    away: { index: number; value: number; actual: number; source?: 'archive' | 'database' }[];
   };
   explanation: string;
   hasTip: boolean;
@@ -448,7 +448,7 @@ function XbTrendChart({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
-              Trend xB z minulé sezony
+              Trend xB napříč sezonami
             </div>
             <p className="mt-0.5 text-[10px] text-copy-muted">{selectedLabel}</p>
           </div>
@@ -487,13 +487,16 @@ function XbTrendChart({
       ? visible.map((_, index) => index)
       : [0, Math.floor((visible.length - 1) / 2), visible.length - 1],
   );
+  const currentSeasonStart = visible.findIndex((row, index) =>
+    index > 0 && row.source === 'database' && visible[index - 1]?.source !== 'database',
+  );
 
   return (
     <div className="rounded-2xl border border-line-subtle bg-app-deep/35 p-3.5">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <div className="text-[10.5px] font-semibold uppercase tracking-[0.1em] text-copy-secondary">
-            Trend xB z minulé sezony
+            Trend xB napříč sezonami
           </div>
           <p className="mt-0.5 text-[10px] text-copy-muted">
             {scope === 'league'
@@ -543,6 +546,28 @@ function XbTrendChart({
             </text>
           </g>
         ))}
+        {currentSeasonStart > 0 && (
+          <g>
+            <line
+              x1={x(currentSeasonStart)}
+              x2={x(currentSeasonStart)}
+              y1={padTop}
+              y2={padTop + innerH}
+              stroke="rgba(190,148,255,.34)"
+              strokeWidth="1"
+              strokeDasharray="3 4"
+            />
+            <text
+              x={Math.min(width - 8, x(currentSeasonStart) + 4)}
+              y={12}
+              textAnchor={x(currentSeasonStart) > width - 100 ? 'end' : 'start'}
+              fill="rgba(190,148,255,.72)"
+              fontSize="8.5"
+            >
+              aktuální sezona
+            </text>
+          </g>
+        )}
         <path d={area} fill={`url(#${gradientId})`} opacity="0.10" />
         <path d={actualLine} fill="none" stroke="#35D07F" strokeWidth="2.2" strokeDasharray="1 7" strokeLinecap="round" strokeLinejoin="round" opacity="0.3" />
         <path d={xbLine} fill="none" stroke={`url(#${gradientId})`} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
@@ -564,7 +589,7 @@ function XbTrendChart({
       </svg>
 
       <p className="mt-1 text-[9.5px] leading-snug text-copy-muted">
-        Zobrazeno {visible.length} z {sourceRows.length} dostupných zápasů. Fialová ukazuje tehdejší xB, zelená tečkovaná skutečný bodový zisk.
+        Zobrazeno {visible.length} z {sourceRows.length} dostupných dokončených zápasů. Historie se průběžně doplňuje i v aktuální sezoně. Fialová ukazuje tehdejší xB, zelená tečkovaná skutečný bodový zisk.
       </p>
     </div>
   );
@@ -719,7 +744,7 @@ export function XbContent({ data, loading, desktop = false }: { data: InsightDat
       </div>
 
       <p className="text-[10.5px] leading-snug text-copy-muted">
-        Aktuální xB se během sezony průběžně přepočítává. Trend výše zůstává referencí posledních 5, 10, 20 nebo 35 tipů minulé ligové sezony.
+        Aktuální xB se během sezony průběžně přepočítává. Trend spojuje archiv s každým nově dokončeným ligovým tipem aktuální sezony; svislá značka ukazuje přechod do letošních zápasů.
       </p>
     </div>
   );

@@ -1,17 +1,24 @@
 {
   "name": "chance-liga-tipovacka",
-  "version": "0.1.59",
+  "version": "0.1.60",
   "private": true,
   "scripts": {
-    "prebuild": "node -e \"const fs=require('fs');const keep=new Set(['next.config.ts','tailwind.config.ts','next-env.d.ts']);for(const e of fs.readdirSync('.',{withFileTypes:true})){if(e.isFile()&&/\\.(ts|tsx)$/.test(e.name)&&!keep.has(e.name))fs.rmSync(e.name,{force:true});}fs.writeFileSync('next.config.ts',Buffer.from('aW1wb3J0IHR5cGUgeyBOZXh0Q29uZmlnIH0gZnJvbSAnbmV4dCc7Cgpjb25zdCBpbW11dGFibGVZZWFyID0gJ3B1YmxpYywgbWF4LWFnZT0zMTUzNjAwMCwgaW1tdXRhYmxlJzsKCmNvbnN0IG5leHRDb25maWc6IE5leHRDb25maWcgPSB7CiAgaW1hZ2VzOiB7CiAgICBmb3JtYXRzOiBbJ2ltYWdlL3dlYnAnXSwKICAgIHJlbW90ZVBhdHRlcm5zOiBbCiAgICAgIHsKICAgICAgICBwcm90b2NvbDogJ2h0dHBzJywKICAgICAgICBob3N0bmFtZTogJ3IyLnRoZXNwb3J0c2RiLmNvbScsCiAgICAgICAgcGF0aG5hbWU6ICcvaW1hZ2VzL21lZGlhL3RlYW0vYmFkZ2UvKionLAogICAgICB9LAogICAgICB7CiAgICAgICAgcHJvdG9jb2w6ICdodHRwcycsCiAgICAgICAgaG9zdG5hbWU6ICd3d3cudGhlc3BvcnRzZGIuY29tJywKICAgICAgICBwYXRobmFtZTogJy9pbWFnZXMvbWVkaWEvdGVhbS9iYWRnZS8qKicsCiAgICAgIH0sCiAgICBdLAogIH0sCiAgYXN5bmMgaGVhZGVycygpIHsKICAgIHJldHVybiBbCiAgICAgIHsKICAgICAgICBzb3VyY2U6ICcvdGVhbS1zcHJpdGUtdjEud2VicCcsCiAgICAgICAgaGVhZGVyczogW3sga2V5OiAnQ2FjaGUtQ29udHJvbCcsIHZhbHVlOiBpbW11dGFibGVZZWFyIH1dLAogICAgICB9LAogICAgICB7CiAgICAgICAgc291cmNlOiAnL2ljb25zLzpwYXRoKicsCiAgICAgICAgaGVhZGVyczogW3sga2V5OiAnQ2FjaGUtQ29udHJvbCcsIHZhbHVlOiBpbW11dGFibGVZZWFyIH1dLAogICAgICB9LAogICAgICB7CiAgICAgICAgc291cmNlOiAnL3N3LmpzJywKICAgICAgICBoZWFkZXJzOiBbeyBrZXk6ICdDYWNoZS1Db250cm9sJywgdmFsdWU6ICduby1jYWNoZSwgbm8tc3RvcmUsIG11c3QtcmV2YWxpZGF0ZScgfV0sCiAgICAgIH0sCiAgICBdOwogIH0sCn07CgpleHBvcnQgZGVmYXVsdCBuZXh0Q29uZmlnOwo=','base64').toString('utf8'));console.log('Build root vycisten a next.config.ts obnoven.');\"",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "test": "node --test",
-    "seed:mele": "node --input-type=module -e \"import { createClient } from '@supabase/supabase-js'; const url=process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.SUPABASE_URL; const key=process.env.SUPABASE_SERVICE_ROLE_KEY; if(!url||!key) throw new Error('Chybí NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL nebo SUPABASE_SERVICE_ROLE_KEY.'); const sb=createClient(url,key,{auth:{persistSession:false}}); const name='Mele'; const email='mele@obtipovacka.local'; const password='Bageta-Ponozka-Tucnak'; let {data:player,error:pe}=await sb.from('players').select('id,name,email,auth_user_id').eq('name',name).maybeSingle(); if(pe) throw pe; if(!player){const r=await sb.from('players').insert({name,is_active:true,email}).select('id,name,email,auth_user_id').single(); if(r.error) throw r.error; player=r.data;} let userId=player.auth_user_id; if(!userId){const created=await sb.auth.admin.createUser({email,password,email_confirm:true}); if(created.error){const listed=await sb.auth.admin.listUsers({page:1,perPage:1000}); if(listed.error) throw created.error; const existing=listed.data.users.find(u=>u.email===email); if(!existing) throw created.error; userId=existing.id;} else userId=created.data.user.id; const linked=await sb.from('players').update({auth_user_id:userId,email,is_active:true}).eq('id',player.id); if(linked.error) throw linked.error;} else {const updated=await sb.auth.admin.updateUserById(userId,{email,password,email_confirm:true}); if(updated.error) throw updated.error; await sb.from('players').update({email,is_active:true}).eq('id',player.id);} console.log('Mele byl vytvořen a propojen. Přihlašovací heslo: '+password);\"",
-    "seed:vicko": "node --input-type=module -e \"import { createClient } from '@supabase/supabase-js'; const url=process.env.NEXT_PUBLIC_SUPABASE_URL||process.env.SUPABASE_URL; const key=process.env.SUPABASE_SERVICE_ROLE_KEY; if(!url||!key) throw new Error('Chybí NEXT_PUBLIC_SUPABASE_URL/SUPABASE_URL nebo SUPABASE_SERVICE_ROLE_KEY.'); const sb=createClient(url,key,{auth:{persistSession:false}}); const name='Víčko'; const email='vicko@obtipovacka.local'; const password='Kobliha-Traktor-Zralok'; let {data:player,error:pe}=await sb.from('players').select('id,name,email,auth_user_id').eq('name',name).maybeSingle(); if(pe) throw pe; if(!player){const r=await sb.from('players').insert({name,is_active:true,email}).select('id,name,email,auth_user_id').single(); if(r.error) throw r.error; player=r.data;} let userId=player.auth_user_id; if(!userId){const created=await sb.auth.admin.createUser({email,password,email_confirm:true}); if(created.error){const listed=await sb.auth.admin.listUsers({page:1,perPage:1000}); if(listed.error) throw created.error; const existing=listed.data.users.find(u=>u.email===email); if(!existing) throw created.error; userId=existing.id;} else userId=created.data.user.id; const linked=await sb.from('players').update({auth_user_id:userId,email,is_active:true}).eq('id',player.id); if(linked.error) throw linked.error;} else {const updated=await sb.auth.admin.updateUserById(userId,{email,password,email_confirm:true}); if(updated.error) throw updated.error; const linked=await sb.from('players').update({email,is_active:true}).eq('id',player.id); if(linked.error) throw linked.error;} console.log('Víčko byl vytvořen a propojen. Přihlašovací heslo: '+password);\"",
-    "push:keys": "node --input-type=module -e \"import { generateKeyPairSync } from 'node:crypto'; const {publicKey,privateKey}=generateKeyPairSync('ec',{namedCurve:'prime256v1'}); const pub=publicKey.export({format:'jwk'}); const priv=privateKey.export({format:'jwk'}); const b=(s)=>Buffer.from(s,'base64url'); console.log('NEXT_PUBLIC_VAPID_PUBLIC_KEY='+Buffer.concat([Buffer.from([4]),b(pub.x),b(pub.y)]).toString('base64url')); console.log('VAPID_PRIVATE_KEY='+priv.d);\""
+    "lint": "next lint --max-warnings=13",
+    "test": "node scripts/run-test-suite.mjs green",
+    "push:keys": "node scripts/generate-vapid-keys.mjs",
+    "test:watch": "node scripts/run-test-suite.mjs all --watch",
+    "lint:ci": "next lint --no-cache --max-warnings=13 --format=compact",
+    "verify:sources": "node scripts/verify-source-integrity.mjs snapshot && npm run build && node scripts/verify-source-integrity.mjs verify",
+    "test:kontraktni": "node scripts/run-test-suite.mjs contract",
+    "test:red": "node scripts/run-test-suite.mjs red",
+    "test:vse": "node scripts/run-test-suite.mjs all",
+    "ci": "npm run security:check && npm run lint:ci && npx tsc --noEmit && npm test && npm run test:red:check && npm run verify:sources",
+    "test:red:check": "node scripts/check-red-suites.mjs",
+    "seed:player": "node scripts/seed-player.mjs",
+    "security:check": "node scripts/check-secrets.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
@@ -26,8 +33,13 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.20",
+    "eslint": "^8.57.1",
+    "eslint-config-next": "^15.1.9",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=22.6 <23"
   }
 }
