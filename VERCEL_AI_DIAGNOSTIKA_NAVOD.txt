@@ -1,0 +1,96 @@
+================================================================
+ JAK ZJISTIT, PROC CLAUDE NEFUNGUJE  (Windows / PowerShell)
+================================================================
+
+Nikam nevkladej skutecny klic ani tajemstvi. Vse se nastavuje
+pouze ve Vercelu, nikdy do repozitare.
+
+----------------------------------------------------------------
+1) NASTAVENI PROMENNYCH VE VERCELU
+----------------------------------------------------------------
+Vercel -> projekt -> Settings -> Environment Variables
+
+  ANTHROPIC_API_KEY       (tajne)
+  ANTHROPIC_ROAST_MODEL   claude-sonnet-4-6
+  ANTHROPIC_TIMEOUT_MS    30000          (nepovinne, 5000-60000)
+  AI_HEALTH_SECRET        (tajne, vymysli si dlouhy nahodny retezec)
+
+Po zmene promennych je nutny NOVY DEPLOY.
+
+Tip na vygenerovani tajemstvi v PowerShellu:
+  [Convert]::ToBase64String((1..32|%{Get-Random -Max 256}))
+
+----------------------------------------------------------------
+2) OVERENI, ZE CLAUDE ODPOVIDA
+----------------------------------------------------------------
+V PowerShellu (tajemstvi se NEUKLADA do souboru):
+
+  $secret = Read-Host "AI_HEALTH_SECRET" -AsSecureString
+  $plain  = [Runtime.InteropServices.Marshal]::PtrToStringAuto(
+              [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secret))
+
+  Invoke-RestMethod `
+    -Method POST `
+    -Uri "https://obtipovacka.vercel.app/api/ai-health" `
+    -Headers @{ Authorization = "Bearer $plain" } |
+    ConvertTo-Json -Depth 5
+
+  Remove-Variable plain, secret
+
+----------------------------------------------------------------
+3) JAK CIST VYSLEDEK
+----------------------------------------------------------------
+  reachable: true                 -> Claude funguje.
+                                     Pokud presto vidis fallback,
+                                     text zamitl NAS validator.
+
+  reason: missing_key             -> ANTHROPIC_API_KEY neni nastaveny
+                                     (nebo chybi novy deploy)
+  reason: authentication (401)    -> klic je neplatny nebo zneplatneny
+  reason: permission (403)        -> klic nema pravo na tento model
+  reason: model_unavailable (404) -> ANTHROPIC_ROAST_MODEL je preklep
+                                     nebo model neni dostupny
+  reason: billing_or_quota        -> doslo kredit / problem s platbou
+  reason: rate_limit (429)        -> prilis mnoho pozadavku, zkus pozdeji
+  reason: overloaded (529)        -> docasne pretizeni u poskytovatele
+  reason: local_timeout           -> odpoved nedorazila vcas
+                                     -> zvys ANTHROPIC_TIMEOUT_MS
+  reason: network                 -> sitova chyba
+  reason: refusal                 -> model odmitl odpovedet
+
+  404 bez tela                    -> spatny nebo chybejici AI_HEALTH_SECRET
+
+----------------------------------------------------------------
+4) JAK NAJIT LOG VE VERCELU
+----------------------------------------------------------------
+Vercel -> projekt -> Logs -> filtr (Search):
+
+  round_recap_ai_failed              ... selhalo volani API
+  round_recap_ai_validation_rejected ... API odpovedelo, ale nas
+                                         validator text zamitl
+
+Priklad selhani API:
+  {"event":"round_recap_ai_failed","reason":"authentication",
+   "httpStatus":401,"requestId":"req_...","attempts":1}
+
+Priklad zamitnuti validatorem:
+  {"event":"round_recap_ai_validation_rejected",
+   "reasons":["unknown_score"],"roundTitle":"1. kolo"}
+
+Duvody zamitnuti:
+  empty                       prazdny text
+  too_long                    prilis dlouhy text
+  placeholder                 nevyplneny [JMENO TIPERA]
+  unknown_score               vymyslene skore, ktere v kole nepadlo
+  too_many_authentic_phrases  prilis mnoho hlasek
+
+Log NIKDY neobsahuje klic, prompt ani jmena tiperu.
+
+----------------------------------------------------------------
+5) NEJCASTEJSI PRICINA
+----------------------------------------------------------------
+Zmena promennych ve Vercelu se projevi az po novem deployi.
+Pokud jsi klic pridal a nic se nezmenilo, spust Redeploy.
+
+Drive se navic neuspech drzel 10 minut v cache. To uz neplati:
+cachuje se pouze uspesny a zvalidovany text.

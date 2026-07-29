@@ -1,6 +1,6 @@
 import type { Match, Player, RoundPrediction, StandingRow } from '@/lib/types';
 import historie from '@/data/historie.json';
-import { getSeasonXbProjection } from '@/lib/pageQueries';
+import { getSeasonXbProjection, getSeasonXbSnapshotAtRound } from '@/lib/pageQueries';
 import {
   buildRoundRecapFacts,
   type RoundRecapPreviousSeasonStat,
@@ -36,6 +36,7 @@ export async function RoundRecapSection({
   roundTitle,
   seasonName,
   includeStandingMovement = true,
+  selectedRound,
 }: {
   seasonId: number;
   matches: Match[];
@@ -45,8 +46,15 @@ export async function RoundRecapSection({
   roundTitle: string;
   seasonName: string;
   includeStandingMovement?: boolean;
+  /** Kolo, které se právě zobrazuje. U staršího kola se načte historický snapshot. */
+  selectedRound?: number;
 }) {
-  const xbRows = includeStandingMovement ? await getSeasonXbProjection(seasonId) : [];
+  // xB se načítá VŽDY. U aktuálního kola plná projekce, u staršího historický
+  // as-of snapshot. Dřív se řídilo `includeStandingMovement`, což starší kola
+  // bezdůvodně připravilo o data.
+  const xbRows = includeStandingMovement || selectedRound == null
+    ? await getSeasonXbProjection(seasonId)
+    : await getSeasonXbSnapshotAtRound(seasonId, selectedRound);
   const facts = buildRoundRecapFacts({
     matches,
     players,
@@ -77,7 +85,7 @@ export async function RoundRecapSection({
     ? `${facts.xbOverperformer.name} ${signed(facts.xbOverperformer.delta)} proti xB · ${facts.xbUnderperformer.name} ${signed(facts.xbUnderperformer.delta)}`
     : facts.xbOverperformer
       ? `${facts.xbOverperformer.name} ${signed(facts.xbOverperformer.delta)} proti xB`
-      : 'xB srovnání se načte u aktuálního kola';
+      : 'xB zatím bez vyhodnocených dat';
 
   const lastSeasonCheck = facts.previousBestBeaten
     ? `${facts.previousBestBeaten.name}: ${facts.previousBestBeaten.points} b · loni max ${facts.previousBestBeaten.previousBest}`
@@ -134,9 +142,15 @@ export async function RoundRecapSection({
             </div>
 
             <div className="rounded-xl border border-line-subtle bg-surface-2/55 px-3 py-3">
-              <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-state-success">xB reality check</div>
+              <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-state-success">
+                xB reality check{!includeStandingMovement && selectedRound != null ? ` po ${selectedRound}. kole` : ''}
+              </div>
               <div className="mt-1 text-[11px] font-semibold leading-snug text-copy-primary">{realityCheck}</div>
-              <div className="mt-1 text-[9px] text-copy-muted">skutečné sezonní body vs očekávané xBody</div>
+              <div className="mt-1 text-[9px] text-copy-muted">
+                {!includeStandingMovement && selectedRound != null
+                  ? 'skutečné body vs xBody podle dat dostupných do konce kola'
+                  : 'skutečné sezonní body vs očekávané xBody'}
+              </div>
             </div>
 
             <div className="rounded-xl border border-line-subtle bg-surface-2/55 px-3 py-3">

@@ -80,9 +80,9 @@ Tipy hráčů v tomto zápase:
 ${tipsText}`;
 
   const generated = await generateAnthropicText(prompt, 320);
-  if (!generated) return null;
+  if (!generated.ok) return null;
 
-  const cleaned = generated.trim();
+  const cleaned = generated.text.trim();
   const valid = validateBarokoText({
     text: cleaned,
     allowedScores: [

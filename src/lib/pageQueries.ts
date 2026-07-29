@@ -14,6 +14,7 @@ import {
   getRoundMatches as readRoundMatches,
   getSeasonChartData as readSeasonChartData,
   getSeasonXbProjection as readSeasonXbProjection,
+  getSeasonXbSnapshotAtRound as readSeasonXbSnapshotAtRound,
   getSeasonRounds as readSeasonRounds,
   getSeasonTipRounds as readSeasonTipRounds,
   getStandings as readStandings,
@@ -70,6 +71,17 @@ export const getRoundPredictions = unstable_cache(
 export const getSeasonXbProjection = unstable_cache(
   async (seasonId: number) => readSeasonXbProjection(seasonId),
   ['page-season-xb-v1'],
+  { revalidate: 300, tags: ['tipovacka-data'] },
+);
+
+/**
+ * Historický xB snapshot. Cache klíč obsahuje seasonId i throughRound
+ * (argumenty jsou součástí klíče), takže 1. a 2. kolo nikdy nesdílí výsledek.
+ */
+export const getSeasonXbSnapshotAtRound = unstable_cache(
+  async (seasonId: number, throughRound: number) =>
+    readSeasonXbSnapshotAtRound(seasonId, throughRound),
+  ['page-season-xb-snapshot-v1'],
   { revalidate: 300, tags: ['tipovacka-data'] },
 );
 

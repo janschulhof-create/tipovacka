@@ -34,7 +34,11 @@ Pravidla:
 
 FAKTA (JSON):
 ${serializedFacts}`;
-    return generateAnthropicText(prompt, 220);
+    // Success-only: do cache jde jen úspěšný text. Chyba vyhodí výjimku,
+    // takže se neúspěch neuloží a další požadavek smí zkusit znovu.
+    const vysledek = await generateAnthropicText(prompt, 220);
+    if (!vysledek.ok) throw new Error(`anthropic_failed:${vysledek.reason}`);
+    return vysledek.text;
   },
   ['result-notification-ai-v1'],
   { revalidate: 3600 },
@@ -50,6 +54,11 @@ export function validateResultNotification(text: string, facts: ResultNotificati
 }
 
 export async function generateResultNotificationText(facts: ResultNotificationFacts): Promise<string | null> {
-  const generated = await cachedNotification(JSON.stringify(facts));
-  return generated && validateResultNotification(generated, facts) ? generated.trim() : null;
+  try {
+    const generated = await cachedNotification(JSON.stringify(facts));
+    return generated && validateResultNotification(generated, facts) ? generated.trim() : null;
+  } catch {
+    // Neúspěšné generování se nekešuje – volající použije vlastní fallback.
+    return null;
+  }
 }

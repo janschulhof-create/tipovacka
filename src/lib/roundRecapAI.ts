@@ -1,14 +1,50 @@
 import { unstable_cache } from 'next/cache';
-import { BAROKO_STYLE_GUIDE, validateBarokoText } from './barokoPhrases';
-import { generateAnthropicText } from './anthropicText';
+import { BAROKO_STYLE_GUIDE, validateBarokoText, validateBarokoTextDetailed, type BarokoValidationResult } from './barokoPhrases';
+import { generateAnthropicText, getRoastModel } from './anthropicText';
+import type { AnthropicFailureReason } from './anthropicErrors';
+import type { BarokoValidationReason } from './barokoPhrases';
+
+interface RoundRecapAiErrorDetail {
+  reason: AnthropicFailureReason;
+  model: string;
+  httpStatus: number | null;
+  providerType: string | null;
+  requestId: string | null;
+  durationMs: number;
+  attempts: number;
+  validationReasons?: BarokoValidationReason[];
+}
+
+/** Interní výjimka bez tajných dat – slouží jen k zabránění cachování chyby. */
+export class RoundRecapAiError extends Error {
+  readonly detail: RoundRecapAiErrorDetail;
+  constructor(detail: RoundRecapAiErrorDetail) {
+    super(`round_recap_ai_failed:${detail.reason}`);
+    this.name = 'RoundRecapAiError';
+    this.detail = detail;
+  }
+}
 import { fallbackRoundRecap, type RoundRecapFacts } from './roundRecap';
+import { buildRecapPhraseFacts, maxPhrasesForMode, RECAP_PHRASES } from './roundRecapPhrases';
 
 const cachedRoundRecap = unstable_cache(
   async (serializedFacts: string) => {
     const facts = JSON.parse(serializedFacts) as RoundRecapFacts;
     const modeRules = facts.mode === 'final'
-      ? 'Napiš 8 až 12 krátkých vět rozdělených do 4 krátkých odstavců. Použij nejvýše PĚT autentických hlášek, každou k jiné skutečnosti.'
-      : 'Napiš 5 až 8 krátkých vět rozdělených do 2 až 3 krátkých odstavců. Výslovně řekni, že kolo ještě pokračuje. Použij nejvýše TŘI autentické hlášky.';
+      ? 'Napiš 8 až 14 krátkých vět rozdělených do 3 až 5 krátkých odstavců. Použij nejvýše TŘI katalogové hlášky, každou k jiné situaci a organicky vplетenou do textu.'
+      : 'Napiš 5 až 8 krátkých vět rozdělených do 2 až 3 krátkých odstavců. Výslovně řekni, že kolo ještě pokračuje. Použij nejvýše DVĚ katalogové hlášky.';
+
+    const phraseFacts = buildRecapPhraseFacts(facts);
+    const phraseRules = phraseFacts.eligiblePhraseIds.length === 0
+      ? '(žádná katalogová hláška z této skupiny není povolená — nepoužívej je)'
+      : phraseFacts.eligiblePhraseIds
+          .map((id) => `- ${RECAP_PHRASES[id]} — doloženo: ${JSON.stringify(
+            id === 'painful_zero' ? phraseFacts.painfulZero
+              : id === 'zero_disaster' ? phraseFacts.zeroDisaster
+                : id === 'round_bottom' ? phraseFacts.roundBottom
+                  : phraseFacts.gasStationTip,
+          )}`)
+          .join('\n');
 
     const prompt = `Jsi autor a analytik sekce Kudy běží zajíc v české fotbalové tipovačce kamarádů. Nejde už o stručné Baroko, ale o hlavní televizní pozápasové studio celého kola.
 
@@ -24,6 +60,16 @@ Povinná dramaturgie, pokud pro ni existují fakta:
 3. Loni vs. dnes: bestVsLastSeason/worstVsLastSeason porovnává PRŮMĚR BODŮ NA TIP v tomto kole s osobním průměrem z minulé sezony. previousBestBeaten je skutečné překonání loňského nejlepšího kola a lze ho zmínit jen když není null.
 4. Zápasová pitva: consensusShock, divizeCandidate, cinemaCandidate, blamageCandidate, mostMissedMatch, redCards a stoppageChangedScore jsou deterministické podklady. Použij je jen pokud existují.
 5. Závěr: jedna krátká věta, kam kolo směřuje nebo co po sobě zanechalo.
+
+Stavba textu:
+- Odstavec 1 — co se v kole stalo: vítěz kola, body, náskok, hlavní překvapení.
+- Odstavec 2 — xB reality check se SKUTEČNÝMI čísly (xbOverperformer/xbUnderperformer).
+- Odstavec 3 — tipérská bizarnost: nuly, tip na outsidera, poslední místo, consensusShock.
+- Odstavec 4 — kontext: loňský průměr, letošní forma, trend.
+- Odstavec 5 — krátká studiová pointa.
+
+POVOLENÉ KATALOGOVÉ HLÁŠKY (eligiblePhraseIds) — jiné z tohoto seznamu NESMÍŠ použít:
+${phraseRules}
 
 Speciální hlášky Kudy běží zajíc:
 - „Blamáž.“ použij jen pokud blamageCandidate není null nebo je doložený mimořádný propadák.
@@ -52,7 +98,38 @@ Další závazná pravidla:
 FAKTA (JSON):
 ${serializedFacts}`;
 
-    return generateAnthropicText(prompt, facts.mode === 'final' ? 1250 : 850);
+    // SUCCESS-ONLY CACHE: uloží se jen text, který prošel voláním API
+    // i naší validací. Chyba i odmítnutí vyhodí typovanou výjimku, takže
+    // se do cache nedostanou a další požadavek smí Claude zkusit znovu.
+    const vysledek = await generateAnthropicText(prompt, facts.mode === 'final' ? 1250 : 850);
+
+    if (!vysledek.ok) {
+      throw new RoundRecapAiError({
+        reason: vysledek.reason,
+        model: vysledek.model,
+        httpStatus: vysledek.httpStatus,
+        providerType: vysledek.providerType,
+        requestId: vysledek.requestId,
+        durationMs: vysledek.durationMs,
+        attempts: vysledek.attempts,
+      });
+    }
+
+    const validace = validateRoundRecapDetailed(vysledek.text, facts);
+    if (!validace.ok) {
+      throw new RoundRecapAiError({
+        reason: 'validation_rejected',
+        model: vysledek.model,
+        httpStatus: null,
+        providerType: null,
+        requestId: vysledek.requestId,
+        durationMs: vysledek.durationMs,
+        attempts: vysledek.attempts,
+        validationReasons: validace.reasons,
+      });
+    }
+
+    return vysledek.text;
   },
   ['round-recap-ai-v2-kudy-bezi-zajic'],
   { revalidate: 600 },
@@ -63,11 +140,21 @@ function scoreTokens(facts: RoundRecapFacts): Set<string> {
 }
 
 /** Základní ochrana proti zjevnému modelovému výmyslu. */
+export function validateRoundRecapDetailed(text: string, facts: RoundRecapFacts): BarokoValidationResult {
+  return validateBarokoTextDetailed({
+    text,
+    allowedScores: scoreTokens(facts),
+    maxPhrases: maxPhrasesForMode(facts.mode),
+    maxLength: 4600,
+  });
+}
+
+/** Zpětně kompatibilní boolean varianta. */
 export function validateRoundRecapText(text: string, facts: RoundRecapFacts): boolean {
   return validateBarokoText({
     text,
     allowedScores: scoreTokens(facts),
-    maxPhrases: facts.mode === 'final' ? 5 : 3,
+    maxPhrases: maxPhrasesForMode(facts.mode),
     maxLength: 4600,
   });
 }
@@ -76,9 +163,43 @@ export async function getRoundRecapText(facts: RoundRecapFacts): Promise<{ text:
   if (facts.mode === 'waiting') return { text: fallbackRoundRecap(facts), source: 'fallback' };
 
   const serialized = JSON.stringify(facts);
-  const generated = await cachedRoundRecap(serialized);
-  if (generated && validateRoundRecapText(generated, facts)) {
-    return { text: generated.trim(), source: 'ai' };
+  try {
+    const generated = await cachedRoundRecap(serialized);
+    if (generated) return { text: generated.trim(), source: 'ai' };
+  } catch (error) {
+    zalogujSelhani(error, facts);
   }
   return { text: fallbackRoundRecap(facts), source: 'fallback' };
+}
+
+/**
+ * Jeden strukturovaný JSON log na selhání. Obsahuje POUZE technickou
+ * diagnostiku – nikdy klíč, prompt, celou odpověď ani jména tipérů.
+ */
+function zalogujSelhani(error: unknown, facts: RoundRecapFacts): void {
+  const detail = error instanceof RoundRecapAiError ? error.detail : null;
+
+  if (detail?.reason === 'validation_rejected') {
+    console.warn(JSON.stringify({
+      event: 'round_recap_ai_validation_rejected',
+      reasons: detail.validationReasons ?? [],
+      model: detail.model,
+      roundTitle: facts.roundTitle,
+      mode: facts.mode,
+    }));
+    return;
+  }
+
+  console.warn(JSON.stringify({
+    event: 'round_recap_ai_failed',
+    reason: detail?.reason ?? 'unknown',
+    model: detail?.model ?? getRoastModel(),
+    httpStatus: detail?.httpStatus ?? null,
+    providerType: detail?.providerType ?? null,
+    requestId: detail?.requestId ?? null,
+    durationMs: detail?.durationMs ?? null,
+    attempts: detail?.attempts ?? null,
+    roundTitle: facts.roundTitle,
+    mode: facts.mode,
+  }));
 }

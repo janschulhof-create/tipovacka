@@ -1,3 +1,4 @@
+import { buildRecapPhraseFacts } from './roundRecapPhrases';
 import type { Match, Player, RoundPrediction, StandingRow } from './types';
 import { calculatePoints } from './scoring';
 
@@ -191,7 +192,9 @@ export function buildRoundRecapFacts(input: {
   }
 
   const previousByName = new Map((input.previousSeasonStats ?? []).map((row) => [row.name, row] as const));
-  const xbByName = new Map((input.includeStandingMovement === false ? [] : input.xbSnapshots ?? []).map((row) => [row.name, row] as const));
+  // xB má vlastní vstup. `includeStandingMovement` řídí POUZE pohyb v celkovém
+  // pořadí – historické kolo musí ukázat skutečný xB snapshot.
+  const xbByName = new Map((input.xbSnapshots ?? []).map((row) => [row.name, row] as const));
 
   const playerRows: RoundRecapPlayer[] = input.players.map((player) => {
     const evaluated = resolvedPredictions.filter(
@@ -453,18 +456,44 @@ export function fallbackRoundRecap(facts: RoundRecapFacts): string {
   const lastYear = facts.bestVsLastSeason
     ? `${facts.bestVsLastSeason.name} má v tomhle kole průměr ${facts.bestVsLastSeason.roundAverage.toFixed(1)} bodu na tip proti loňským ${facts.bestVsLastSeason.previousAverage.toFixed(1)}.`
     : '';
+  // I fallback má být faktický, ale ne prázdný: doplňujeme i propadák proti xB.
+  const xbSlaby = facts.xbUnderperformer
+    ? `${facts.xbUnderperformer.name} naopak ztrácí ${Math.abs(facts.xbUnderperformer.delta).toFixed(1)} bodu proti xB.`
+    : '';
   const drama = facts.cinemaCandidate
     ? `Největší kino: ${facts.cinemaCandidate.match} ${facts.cinemaCandidate.score}.`
     : facts.blamageCandidate
       ? `Blamáž: ${facts.blamageCandidate.label}. ${facts.blamageCandidate.detail}`
       : '';
 
+  // Deterministicky povolené hlášky – fallback nesmí být dvě suché věty.
+  const phrases = buildRecapPhraseFacts(facts);
+  const hlaskaNula = phrases.zeroDisaster
+    ? `${phrases.zeroDisaster.playerName} nasbíral ${phrases.zeroDisaster.zeroCount} nul z ${phrases.zeroDisaster.evaluatedTips} tipů. Můžeš skočit támhle do Renaulta a nazdar.`
+    : phrases.painfulZero
+      ? `${phrases.painfulZero.playerName} šel na ${phrases.painfulZero.match} s tipem ${phrases.painfulZero.prediction}, skončilo to ${phrases.painfulZero.result}. Tady cejtím, že bude mrzení.`
+      : '';
+  const hlaskaOutsider = phrases.gasStationTip
+    ? `${phrases.gasStationTip.playerName} věřil výhře ${phrases.gasStationTip.team} proti ${phrases.gasStationTip.opponent} a nevyšlo to. Tohle jsou tipy někde z benzinky, vole.`
+    : '';
+  const hlaskaPosledni = !phrases.zeroDisaster && phrases.roundBottom
+    ? `Na dně kola je ${phrases.roundBottom.playerName} s ${phrases.roundBottom.points} body. Tady jde někdo pro tvrdou koledu.`
+    : '';
+
   if (facts.mode === 'progress') {
-    return `${facts.completedMatches} z ${facts.totalMatches} zápasů je dohráno, takže verdikt je pořád průběžný. ${leader}. ${xb} ${lastYear} ${drama} Zbývá ${facts.remainingMatches} zápasů a zajíc ještě může změnit směr.`.replace(/\s+/g, ' ').trim();
+    return `${facts.completedMatches} z ${facts.totalMatches} zápasů je dohráno, takže verdikt je pořád průběžný. ${leader}. ${xb} ${xbSlaby} ${lastYear} ${hlaskaNula} ${drama} Zbývá ${facts.remainingMatches} zápasů a zajíc ještě může změnit směr.`.replace(/\s+/g, ' ').trim();
   }
 
   const exact = facts.totalExactHits
     ? `Přesných desítek padlo ${facts.totalExactHits}.`
     : 'Přesná desítka tentokrát nepřišla.';
-  return `Kolo je zavřené. ${leader}. ${exact} ${xb} ${lastYear} ${drama} Tohle je konečný zápis Kudy běží zajíc.`.replace(/\s+/g, ' ').trim();
+  return [
+    `Kolo je zavřené. ${leader}. ${exact}`,
+    `${xb} ${xbSlaby} ${lastYear}`.trim(),
+    `${hlaskaNula} ${hlaskaOutsider} ${hlaskaPosledni} ${drama}`.trim(),
+    'Tabulka nelže, i když by leckdo chtěl. Tohle je konečný zápis Kudy běží zajíc.',
+  ]
+    .map((blok) => blok.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n\n');
 }
