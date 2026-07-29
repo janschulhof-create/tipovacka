@@ -1,0 +1,59 @@
+TIPOVAČKA — ZAPNUTÍ CLAUDE TEXTŮ V PUSH NOTIFIKACÍCH
+
+Důležité:
+- Git/Vercel deployment sám neaktualizuje Supabase Edge Function send-round-reminders.
+- ANTHROPIC_API_KEY ani jiný tajný klíč nedávej do GitHubu ani do souboru .env v repozitáři.
+- ANTHROPIC_ROAST_MODEL nastav na stejnou hodnotu, kterou už používá aplikace pro Baroko.
+
+A) NEJDŘÍV NASTAV 2 SECRETS V SUPABASE DASHBOARDU
+
+1. Otevři svůj projekt na https://supabase.com/dashboard
+2. Otevři správu Secrets pro Edge Functions.
+3. Přidej ANTHROPIC_API_KEY a jako hodnotu vlož svůj Anthropic API klíč.
+4. Přidej ANTHROPIC_ROAST_MODEL a jako hodnotu vlož název modelu, který už máš vybraný pro Baroko.
+5. Ulož.
+
+Secrets jsou po uložení dostupné Edge Functions. Samotný kód funkce je ale potřeba nasadit zvlášť podle části B.
+
+B) NASAZENÍ AKTUALIZOVANÉ EDGE FUNCTION Z WINDOWS CMD
+
+Otevři CMD přímo ve složce repozitáře Tipovačky.
+
+Spusť po jednom:
+
+npx.cmd supabase@latest login
+
+Po přihlášení:
+
+npx.cmd supabase@latest projects list
+
+Najdi PROJECT REF svého produkčního projektu. Je také v URL Supabase dashboardu za /project/.
+
+Potom nahraď TVUJ_PROJECT_REF skutečným project refem a spusť:
+
+npx.cmd supabase@latest link --project-ref TVUJ_PROJECT_REF
+
+Pak nasadíš jen funkci s notifikacemi:
+
+npx.cmd supabase@latest functions deploy send-round-reminders
+
+Po úspěchu otevři Supabase Dashboard → Edge Functions → send-round-reminders a zkontroluj, že je nasazená nová verze.
+
+C) KONTROLA SECRETS
+
+V CMD můžeš vypsat jen názvy uložených secrets:
+
+npx.cmd supabase@latest secrets list
+
+V seznamu musí být minimálně:
+ANTHROPIC_API_KEY
+ANTHROPIC_ROAST_MODEL
+
+Funkce dále používá existující PUSH_CRON_SECRET, VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY a VAPID_SUBJECT. Pokud push notifikace už dříve fungovaly, tyto hodnoty neměň.
+
+D) JAK POZNAT, ŽE CLAUDE OPRAVDU FUNGUJE
+
+Po nasazení funkce sleduj Logs u send-round-reminders při nejbližší reminder/result notifikaci.
+Pokud Claude API selže nebo secret chybí, funkce bezpečně použije lokální fallback text; push tedy nemusí přestat chodit.
+
+Nejbezpečnější produkční ověření je po nasazení zkontrolovat první skutečnou notifikaci a log funkce. Neodesílej umělé výsledky do produkční databáze jen kvůli testu.

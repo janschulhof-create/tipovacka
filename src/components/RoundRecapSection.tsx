@@ -1,8 +1,34 @@
 import type { Match, Player, RoundPrediction, StandingRow } from '@/lib/types';
-import { buildRoundRecapFacts } from '@/lib/roundRecap';
+import historie from '@/data/historie.json';
+import { getSeasonXbProjection } from '@/lib/pageQueries';
+import {
+  buildRoundRecapFacts,
+  type RoundRecapPreviousSeasonStat,
+} from '@/lib/roundRecap';
 import { getRoundRecapText } from '@/lib/roundRecapAI';
 
+function signed(value: number) {
+  return `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
+}
+
+function previousSeasonStats(): RoundRecapPreviousSeasonStat[] {
+  const stats = historie.stats as Record<string, {
+    avgPoints?: number;
+    bestRound?: number;
+    roundWins?: number;
+    zeros?: number;
+  }>;
+  return Object.entries(stats).map(([name, row]) => ({
+    name,
+    avgPoints: Number(row.avgPoints ?? 0),
+    bestRound: Number(row.bestRound ?? 0),
+    roundWins: Number(row.roundWins ?? 0),
+    zeros: Number(row.zeros ?? 0),
+  }));
+}
+
 export async function RoundRecapSection({
+  seasonId,
   matches,
   players,
   predictions,
@@ -11,6 +37,7 @@ export async function RoundRecapSection({
   seasonName,
   includeStandingMovement = true,
 }: {
+  seasonId: number;
   matches: Match[];
   players: Player[];
   predictions: RoundPrediction[];
@@ -19,25 +46,69 @@ export async function RoundRecapSection({
   seasonName: string;
   includeStandingMovement?: boolean;
 }) {
-  const facts = buildRoundRecapFacts({ matches, players, predictions, standings, roundTitle, seasonName, includeStandingMovement });
+  const xbRows = includeStandingMovement ? await getSeasonXbProjection(seasonId) : [];
+  const facts = buildRoundRecapFacts({
+    matches,
+    players,
+    predictions,
+    standings,
+    roundTitle,
+    seasonName,
+    includeStandingMovement,
+    previousSeasonName: historie.season,
+    previousSeasonStats: previousSeasonStats(),
+    xbSnapshots: xbRows.map((row) => ({
+      name: row.name,
+      actualPoints: row.actual_points,
+      expectedXb: row.expected_actual_xb,
+    })),
+  });
   const recap = await getRoundRecapText(facts);
   const progress = facts.totalMatches > 0
     ? Math.round((facts.completedMatches / facts.totalMatches) * 100)
     : 0;
   const stateLabel = facts.mode === 'final'
-    ? 'Finální hodnocení kola'
+    ? 'Závěrečný verdikt kola'
     : facts.mode === 'progress'
-      ? 'Průběžné hodnocení kola'
-      : 'Čekáme na první dohraný zápas';
+      ? 'Průběžné studio kola'
+      : 'Studio čeká na první dohraný zápas';
+
+  const realityCheck = facts.xbOverperformer && facts.xbUnderperformer
+    ? `${facts.xbOverperformer.name} ${signed(facts.xbOverperformer.delta)} proti xB · ${facts.xbUnderperformer.name} ${signed(facts.xbUnderperformer.delta)}`
+    : facts.xbOverperformer
+      ? `${facts.xbOverperformer.name} ${signed(facts.xbOverperformer.delta)} proti xB`
+      : 'xB srovnání se načte u aktuálního kola';
+
+  const lastSeasonCheck = facts.previousBestBeaten
+    ? `${facts.previousBestBeaten.name}: ${facts.previousBestBeaten.points} b · loni max ${facts.previousBestBeaten.previousBest}`
+    : facts.bestVsLastSeason
+      ? `${facts.bestVsLastSeason.name}: Ø ${facts.bestVsLastSeason.roundAverage.toFixed(1)} · loni Ø ${facts.bestVsLastSeason.previousAverage.toFixed(1)}`
+      : `Historie ${facts.previousSeasonName ?? 'minulé sezony'} zatím bez přímého srovnání`;
+
+  const drama = facts.cinemaCandidate
+    ? `${facts.cinemaCandidate.match} ${facts.cinemaCandidate.score}`
+    : facts.consensusShock
+      ? `${facts.consensusShock.match} ${facts.consensusShock.score}`
+      : facts.mostMissedMatch
+        ? `${facts.mostMissedMatch.label} · ${facts.mostMissedMatch.count} nul`
+        : 'Zatím bez jasného dramatu kola';
+
+  const verdict = facts.blamageCandidate
+    ? `${facts.blamageCandidate.label} · ${facts.blamageCandidate.detail}`
+    : facts.snowman
+      ? `${facts.snowman.name} · ${facts.snowman.points} b · ${facts.snowman.zeros} nul`
+      : facts.dominantLeader
+        ? `${facts.dominantLeader.name} vede o ${facts.dominantLeader.gap} bodů`
+        : 'Komise zatím bez mimořádného nálezu';
 
   return (
-    <section id="dohrano" className="mt-6 space-y-3 lg:mt-8">
-      <h2 className="eyebrow"><span className="flag-chip" /> Dohráno</h2>
+    <section id="kudy-bezi-zajic" className="mt-6 space-y-3 lg:mt-8">
+      <h2 className="eyebrow"><span className="flag-chip" /> Kudy běží zajíc</h2>
       <article className="panel-premium overflow-hidden">
         <div className="border-b border-line-subtle bg-app-deep/35 px-4 py-4 sm:px-5">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div className="min-w-0">
-              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-300">Baroko celého kola</div>
+              <div className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-300">Velké hodnocení kola</div>
               <h3 className="mt-1 font-display text-xl font-bold text-copy-primary sm:text-2xl">{roundTitle}</h3>
               <p className="mt-1 text-[11px] text-copy-muted">{seasonName} · {stateLabel}</p>
             </div>
@@ -53,26 +124,61 @@ export async function RoundRecapSection({
         </div>
 
         <div className="px-4 py-4 sm:px-5 sm:py-5">
-          <p className="whitespace-pre-line text-[13px] leading-7 text-copy-secondary sm:text-[14px]">
+          <div className="mb-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-line-subtle bg-surface-2/55 px-3 py-3">
+              <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-violet-300">Kdo utíká se zajícem</div>
+              <div className="mt-1 text-[12px] font-semibold leading-snug text-copy-primary">
+                {facts.leader ? `${facts.leader.name} · ${facts.leader.points} b` : 'Pořadí se teprve kreslí'}
+              </div>
+              {facts.dominantLeader && <div className="mt-1 text-[9px] text-copy-muted">náskok {facts.dominantLeader.gap} b · to se nebavíme</div>}
+            </div>
+
+            <div className="rounded-xl border border-line-subtle bg-surface-2/55 px-3 py-3">
+              <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-state-success">xB reality check</div>
+              <div className="mt-1 text-[11px] font-semibold leading-snug text-copy-primary">{realityCheck}</div>
+              <div className="mt-1 text-[9px] text-copy-muted">skutečné sezonní body vs očekávané xBody</div>
+            </div>
+
+            <div className="rounded-xl border border-line-subtle bg-surface-2/55 px-3 py-3">
+              <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-state-info">Loni vs. dnes</div>
+              <div className="mt-1 text-[11px] font-semibold leading-snug text-copy-primary">{lastSeasonCheck}</div>
+              <div className="mt-1 text-[9px] text-copy-muted">srovnání s archivem {facts.previousSeasonName ?? 'minulé sezony'}</div>
+            </div>
+
+            <div className="rounded-xl border border-line-subtle bg-surface-2/55 px-3 py-3">
+              <div className="text-[9px] font-bold uppercase tracking-[0.13em] text-state-warning">Cinema / blamáž</div>
+              <div className="mt-1 text-[11px] font-semibold leading-snug text-copy-primary">{drama}</div>
+              <div className="mt-1 text-[9px] leading-snug text-copy-muted">{verdict}</div>
+            </div>
+          </div>
+
+          <p className="whitespace-pre-line text-[13.5px] leading-7 text-copy-secondary sm:text-[14.5px] sm:leading-7">
             {recap.text}
           </p>
 
           {facts.mode !== 'waiting' && (
             <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-semibold">
-              {facts.leader && (
-                <span className="rounded-full border border-state-success/20 bg-state-success/10 px-2.5 py-1 text-state-success">
-                  lídr kola: {facts.leader.name} · {facts.leader.points} b
+              {facts.totalExactHits > 0 && (
+                <span className="rounded-full border border-violet-400/20 bg-violet-500/10 px-2.5 py-1 text-violet-200">
+                  přesné desítky: {facts.totalExactHits}
                 </span>
               )}
               <span className="rounded-full border border-line-subtle bg-surface-2 px-2.5 py-1 text-copy-secondary">
-                přesné desítky: {facts.totalExactHits}
-              </span>
-              <span className="rounded-full border border-line-subtle bg-surface-2 px-2.5 py-1 text-copy-secondary">
                 nuly: {facts.totalZeros}
               </span>
+              {facts.snowman && (
+                <span className="rounded-full border border-state-danger/20 bg-state-danger/10 px-2.5 py-1 text-state-danger">
+                  sněhulák: {facts.snowman.name}
+                </span>
+              )}
               {facts.biggestRise && (
                 <span className="rounded-full border border-line-subtle bg-surface-2 px-2.5 py-1 text-copy-secondary">
                   skokan: {facts.biggestRise.name} +{facts.biggestRise.places}
+                </span>
+              )}
+              {facts.divizeCandidate && (
+                <span className="rounded-full border border-state-warning/25 bg-state-warning/10 px-2.5 py-1 text-state-warning">
+                  divize: {facts.divizeCandidate.team}
                 </span>
               )}
               {facts.lastMatchSwing && (
@@ -90,7 +196,7 @@ export async function RoundRecapSection({
 
           {recap.source === 'fallback' && facts.mode !== 'waiting' && (
             <p className="mt-3 text-[9px] leading-relaxed text-copy-muted">
-              AI Baroko se právě nepodařilo načíst; zobrazené hodnocení je bezpečný faktický fallback z aktuálních výsledků.
+              Claude studio se právě nepodařilo načíst; zobrazený verdikt je bezpečný faktický fallback z výsledků, xB a historických dat.
             </p>
           )}
         </div>
@@ -102,10 +208,16 @@ export async function RoundRecapSection({
 export function RoundRecapSkeleton() {
   return (
     <section className="mt-6 space-y-3 lg:mt-8" aria-hidden="true">
-      <h2 className="eyebrow"><span className="flag-chip" /> Dohráno</h2>
+      <h2 className="eyebrow"><span className="flag-chip" /> Kudy běží zajíc</h2>
       <div className="panel-premium overflow-hidden">
         <div className="h-24 animate-pulse border-b border-line-subtle bg-surface-2/60" />
         <div className="space-y-3 p-5">
+          <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="h-20 animate-pulse rounded-xl bg-surface-2/60" />
+            <div className="h-20 animate-pulse rounded-xl bg-surface-2/60" />
+            <div className="h-20 animate-pulse rounded-xl bg-surface-2/60" />
+            <div className="h-20 animate-pulse rounded-xl bg-surface-2/60" />
+          </div>
           <div className="h-4 w-full animate-pulse rounded bg-surface-2/60" />
           <div className="h-4 w-11/12 animate-pulse rounded bg-surface-2/60" />
           <div className="h-4 w-8/12 animate-pulse rounded bg-surface-2/60" />

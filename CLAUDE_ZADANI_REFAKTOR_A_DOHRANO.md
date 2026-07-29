@@ -1,5 +1,8 @@
 # Kompletní zadání pro Claude AI — refaktor, stabilizace a „Dohráno“
 
+> **Aktualizace v0.1.61:** uživatelský název sekce `Dohráno` se mění na **Kudy běží zajíc**. Funkce je rozšířená na hlavní analytické studio kola: porovnává aktuální výkon s xB, archivem 2025/26, konsenzem tipérů a deterministickými kandidáty `cinema`, `blamáž`, `sněhulák`, `to se nebavíme` a `to je divize`. Claude dál pouze stylizuje fakta; výpočty zůstávají v aplikaci. Přesná pravidla jsou v `docs/BAROKO_HLASKY_A_PRAVIDLA.md`.
+
+
 ## Role
 
 Jsi seniorní Staff/Principal TypeScript engineer, softwarový architekt, databázový návrhář, QA lead, SRE a produktový vývojář.

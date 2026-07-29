@@ -481,3 +481,12 @@ nenahrazuje plánovaný refaktor 1B+. Zachovává všechny dosavadní blokátory
 - Supabase sender validuje délku, počet autentických hlášek a všechna zmíněná skóre; nevalidní nebo nedostupný Claude výstup spadne na deterministický fallback, takže se notifikace neztratí.
 - `ANTHROPIC_API_KEY` a `ANTHROPIC_ROAST_MODEL` musí být pro skutečné push notifikace nastavené také v Supabase Edge Functions Secrets, ne jen ve Vercelu.
 - Přidané testy nepoužívají síť; modelové odpovědi jsou syntetické a ověřují wiring, model, katalog hlášek a fallback.
+
+
+## v0.1.61 — Kudy běží zajíc + analytické benchmarky
+
+- Uživatelský blok `Dohráno` je přejmenovaný na **Kudy běží zajíc**.
+- Hodnocení kola používá sezonní **skutečnost vs xB**, osobní průměr a nejlepší kolo z archivu 2025/26, konsenzus tipérů a dramatické události zápasu.
+- Deterministická fakta nově vytvářejí kandidáty `dominantLeader`, `consensusShock`, `divizeCandidate`, `cinemaCandidate`, `snowman` a `blamageCandidate`; Claude je smí pouze komentovat.
+- Přidány hlášky „Blamáž.“, „Katastrofální faul na fotbal.“, „To bylo cinema.“, „Sněhulák.“, „To se nebavíme.“ a „To je divize.“ s přísnými podmínkami použití.
+- Stejný katalog dostává také AI vrstva Supabase notifikací; k jeho aktivaci v produkci je nutné nasadit Edge Function a nastavit `ANTHROPIC_API_KEY` + `ANTHROPIC_ROAST_MODEL`.
