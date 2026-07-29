@@ -27,7 +27,7 @@ const predictions: RoundPrediction[] = [
   { match_id: 1, name: 'Boris', predicted_home: 0, predicted_away: 0, points: 0 },
 ];
 
-describe('Dohráno — fakta kola', () => {
+describe('Kudy běží zajíc — fakta kola', () => {
   test('průběžný režim počítá pouze dokončené zápasy', () => {
     const scheduled: Match = { ...finishedMatch(2, 'Plzeň', 'Sparta Praha'), home_score: null, away_score: null, status: 'scheduled' };
     const facts = buildRoundRecapFacts({
@@ -51,7 +51,7 @@ describe('Dohráno — fakta kola', () => {
     });
     assert.equal(facts.mode, 'final');
     assert.equal(facts.remainingMatches, 0);
-    assert.match(fallbackRoundRecap(facts), /Kolo je dohráno/);
+    assert.match(fallbackRoundRecap(facts), /Kolo je zavřené/);
   });
 
   test('hráč bez vyhodnoceného tipu není automaticky označen za nejhoršího', () => {
@@ -133,6 +133,90 @@ describe('Dohráno — fakta kola', () => {
       matches: [scheduled], players, predictions: [], roundTitle: '2. kolo', seasonName: '2026/27',
     });
     assert.equal(facts.mode, 'waiting');
-    assert.match(fallbackRoundRecap(facts), /zahřívá hlasivky/);
+    assert.match(fallbackRoundRecap(facts), /Kudy běží zajíc zatím nikdo neví/);
   });
+
+  test('xB reality check porovnává skutečné sezonní body s očekávanými xBody', () => {
+    const facts = buildRoundRecapFacts({
+      matches: [finishedMatch(1)], players, predictions,
+      standings: [], roundTitle: '2. kolo', seasonName: '2026/27',
+      xbSnapshots: [
+        { name: 'Adam', actualPoints: 20, expectedXb: 12.5 },
+        { name: 'Boris', actualPoints: 8, expectedXb: 14 },
+      ],
+    });
+    assert.deepEqual(facts.xbOverperformer, { name: 'Adam', actual: 20, expected: 12.5, delta: 7.5 });
+    assert.deepEqual(facts.xbUnderperformer, { name: 'Boris', actual: 8, expected: 14, delta: -6 });
+  });
+
+  test('srovnání s minulou sezonou používá průměr bodů na tip, ne celkové body', () => {
+    const facts = buildRoundRecapFacts({
+      matches: [finishedMatch(1)], players, predictions,
+      roundTitle: '2. kolo', seasonName: '2026/27', previousSeasonName: '2025/26',
+      previousSeasonStats: [
+        { name: 'Adam', avgPoints: 2.5, bestRound: 40, roundWins: 3, zeros: 100 },
+        { name: 'Boris', avgPoints: 3.0, bestRound: 42, roundWins: 4, zeros: 120 },
+      ],
+    });
+    assert.equal(facts.bestVsLastSeason?.name, 'Adam');
+    assert.equal(facts.bestVsLastSeason?.roundAverage, 10);
+    assert.equal(facts.bestVsLastSeason?.previousAverage, 2.5);
+    assert.equal(facts.worstVsLastSeason?.name, 'Boris');
+  });
+
+  test('silný konsenzus pro favorita, který nevyhraje, vytvoří divizeCandidate', () => {
+    const shockMatch: Match = { ...finishedMatch(1, 'Sparta Praha', 'Artis Brno'), home_score: 0, away_score: 1 };
+    const shockTips: RoundPrediction[] = [
+      { match_id: 1, name: 'Adam', predicted_home: 2, predicted_away: 0, points: 0 },
+      { match_id: 1, name: 'Boris', predicted_home: 3, predicted_away: 0, points: 0 },
+      { match_id: 1, name: 'Cyril', predicted_home: 1, predicted_away: 0, points: 0 },
+      { match_id: 1, name: 'David', predicted_home: 2, predicted_away: 1, points: 0 },
+    ];
+    const morePlayers: Player[] = [
+      ...players,
+      { id: 3, name: 'Cyril', is_active: true },
+      { id: 4, name: 'David', is_active: true },
+    ];
+    const facts = buildRoundRecapFacts({
+      matches: [shockMatch], players: morePlayers, predictions: shockTips,
+      roundTitle: '2. kolo', seasonName: '2026/27',
+    });
+    assert.equal(facts.consensusShock?.favoriteTeam, 'Sparta Praha');
+    assert.equal(facts.divizeCandidate?.team, 'Sparta Praha');
+    assert.equal(facts.blamageCandidate?.label, 'Sparta Praha – Artis Brno');
+  });
+
+  test('dramatický zápas v nastavení je cinemaCandidate', () => {
+    const cinemaMatch: Match = {
+      ...finishedMatch(1),
+      home_score: 2,
+      away_score: 1,
+      reg_home: 1,
+      reg_away: 1,
+      duration: 'REGULAR',
+    };
+    const facts = buildRoundRecapFacts({
+      matches: [cinemaMatch], players, predictions,
+      roundTitle: '2. kolo', seasonName: '2026/27',
+    });
+    assert.equal(facts.cinemaCandidate?.reason, 'stoppage');
+    assert.equal(facts.cinemaCandidate?.match, 'Artis Brno – Liberec');
+  });
+
+  test('hráč s většinou nul může být sněhulák, ale hráč bez tipů ne', () => {
+    const second = finishedMatch(2, 'Plzeň', 'Sparta Praha');
+    const snowTips: RoundPrediction[] = [
+      { match_id: 1, name: 'Adam', predicted_home: 0, predicted_away: 0, points: 0 },
+      { match_id: 2, name: 'Adam', predicted_home: 0, predicted_away: 0, points: 0 },
+      { match_id: 1, name: 'Boris', predicted_home: 2, predicted_away: 1, points: 10 },
+      { match_id: 2, name: 'Boris', predicted_home: 2, predicted_away: 1, points: 10 },
+    ];
+    const facts = buildRoundRecapFacts({
+      matches: [finishedMatch(1), second], players, predictions: snowTips,
+      roundTitle: '2. kolo', seasonName: '2026/27',
+    });
+    assert.equal(facts.snowman?.name, 'Adam');
+    assert.equal(facts.snowman?.points, 0);
+  });
+
 });

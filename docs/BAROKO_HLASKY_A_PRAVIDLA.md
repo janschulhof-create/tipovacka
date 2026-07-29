@@ -5,7 +5,7 @@ Tento dokument je **jediný schválený zdroj autentických hlášek** pro všec
 Používá se pro:
 
 - Baroko jednoho dohraného zápasu,
-- průběžné i finální „Dohráno“ za celé kolo,
+- průběžné i finální **„Kudy běží zajíc“** (dříve Dohráno) za celé kolo,
 - výsledkové push notifikace,
 - souhrnné notifikace za více zápasů nebo celé kolo,
 - případné budoucí modaly a sdílené texty.
@@ -76,6 +76,21 @@ Model je volen existující konfigurací `ANTHROPIC_ROAST_MODEL`. Tento katalog 
 | `IK_VOLAL_PELTA_OTAZKA` | „Ti volal Pelta, jo?“ | Podezřele přesný zásah nebo absurdní průběh; stylová nadsázka, ne obvinění. |
 | `IK_VOLAL_PELTA` | „Volal Pelta.“ | Přesný tip za 10 bodů nebo mimořádně šťastný zásah. |
 | `IK_KAPRICI` | „Kapříci připluli.“ | Vyloženě absurdní tip: součet alespoň 7 nebo rozdíl alespoň 4; případně podezřele šťastný extrém. |
+
+---
+
+## 3A. Hlášky — Kudy běží zajíc
+
+Tyto krátké výroky jsou schválené pro nový analytický panel. Jde o původní hlas Tipovačky: úsečný, expresivní český fotbalový panel. Nemá imitovat konkrétního novináře nebo osobnost.
+
+| ID | Přesná hláška | Povolené použití |
+|---|---|---|
+| `KBZ_BLAMAZ` | „Blamáž.“ | Jen pokud aplikace dodá `blamageCandidate` nebo jiný explicitní mimořádný propadák. |
+| `KBZ_FAUL_FOTBAL` | „Katastrofální faul na fotbal.“ | Silná kolektivní blamáž / consensus shock. Ne běžná jednotlivá nula. |
+| `KBZ_CINEMA` | „To bylo cinema.“ | Jen pokud aplikace dodá `cinemaCandidate`: gól v nastavení, změna lídra posledním zápasem, přestřelka, karty nebo silný šok proti konsenzu. |
+| `KBZ_SNEHULAK` | „Sněhulák.“ | Jen konkrétní tipér označený jako `snowman` na základě bodů, nul nebo výrazného podvýkonu proti xB. |
+| `KBZ_NEBAVIME` | „To se nebavíme.“ | Jednoznačný výkon, typicky `dominantLeader` s jasným náskokem. |
+| `KBZ_DIVIZE` | „To je divize.“ | Jen `divizeCandidate`: nejméně 75 % tipérů čekalo výhru konkrétního týmu a tým ji nedal. |
 
 ---
 
@@ -150,11 +165,11 @@ Povinné skutečnosti podle dostupnosti:
 
 ---
 
-## 7. Specifika pro „Dohráno“ za celé kolo
+## 7. Specifika pro „Kudy běží zajíc“ za celé kolo
 
 ### Průběžný režim
 
-Text musí jasně říkat, že kolo ještě pokračuje. Má obsahovat:
+Text musí jasně říkat, že kolo ještě pokračuje. Jde o hlavní analytické studio, ne krátký dovětek. Má obsahovat:
 
 - počet dohraných a zbývajících zápasů,
 - průběžného lídra kola,
@@ -162,7 +177,7 @@ Text musí jasně říkat, že kolo ještě pokračuje. Má obsahovat:
 - kdo je zatím v problémech,
 - co může změnit zbývající část kola.
 
-Rozsah: 3–5 krátkých vět. Nejvýše dvě autentické hlášky.
+Rozsah: 5–8 krátkých vět ve 2–3 krátkých odstavcích. Nejvýše tři autentické hlášky.
 
 ### Finální režim
 
@@ -179,7 +194,21 @@ Text je závěrečná tečka kola. Má obsahovat podle dostupnosti:
 - nejvíce přestřelený nebo betonářský tip,
 - chybějící tipy.
 
-Rozsah: 5–8 krátkých vět nebo 3 krátké odstavce. Nejvýše tři autentické hlášky, každá k jiné skutečnosti.
+Rozsah: 8–12 krátkých vět ve 4 krátkých odstavcích. Nejvýše pět autentických hlášek, každá k jiné skutečnosti.
+
+
+### Povinné datové srovnání pro Kudy běží zajíc
+
+Pokud jsou data dostupná, model dostane a smí komentovat:
+
+- **xB reality check**: skutečné sezonní body vs očekávané xBody do tohoto okamžiku (`xbOverperformer`, `xbUnderperformer`),
+- **Loni vs. dnes**: průměr bodů na tip v aktuálním kole vs osobní průměr minulé sezony (`bestVsLastSeason`, `worstVsLastSeason`),
+- překonání loňského osobního maxima kola (`previousBestBeaten`),
+- **consensusShock**: silná většina tipovala jinou tendenci než skutečný výsledek,
+- **divizeCandidate**: nejméně 75 % tipérů čekalo výhru konkrétního týmu a tým ji nedal,
+- **cinemaCandidate**, **snowman**, **blamageCandidate** a `dominantLeader`.
+
+xB zde není xB samotného kola, ale sezonní srovnání skutečných bodů proti očekávání ze stejných odehraných zápasů. Model to nesmí zaměnit.
 
 ---
 

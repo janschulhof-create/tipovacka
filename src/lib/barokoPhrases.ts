@@ -34,6 +34,12 @@ export const AUTHENTIC_BAROKO_PHRASES = [
   '„Ti volal Pelta, jo?“',
   '„Volal Pelta.“',
   '„Kapříci připluli.“',
+  '„Blamáž.“',
+  '„Katastrofální faul na fotbal.“',
+  '„To bylo cinema.“',
+  '„Sněhulák.“',
+  '„To se nebavíme.“',
+  '„To je divize.“',
 ] as const;
 
 export const BAROKO_STYLE_GUIDE = `
@@ -48,6 +54,12 @@ Pravidla použití:
 - Vysoký gólový tip: hlášky o více gólech / útočné filozofii jen při skutečně vysokém tipu.
 - Jablonec, Slovácko/Synot, Bohemians a teletextovou hlášku používej pouze v přesně odpovídajícím týmovém nebo výsledkovém kontextu.
 - Peltu a kapříky používej jako zjevnou fotbalovou nadsázku, nikdy jako tvrzení o korupci.
+- „Blamáž.“ jen při explicitním blamageCandidate nebo doloženém mimořádném propadáku.
+- „Katastrofální faul na fotbal.“ jen při silné kolektivní blamáži / consensusShock; ne při běžné nule.
+- „To bylo cinema.“ jen při explicitním cinemaCandidate.
+- „Sněhulák.“ jen pokud je explicitní snowman kandidát.
+- „To se nebavíme.“ jen při dominantLeader nebo jiné jednoznačné skutečnosti doložené daty.
+- „To je divize.“ jen pokud je explicitní divizeCandidate; aplikace tím potvrzuje kolaps týmu proti silnému konsenzu tipérů.
 - Placeholder [JMÉNO TIPÉRA] musí být před výstupem nahrazen skutečným jménem.
 - Nevymýšlej skóre, body, kartu, gól v nastavení, tip ani pořadí.
 `;

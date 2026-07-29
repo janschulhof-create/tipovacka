@@ -232,6 +232,7 @@ export default async function Home({
       {competition.key === 'liga' && (
         <Suspense fallback={<RoundRecapSkeleton />}>
           <RoundRecapSection
+            seasonId={seasonId}
             matches={matches}
             players={players}
             predictions={predictions}

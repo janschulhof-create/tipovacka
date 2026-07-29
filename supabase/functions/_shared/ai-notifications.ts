@@ -40,6 +40,12 @@ export const AUTHENTIC_NOTIFICATION_PHRASES = [
   '„Ti volal Pelta, jo?“',
   '„Volal Pelta.“',
   '„Kapříci připluli.“',
+  '„Blamáž.“',
+  '„Katastrofální faul na fotbal.“',
+  '„To bylo cinema.“',
+  '„Sněhulák.“',
+  '„To se nebavíme.“',
+  '„To je divize.“',
 ] as const;
 
 const NOTIFICATION_STYLE_GUIDE = `
@@ -54,6 +60,11 @@ Pravidla hlášek:
 - vysoký gólový tip: gólové hlášky jen při skutečně vysokém tipu,
 - Jablonec, Slovácko/Synot, Bohemians a teletextovou hlášku použij jen v přesně odpovídajícím kontextu,
 - Pelta/kapříci jsou pouze zjevná fotbalová nadsázka, nikdy tvrzení o korupci,
+- „Blamáž.“ a „Sněhulák.“ jen při jasně doloženém propadáku ve vstupních faktech,
+- „Katastrofální faul na fotbal.“ jen při mimořádně špatném výsledkovém bloku, ne při běžné nule,
+- „To bylo cinema.“ jen při opravdu dramatickém / výjimečném výsledku doloženém fakty,
+- „To se nebavíme.“ jen při jednoznačné převaze doložené fakty,
+- „To je divize.“ jen pokud fakta výslovně obsahují podklad o kolapsu favorita; bez takového podkladu ji nepoužívej,
 - placeholder [JMÉNO TIPÉRA] vždy nahraď skutečným jménem.
 `;
 
