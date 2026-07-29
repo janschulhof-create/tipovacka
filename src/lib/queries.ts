@@ -296,7 +296,27 @@ export interface SeasonXbRow {
  * Neznámé dvojice nadstavby a baráže se dopočítávají konzervativním osobním
  * průměrem. Neodehrané tajné tipy se do veřejného pořadí nezapočítávají.
  */
-export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbRow[]> {
+/**
+ * Ořez pro historický („as-of") snapshot.
+ *
+ * `throughRound` – zahrnout jen kola ≤ N.
+ * `cutoffIso`    – zahrnout jen zápasy s kickoffem ≤ tento okamžik.
+ *
+ * POZNÁMKA K FALLBACKU (do DB refaktoru 1B): databáze zatím nemá sloupec
+ * `finished_at`, takže se as-of hranice odvozuje z `kickoff`. Pro zápas
+ * odložený za hranici kola to znamená, že se do staršího snapshotu
+ * nezapočítá – tehdy se totiž ještě nehrál. Až `finished_at` přibude,
+ * lze hranici zpřesnit bez změny významu metriky.
+ */
+export interface SeasonXbCutoff {
+  throughRound?: number;
+  cutoffIso?: string | null;
+}
+
+export async function getSeasonXbProjection(
+  seasonId: number,
+  cutoff: SeasonXbCutoff = {},
+): Promise<SeasonXbRow[]> {
   const sb = createServerReadClient();
   const [{ data: playerData }, { data: matchData }, { data: msSeasonData }] = await Promise.all([
     sb.from('players').select('id, name, is_active').eq('is_active', true).order('name'),
@@ -328,7 +348,20 @@ export async function getSeasonXbProjection(seasonId: number): Promise<SeasonXbR
     away_score: number | null;
     status: Match['status'];
   };
-  const matches = (matchData as ProjectionMatch[]) ?? [];
+  const vsechnyZapasy = (matchData as ProjectionMatch[]) ?? [];
+
+  // As-of ořez. Model dál běží chronologicky nad stejným jádrem – jen dostane
+  // méně vstupů, takže nemůže „vidět" do budoucnosti.
+  const cutoffMs = cutoff.cutoffIso ? Date.parse(cutoff.cutoffIso) : Number.POSITIVE_INFINITY;
+  const matches = vsechnyZapasy.filter((match) => {
+    if (cutoff.throughRound != null && match.round > cutoff.throughRound) return false;
+    if (Number.isFinite(cutoffMs)) {
+      const kickoffMs = Date.parse(match.kickoff);
+      if (!Number.isFinite(kickoffMs) || kickoffMs > cutoffMs) return false;
+    }
+    return true;
+  });
+
   if (!players.length || !matches.length) return [];
 
   // PostgREST může mít limit 1000 řádků. Predikce proto čteme stránkovaně,
@@ -1158,4 +1191,40 @@ export async function getWizardAndContinentStats(seasonId: number): Promise<{
         .sort((a, b) => b.points - a.points || a.name.localeCompare(b.name, 'cs')),
     })),
   };
+}
+
+/**
+ * Historický („as-of") xB snapshot po dohrání zvoleného kola.
+ *
+ * Odpovídá na otázku: „Jaký byl stav skutečných bodů a xB očekávání ve chvíli,
+ * kdy skončilo kolo N?" — nikoli „jak by dnešní model hodnotil zápasy kola N".
+ *
+ * As-of hranice = výkop prvního zápasu kola N+1 (pokud existuje). Zápas kola N
+ * odložený až za tuto hranici se proto do snapshotu kola N nezapočítá — tehdy
+ * se ještě nehrál. Model přitom u každého započítaného zápasu používá pouze
+ * dříve odehrané zápasy (chronologické jádro `xbHistory.ts`), takže nevzniká
+ * zpětný data leakage.
+ */
+export async function getSeasonXbSnapshotAtRound(
+  seasonId: number,
+  throughRound: number,
+): Promise<SeasonXbRow[]> {
+  if (!Number.isFinite(throughRound) || throughRound < 1) return [];
+
+  const sb = createServerReadClient();
+  const { data } = await sb
+    .from('matches')
+    .select('kickoff')
+    .eq('season_id', seasonId)
+    .eq('source_league', 'cze.1')
+    .eq('round', throughRound + 1)
+    .neq('status', 'cancelled')
+    .order('kickoff', { ascending: true })
+    .limit(1)
+    .maybeSingle();
+
+  // Když další kolo ještě nemá rozpis, hranicí je současnost.
+  const cutoffIso = (data as { kickoff?: string } | null)?.kickoff ?? null;
+
+  return getSeasonXbProjection(seasonId, { throughRound, cutoffIso });
 }

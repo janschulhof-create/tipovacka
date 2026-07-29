@@ -240,6 +240,7 @@ export default async function Home({
             roundTitle={selectedRoundTitle}
             seasonName={season.name}
             includeStandingMovement={selectedRound === currentRound}
+            selectedRound={selectedRound}
           />
         </Suspense>
       )}
