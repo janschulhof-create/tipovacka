@@ -1,0 +1,101 @@
+import { createHash } from 'node:crypto';
+import type { RoundRecapFacts } from './roundRecap';
+
+/**
+ * Optimalizace nákladů na generování „Kudy běží zajíc“.
+ *
+ * PROBLÉM, KTERÝ TO ŘEŠÍ
+ * Cache klíčem byl dřív `JSON.stringify(facts)`, tedy celý objekt faktů.
+ * Jakákoli změna — gól, přepočet bodů, posun v pořadí — vytvořila nový klíč
+ * a tím nové volání modelu. Během jednoho živého kola tak vzniklo několik
+ * desítek volání místo jednotek.
+ *
+ * ŘEŠENÍ
+ *   1. Stabilní cache klíč jen z toho, co má na text skutečný vliv.
+ *   2. Zeštíhlený payload — model dostane agregace místo všech tipů.
+ */
+
+/**
+ * Stabilní cache klíč.
+ *
+ * Text se smysluplně mění jen tehdy, když se změní počet dohraných zápasů
+ * nebo jejich konečné skóre. Průběžný stav živého zápasu (0:0 → 1:0 v 20.
+ * minutě) na vyznění recapu vliv nemá — a hlavně: dokud zápas neskončí,
+ * body se stejně nepočítají.
+ */
+export function stableRecapCacheKey(facts: RoundRecapFacts): string {
+  // Jen dohrané zápasy a jejich konečné skóre. Živé se ignorují.
+  const dohrane = facts.matches
+    .filter((match) => match.tips.some((tip) => tip.points !== null && tip.points !== undefined))
+    .map((match) => `${match.id}:${match.score}`)
+    .sort()
+    .join('|');
+
+  const podstatne = [
+    facts.roundTitle,
+    facts.seasonName,
+    facts.mode,
+    facts.completedMatches,
+    facts.totalMatches,
+    dohrane,
+  ].join('#');
+
+  return createHash('sha256').update(podstatne).digest('hex').slice(0, 32);
+}
+
+/** Kolik procent kola musí být dohráno, aby mělo smysl generovat průběžný text. */
+export const MIN_PROGRESS_FOR_AI = 0.5;
+
+/**
+ * Má se pro tato fakta vůbec volat model?
+ *
+ * Po prvním dohraném zápase z osmi nemá recap co říct — fallback je stejně
+ * dobrý a je zdarma. Finální recap se generuje vždy.
+ */
+export function shouldCallModel(facts: RoundRecapFacts): boolean {
+  if (facts.mode === 'waiting') return false;
+  if (facts.mode === 'final') return true;
+
+  if (facts.totalMatches <= 0) return false;
+  return facts.completedMatches / facts.totalMatches >= MIN_PROGRESS_FOR_AI;
+}
+
+/**
+ * Zeštíhlený payload pro model.
+ *
+ * Vypouští se pole `tips` u každého zápasu (8 zápasů × 8 tipérů = 64 položek,
+ * zhruba třetina celého payloadu). Model má komentovat vybrané situace, ne
+ * předčítat seznam tipů — a všechny podklady pro hlášky (kdo má nulu, kdo
+ * desítku, jak silný byl konsenzus) dostává už agregované z aplikace.
+ *
+ * Zachovává se `exactHitters` a `zeroTipsters`, aby šlo jmenovat konkrétní
+ * tipéry, a přidává se `notableTips` — deterministicky vybrané tipy, které
+ * stojí za zmínku.
+ */
+export function slimRecapFacts(facts: RoundRecapFacts): Record<string, unknown> {
+  const matches = facts.matches.map((match) => {
+    const vyhodnocene = match.tips.filter((tip) => typeof tip.points === 'number');
+
+    // Nejzajímavější tipy zápasu: nejlepší a nejodvážnější (nejméně sdílený).
+    const nejlepsi = [...vyhodnocene].sort((a, b) => b.points - a.points)[0] ?? null;
+    const nejosamelejsi = [...vyhodnocene]
+      .map((tip) => ({
+        tip,
+        sdileni: vyhodnocene.filter((other) => other.tip === tip.tip).length,
+      }))
+      .sort((a, b) => a.sdileni - b.sdileni || a.tip.points - b.tip.points)[0]?.tip ?? null;
+
+    const notableTips = [nejlepsi, nejosamelejsi]
+      .filter((tip): tip is NonNullable<typeof tip> => tip !== null)
+      .filter((tip, index, pole) => pole.findIndex((jiny) => jiny.name === tip.name) === index)
+      .map((tip) => ({ name: tip.name, tip: tip.tip, points: tip.points }));
+
+    // Kompletní seznam tipů se do promptu neposílá – nahrazuje ho počet
+    // vyhodnocených tipů a pár deterministicky vybraných zajímavých.
+    const zbytek: Record<string, unknown> = { ...match };
+    delete zbytek.tips;
+    return { ...zbytek, evaluatedTips: vyhodnocene.length, notableTips };
+  });
+
+  return { ...facts, matches };
+}

@@ -12,14 +12,65 @@ export type RecapPhraseId =
   | 'painful_zero'
   | 'zero_disaster'
   | 'round_bottom'
-  | 'gas_station_tip';
+  | 'gas_station_tip'
+  | 'dance_exit'
+  | 'knows_the_shovel'
+  | 'what_the_hell'
+  | 'levels'
+  | 'melta'
+  | 'bagrovana'
+  | 'kriplfight'
+  | 'unfinished_business'
+  | 'division_performance'
+  | 'spooky'
+  | 'close_the_shop';
 
 export const RECAP_PHRASES: Record<RecapPhraseId, string> = {
   painful_zero: '„Tady cejtím, že bude mrzení.“',
   zero_disaster: '„Můžeš skočit támhle do Renaulta a nazdar.“',
   round_bottom: '„Tady jde někdo pro tvrdou koledu.“',
   gas_station_tip: '„Tohle jsou tipy někde z benzinky, vole.“',
+  dance_exit: '„Odchod z tančírny.“',
+  knows_the_shovel: '„On ví, jak se na lopatě sedí.“',
+  what_the_hell: '„Pičo vole, co to jako je?“',
+  levels: '„Levely.“',
+  melta: '„To byla melta.“',
+  bagrovana: '„To byla bagrovaná.“',
+  kriplfight: '„Kriplfight.“',
+  unfinished_business: '„Budeme se o tom ještě bavit.“',
+  division_performance: '„Tohle je naprosto divizní výkon.“',
+  spooky: '„To je strašidelný.“',
+  close_the_shop: '„Můžeš zavřít krám a jít do prdele.“',
 };
+
+/** Jak těsné musí být čelo tabulky, aby se o tom „ještě bavilo“. */
+export const UNFINISHED_BUSINESS_MAX_GAP = 5;
+
+/** O kolik musí tipér zaostat za svým loňským průměrem, aby šlo o divizi. */
+export const DIVISION_PERFORMANCE_MIN_DROP = 1.5;
+
+/** Jaký podíl tipérů musí v jednom zápase vyhořet, aby to bylo strašidelné. */
+export const SPOOKY_MIN_ZERO_SHARE = 0.75;
+
+/** Kolik bodů za celé kolo znamená „zavři krám“. */
+export const CLOSE_THE_SHOP_MAX_POINTS = 2;
+
+/** O kolik míst musí tipér spadnout, aby šlo o odchod z tančírny. */
+export const DANCE_EXIT_MIN_PLACES = 2;
+
+/** Jak velký musí být náskok vítěze kola, aby šlo o jiné levely. */
+export const LEVELS_MIN_GAP = 8;
+
+/** Kolik gólů dělá z zápasu meltu (a zároveň nesmí být jednostranný). */
+export const MELTA_MIN_GOALS = 6;
+export const MELTA_MAX_DIFF = 2;
+
+/** Jak velký brankový rozdíl je bagrovaná. */
+export const BAGROVANA_MIN_DIFF = 4;
+
+/** Kriplfight: oba na dně a blízko sebe. */
+export const KRIPLFIGHT_MAX_POINTS = 8;
+export const KRIPLFIGHT_MAX_GAP = 2;
 
 /** Kolik nul v jednom kole znamená katastrofu. Jediné místo, kde je práh. */
 export const ZERO_DISASTER_THRESHOLD = 5;
@@ -73,11 +124,105 @@ export interface GasStationTipFact {
     | { source: 'tipster_consensus'; winPickShare: number };
 }
 
+export interface DanceExitFact {
+  type: 'dance_exit';
+  playerName: string;
+  places: number;
+}
+
+export interface KnowsTheShovelFact {
+  type: 'knows_the_shovel';
+  playerName: string;
+  match: string;
+  score: string;
+  crowdFavorite: string | null;
+  crowdShare: number;
+}
+
+export interface WhatTheHellFact {
+  type: 'what_the_hell';
+  match: string;
+  score: string;
+  favoriteTeam: string | null;
+  share: number;
+  zeros: number;
+}
+
+export interface LevelsFact {
+  type: 'levels';
+  playerName: string;
+  points: number;
+  gap: number;
+}
+
+export interface MeltaFact {
+  type: 'melta';
+  match: string;
+  score: string;
+  totalGoals: number;
+}
+
+export interface BagrovanaFact {
+  type: 'bagrovana';
+  match: string;
+  score: string;
+  goalDifference: number;
+}
+
+export interface KriplfightFact {
+  type: 'kriplfight';
+  first: string;
+  second: string;
+  firstPoints: number;
+  secondPoints: number;
+}
+
+export interface UnfinishedBusinessFact {
+  type: 'unfinished_business';
+  leader: string;
+  challenger: string;
+  gap: number;
+}
+
+export interface DivisionPerformanceFact {
+  type: 'division_performance';
+  playerName: string;
+  roundAverage: number;
+  previousAverage: number;
+  drop: number;
+}
+
+export interface SpookyFact {
+  type: 'spooky';
+  match: string;
+  score: string;
+  zeros: number;
+  totalTips: number;
+}
+
+export interface CloseTheShopFact {
+  type: 'close_the_shop';
+  playerName: string;
+  points: number;
+  evaluatedTips: number;
+}
+
 export interface RecapPhraseFacts {
   painfulZero: PainfulZeroFact | null;
   zeroDisaster: ZeroDisasterFact | null;
   roundBottom: RoundBottomFact | null;
   gasStationTip: GasStationTipFact | null;
+  danceExit: DanceExitFact | null;
+  knowsTheShovel: KnowsTheShovelFact | null;
+  whatTheHell: WhatTheHellFact | null;
+  levels: LevelsFact | null;
+  melta: MeltaFact | null;
+  bagrovana: BagrovanaFact | null;
+  kriplfight: KriplfightFact | null;
+  unfinishedBusiness: UnfinishedBusinessFact | null;
+  divisionPerformance: DivisionPerformanceFact | null;
+  spooky: SpookyFact | null;
+  closeTheShop: CloseTheShopFact | null;
   eligiblePhraseIds: RecapPhraseId[];
   /** Kolik katalogových hlášek smí text obsahovat. */
   maxPhrases: number;
@@ -263,6 +408,220 @@ function najdiGasStationTip(
   return null;
 }
 
+
+/**
+ * „Odchod z tančírny.“ — tipér vypadl z boje, výrazně se propadl v pořadí.
+ * Doklad: `biggestFall` s propadem aspoň o dvě místa.
+ */
+function najdiDanceExit(facts: RoundRecapFacts): DanceExitFact | null {
+  const pad = facts.biggestFall;
+  if (!pad || pad.places < DANCE_EXIT_MIN_PLACES) return null;
+  return { type: 'dance_exit', playerName: pad.name, places: pad.places };
+}
+
+/**
+ * „On ví, jak se na lopatě sedí.“ — pochvala matadora.
+ *
+ * Trefil PŘESNĚ zápas, u kterého se dav mýlil. Nejde o štěstí: většina
+ * tipérů čekala jiný výsledek, on ne.
+ */
+function najdiKnowsTheShovel(facts: RoundRecapFacts): KnowsTheShovelFact | null {
+  for (const match of facts.matches) {
+    if (!match.crowdShock) continue;
+    const trefil = match.exactHitters[0];
+    if (!trefil) continue;
+
+    return {
+      type: 'knows_the_shovel',
+      playerName: trefil,
+      match: match.label,
+      score: match.score,
+      crowdFavorite: match.crowdFavorite?.team ?? null,
+      crowdShare: match.crowdFavorite?.share ?? 0,
+    };
+  }
+  return null;
+}
+
+/**
+ * „Pičo vole, co to jako je?“ — naprostý údiv nad výsledkem.
+ * Doklad: consensusShock, tedy zápas, kde se dav spletl a nasypal nuly.
+ */
+function najdiWhatTheHell(facts: RoundRecapFacts): WhatTheHellFact | null {
+  const shock = facts.consensusShock;
+  if (!shock) return null;
+  return {
+    type: 'what_the_hell',
+    match: shock.match,
+    score: shock.score,
+    favoriteTeam: shock.favoriteTeam,
+    share: shock.share,
+    zeros: shock.zeros,
+  };
+}
+
+/**
+ * „Levely.“ — vítěz kola byl o třídu jinde než zbytek.
+ * Pozor: měří se náskok V KOLE, ne celkově (na to je „to se nebavíme“).
+ */
+function najdiLevels(facts: RoundRecapFacts): LevelsFact | null {
+  const serazeni = [...facts.players]
+    .filter((p) => p.evaluatedTips > 0)
+    .sort((a, b) => b.points - a.points);
+
+  const [prvni, druhy] = serazeni;
+  if (!prvni || !druhy) return null;
+
+  const gap = prvni.points - druhy.points;
+  if (gap < LEVELS_MIN_GAP) return null;
+
+  return { type: 'levels', playerName: prvni.name, points: prvni.points, gap };
+}
+
+/**
+ * „To byla melta.“ — divoká přestřelka.
+ * Hodně gólů, ale vyrovnaná. Jednostranný výprask je bagrovaná, ne melta.
+ */
+function najdiMeltu(facts: RoundRecapFacts): MeltaFact | null {
+  const kandidati = facts.matches
+    .filter((m) => m.totalGoals >= MELTA_MIN_GOALS && m.goalDifference <= MELTA_MAX_DIFF)
+    .sort((a, b) => b.totalGoals - a.totalGoals || a.id - b.id);
+
+  const zapas = kandidati[0];
+  if (!zapas) return null;
+  return { type: 'melta', match: zapas.label, score: zapas.score, totalGoals: zapas.totalGoals };
+}
+
+/**
+ * „To byla bagrovaná.“ — jednostranný výprask.
+ * Doklad: brankový rozdíl aspoň čtyři góly.
+ */
+function najdiBagrovanou(facts: RoundRecapFacts): BagrovanaFact | null {
+  const kandidati = facts.matches
+    .filter((m) => m.goalDifference >= BAGROVANA_MIN_DIFF)
+    .sort((a, b) => b.goalDifference - a.goalDifference || a.id - b.id);
+
+  const zapas = kandidati[0];
+  if (!zapas) return null;
+  return {
+    type: 'bagrovana',
+    match: zapas.label,
+    score: zapas.score,
+    goalDifference: zapas.goalDifference,
+  };
+}
+
+/**
+ * „Kriplfight.“ — souboj dvou nejhorších o dno kola.
+ * Oba musí být hluboko a blízko sebe, jinak jde o normální poslední místo.
+ */
+function najdiKriplfight(facts: RoundRecapFacts): KriplfightFact | null {
+  const serazeni = [...facts.players]
+    .filter((p) => p.evaluatedTips >= ROUND_BOTTOM_MIN_TIPS)
+    .sort((a, b) => a.points - b.points || a.name.localeCompare(b.name, 'cs'));
+
+  const [posledni, predposledni] = serazeni;
+  if (!posledni || !predposledni) return null;
+
+  if (predposledni.points > KRIPLFIGHT_MAX_POINTS) return null;
+  if (predposledni.points - posledni.points > KRIPLFIGHT_MAX_GAP) return null;
+
+  return {
+    type: 'kriplfight',
+    first: posledni.name,
+    second: predposledni.name,
+    firstPoints: posledni.points,
+    secondPoints: predposledni.points,
+  };
+}
+
+
+/**
+ * „Budeme se o tom ještě bavit.“ — účet není uzavřený.
+ *
+ * Čelo CELKOVÉ tabulky je těsné, takže rozhodnuto zdaleka není. Hodí se jako
+ * studiová pointa na závěr, ne jako rýpnutí.
+ */
+function najdiUnfinishedBusiness(facts: RoundRecapFacts): UnfinishedBusinessFact | null {
+  const [prvni, druhy] = facts.overallStandings;
+  if (!prvni || !druhy) return null;
+
+  const gap = prvni.points - druhy.points;
+  if (gap < 0 || gap > UNFINISHED_BUSINESS_MAX_GAP) return null;
+
+  return { type: 'unfinished_business', leader: prvni.name, challenger: druhy.name, gap };
+}
+
+/**
+ * „Tohle je naprosto divizní výkon.“ — tipér hluboko pod VLASTNÍM standardem.
+ *
+ * Pozor na záměnu: „To je divize.“ mluví o kolapsu TÝMU, tahle hláška
+ * o výkonu TIPÉRA proti jeho loňskému průměru.
+ */
+function najdiDivisionPerformance(facts: RoundRecapFacts): DivisionPerformanceFact | null {
+  const propad = facts.worstVsLastSeason;
+  if (!propad) return null;
+
+  const drop = propad.previousAverage - propad.roundAverage;
+  if (drop < DIVISION_PERFORMANCE_MIN_DROP) return null;
+
+  return {
+    type: 'division_performance',
+    playerName: propad.name,
+    roundAverage: propad.roundAverage,
+    previousAverage: propad.previousAverage,
+    drop: Number(drop.toFixed(2)),
+  };
+}
+
+/**
+ * „To je strašidelný.“ — jeden zápas sebral body skoro všem.
+ * Na rozdíl od „co to jako je“ nejde o šok z výsledku, ale o hromadnou zkázu.
+ */
+function najdiSpooky(facts: RoundRecapFacts): SpookyFact | null {
+  const kandidati = facts.matches
+    .map((match) => {
+      const vyhodnocene = match.tips.filter((tip) => typeof tip.points === 'number');
+      const nuly = vyhodnocene.filter((tip) => tip.points === 0).length;
+      return { match, nuly, celkem: vyhodnocene.length };
+    })
+    .filter((row) => row.celkem >= 3 && row.nuly / row.celkem >= SPOOKY_MIN_ZERO_SHARE)
+    .sort((a, b) => b.nuly - a.nuly || a.match.id - b.match.id);
+
+  const nej = kandidati[0];
+  if (!nej) return null;
+
+  return {
+    type: 'spooky',
+    match: nej.match.label,
+    score: nej.match.score,
+    zeros: nej.nuly,
+    totalTips: nej.celkem,
+  };
+}
+
+/**
+ * „Můžeš zavřít krám a jít do prdele.“ — nejtvrdší odsudek katalogu.
+ *
+ * Rezervováno pro naprostý propadák celého kola. Musí mít odtipováno
+ * dost zápasů, aby nešlo o někoho, kdo prostě netipoval.
+ */
+function najdiCloseTheShop(facts: RoundRecapFacts): CloseTheShopFact | null {
+  const kandidati = facts.players
+    .filter((p) => p.evaluatedTips >= ROUND_BOTTOM_MIN_TIPS && p.points <= CLOSE_THE_SHOP_MAX_POINTS)
+    .sort((a, b) => a.points - b.points || a.name.localeCompare(b.name, 'cs'));
+
+  const nej = kandidati[0];
+  if (!nej) return null;
+
+  return {
+    type: 'close_the_shop',
+    playerName: nej.name,
+    points: nej.points,
+    evaluatedTips: nej.evaluatedTips,
+  };
+}
+
 /**
  * Kolik katalogových hlášek smí text obsahovat.
  *
@@ -282,18 +641,51 @@ export function buildRecapPhraseFacts(
   const zeroDisaster = najdiZeroDisaster(facts);
   const roundBottom = najdiRoundBottom(facts);
   const gasStationTip = najdiGasStationTip(facts, preMatchStandings);
+  const danceExit = najdiDanceExit(facts);
+  const knowsTheShovel = najdiKnowsTheShovel(facts);
+  const whatTheHell = najdiWhatTheHell(facts);
+  const levels = najdiLevels(facts);
+  const melta = najdiMeltu(facts);
+  const bagrovana = najdiBagrovanou(facts);
+  const kriplfight = najdiKriplfight(facts);
+  const unfinishedBusiness = najdiUnfinishedBusiness(facts);
+  const divisionPerformance = najdiDivisionPerformance(facts);
+  const spooky = najdiSpooky(facts);
+  const closeTheShop = najdiCloseTheShop(facts);
 
   const eligiblePhraseIds: RecapPhraseId[] = [];
   if (painfulZero) eligiblePhraseIds.push('painful_zero');
   if (zeroDisaster) eligiblePhraseIds.push('zero_disaster');
   if (roundBottom) eligiblePhraseIds.push('round_bottom');
   if (gasStationTip) eligiblePhraseIds.push('gas_station_tip');
+  if (danceExit) eligiblePhraseIds.push('dance_exit');
+  if (knowsTheShovel) eligiblePhraseIds.push('knows_the_shovel');
+  if (whatTheHell) eligiblePhraseIds.push('what_the_hell');
+  if (levels) eligiblePhraseIds.push('levels');
+  if (melta) eligiblePhraseIds.push('melta');
+  if (bagrovana) eligiblePhraseIds.push('bagrovana');
+  if (kriplfight) eligiblePhraseIds.push('kriplfight');
+  if (unfinishedBusiness) eligiblePhraseIds.push('unfinished_business');
+  if (divisionPerformance) eligiblePhraseIds.push('division_performance');
+  if (spooky) eligiblePhraseIds.push('spooky');
+  if (closeTheShop) eligiblePhraseIds.push('close_the_shop');
 
   return {
     painfulZero,
     zeroDisaster,
     roundBottom,
     gasStationTip,
+    danceExit,
+    knowsTheShovel,
+    whatTheHell,
+    levels,
+    melta,
+    bagrovana,
+    kriplfight,
+    unfinishedBusiness,
+    divisionPerformance,
+    spooky,
+    closeTheShop,
     eligiblePhraseIds,
     maxPhrases: maxPhrasesForMode(facts.mode),
   };

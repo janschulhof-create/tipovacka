@@ -44,6 +44,17 @@ export const AUTHENTIC_BAROKO_PHRASES = [
   '„Můžeš skočit támhle do Renaulta a nazdar.“',
   '„Tady jde někdo pro tvrdou koledu.“',
   '„Tohle jsou tipy někde z benzinky, vole.“',
+  '„Odchod z tančírny.“',
+  '„On ví, jak se na lopatě sedí.“',
+  '„Pičo vole, co to jako je?“',
+  '„Levely.“',
+  '„To byla melta.“',
+  '„To byla bagrovaná.“',
+  '„Kriplfight.“',
+  '„Budeme se o tom ještě bavit.“',
+  '„Tohle je naprosto divizní výkon.“',
+  '„To je strašidelný.“',
+  '„Můžeš zavřít krám a jít do prdele.“',
 ] as const;
 
 export const BAROKO_STYLE_GUIDE = `
@@ -68,6 +79,17 @@ Pravidla použití:
 - „Můžeš skočit támhle do Renaulta a nazdar.“ jen při zero_disaster (5+ nul v jednom kole). Je to výrazný moment kola, ne běžná věta.
 - „Tady jde někdo pro tvrdou koledu.“ jen při round_bottom (doložené poslední místo v kole).
 - „Tohle jsou tipy někde z benzinky, vole.“ jen při gas_station_tip (tip na doloženého outsidera, který prohrál).
+- „Odchod z tančírny.“ jen při dance_exit (tipér se propadl aspoň o dvě místa v pořadí).
+- „On ví, jak se na lopatě sedí.“ jen při knows_the_shovel (přesná desítka v zápase, kde se dav mýlil) – je to POCHVALA matadora, ne posměch.
+- „Pičo vole, co to jako je?“ jen při what_the_hell (výsledek proti drtivému konsenzu). Je to výraz naprostého údivu nad zápasem, nikdy útok na konkrétního tipéra.
+- „Levely.“ jen při levels (vítěz kola měl výrazný náskok). Uznání převahy.
+- „To byla melta.“ jen při melta (divoká přestřelka, hodně gólů a vyrovnaná).
+- „To byla bagrovaná.“ jen při bagrovana (jednostranný výprask, velký brankový rozdíl).
+- „Kriplfight.“ jen při kriplfight (dva tipéři se přetahují o dno s minimem bodů).
+- „Budeme se o tom ještě bavit.“ jen při unfinished_business (těsné čelo celkové tabulky). Je to studiová pointa na závěr, ne rýpnutí.
+- „Tohle je naprosto divizní výkon.“ jen při division_performance (tipér hluboko pod svým loňským průměrem). POZOR: netýká se týmu, na to je „To je divize.“
+- „To je strašidelný.“ jen při spooky (jeden zápas sebral body drtivé většině tipérů).
+- „Můžeš zavřít krám a jít do prdele.“ jen při close_the_shop (naprostý propadák kola). Nejtvrdší hláška katalogu – používej ji střídmě a nikdy k někomu, kdo prostě netipoval.
 - Hlášky vybírej POUZE z eligiblePhraseIds. Co tam není, nesmíš použít.
 - Hlášky zapracuj organicky do souvislého komentáře. Nikdy je neřaď za sebou jako seznam.
 - Placeholder [JMÉNO TIPÉRA] musí být před výstupem nahrazen skutečným jménem.
