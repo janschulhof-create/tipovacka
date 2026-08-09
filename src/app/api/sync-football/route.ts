@@ -18,7 +18,7 @@ import {
 } from '@/lib/espnCompetition';
 import { selectionReason } from '@/lib/cupSelection';
 import { runRoastBatch } from '@/lib/roastBatch';
-import { canonTeam, externalTeamAliases } from '@/lib/teamAliases';
+import { canonTeam, externalTeamAliases, isSameFixture } from '@/lib/teamAliases';
 import type { MatchDetail, HighlightlySyncMeta } from '@/lib/espn';
 import { getVerifiedMatchCorrection, mergeVerifiedMatchDetail } from '@/lib/verifiedMatchCorrections';
 
@@ -630,25 +630,37 @@ async function syncHighlightlyLiga(args: {
     let targetedRequests = 0;
     for (const row of currentWindowRows) {
       if (!canSpend() || targetedRequests >= 4) break;
-      const homeAliases = externalTeamAliases(row.home_team).slice(0, 4);
+      // SYMETRICKÉ hledání: dřív se zkoušel jen domácí tým, takže zápas
+      // s Artisem v roli hosta se přes tuto cestu nikdy nenašel.
+      const dotazy: Array<{ strana: 'home' | 'away'; nazev: string }> = [
+        ...externalTeamAliases(row.home_team).slice(0, 2).map((nazev) => ({ strana: 'home' as const, nazev })),
+        ...externalTeamAliases(row.away_team).slice(0, 2).map((nazev) => ({ strana: 'away' as const, nazev })),
+      ];
+
       let found = false;
-      for (const homeTeamName of homeAliases) {
+      for (const dotaz of dotazy) {
         if (!canSpend() || targetedRequests >= 4) break;
         try {
           const targeted = await fetchHighlightlyMatches({
             date: today,
-            homeTeamName,
+            ...(dotaz.strana === 'home'
+              ? { homeTeamName: dotaz.nazev }
+              : { awayTeamName: dotaz.nazev }),
             limit: 100,
           });
           absorb(targeted);
           targetedRequests += targeted.requests;
           for (const candidate of targeted.data) {
-            if (hlPair(candidate.home.name, candidate.away.name) !== hlPair(row.home_team, row.away_team)) continue;
+            // Porovnává se PÁR (oba týmy), ne jen jedna strana.
+            if (!isSameFixture(
+              { home: row.home_team, away: row.away_team },
+              { home: candidate.home.name, away: candidate.away.name },
+            )) continue;
             if (!apiMatches.some((item) => item.id === candidate.id)) apiMatches.push(candidate);
             found = true;
           }
         } catch (targetedError) {
-          report.warnings.push(`Highlightly cílený dotaz ${homeTeamName}: ${String(targetedError)}`);
+          report.warnings.push(`Highlightly cílený dotaz ${dotaz.strana}=${dotaz.nazev}: ${String(targetedError)}`);
         }
         if (found) break;
       }
@@ -661,7 +673,14 @@ async function syncHighlightlyLiga(args: {
     const matchedRows: Array<{ row: ExistingMatch; match: HighlightlyMatch }> = [];
     for (const row of dayRows) {
       const meta = hlMeta(row.detail);
-      const match = (meta ? apiById.get(meta.id) : null) ?? apiByPair.get(hlPair(row.home_team, row.away_team));
+      // Provider ID > jméno. Jméno slouží jen k objevení a k záchraně.
+      const match = (meta ? apiById.get(meta.id) : null)
+        ?? apiByPair.get(hlPair(row.home_team, row.away_team))
+        ?? apiMatches.find((candidate) => isSameFixture(
+          { home: row.home_team, away: row.away_team },
+          { home: candidate.home.name, away: candidate.away.name },
+        ))
+        ?? null;
       if (match) matchedRows.push({ row, match });
     }
     report.live.matched = matchedRows.length;

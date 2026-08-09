@@ -242,3 +242,71 @@ Výstup se nesmí uložit nebo odeslat, pokud:
 - vrací neplatný JSON podle výstupního kontraktu.
 
 Takový výstup se zahodí, zapíše se validační chyba a provede se nejvýše jeden opravný pokus. Poté se použije bezpečný fallback nebo se obsah označí k pozdějšímu přegenerování.
+
+---
+
+## Nové hlášky Kudy běží zajíc (v0.1.64)
+
+Každá má deterministický doklad. Model si nevybírá podle citu — aplikace
+spočítá `eligiblePhraseIds` a on volí jen z nich.
+
+| Hláška | Kdy se povolí | Doklad z dat |
+|---|---|---|
+| „Odchod z tančírny.“ | tipér se propadl v pořadí | `biggestFall.places >= 2` |
+| „On ví, jak se na lopatě sedí.“ | přesná desítka tam, kde se dav mýlil | `crowdShock` + `exactHitters[0]` |
+| „Pičo vole, co to jako je?“ | výsledek proti drtivému konsenzu | `consensusShock` |
+| „Levely.“ | vítěz kola měl výrazný náskok | rozdíl 1. a 2. v kole `>= 8` b |
+| „To byla melta.“ | divoká přestřelka | `totalGoals >= 6` a rozdíl `<= 2` |
+| „To byla bagrovaná.“ | jednostranný výprask | `goalDifference >= 4` |
+| „Kriplfight.“ | dva se přetahují o dno | oba `<= 8` b, rozdíl `<= 2` |
+
+### Rozlišení podobných hlášek
+
+- **melta × bagrovaná** — melta je vyrovnaná přestřelka (4:3), bagrovaná
+  jednostranný výprask (5:0). Pravidla se **nepřekrývají**, ověřeno testem.
+- **kriplfight × tvrdá koleda** — koleda je jeden propadák, kriplfight souboj
+  dvou. Když platí kriplfight, koleda se ve fallbacku vynechá.
+- **levely × „to se nebavíme“** — levely měří náskok **v kole**,
+  „to se nebavíme“ celkovou dominanci v tabulce.
+
+### Tón
+
+- „On ví, jak se na lopatě sedí.“ je **pochvala** matadora, ne posměch.
+- „Levely.“ je uznání převahy.
+- „Pičo vole, co to jako je?“ míří na **zápas**, nikdy na konkrétního tipéra.
+- Ostatní jsou rýpnutí — ale vždy doložené čísly, ne náhodné.
+
+### Limity
+
+Beze změny: finální recap **max 3** katalogové hlášky, průběžný **max 2**.
+I když je povoleno devět, do textu se jich dostane jen pár — jinak by vznikl
+seznam místo komentáře.
+
+---
+
+## Čtvrtá várka hlášek (v0.1.65)
+
+| Hláška | Kdy se povolí | Doklad z dat |
+|---|---|---|
+| „Budeme se o tom ještě bavit.“ | těsné čelo celkové tabulky | rozdíl 1. a 2. `<= 5` b |
+| „Tohle je naprosto divizní výkon.“ | tipér hluboko pod vlastním standardem | pod loňským průměrem o `>= 1,5` b |
+| „To je strašidelný.“ | jeden zápas sebral body skoro všem | `>= 75 %` tipérů na nule |
+| „Můžeš zavřít krám a jít do prdele.“ | naprostý propadák kola | `<= 2` b za celé kolo |
+
+### Rozlišení podobných hlášek
+
+- **„divizní výkon“ × „To je divize.“** — první mluví o **tipérovi** proti jeho
+  loňskému průměru, druhá o kolapsu **týmu**. Ověřeno testem, že se nezaměňují.
+- **„strašidelný“ × „co to jako je“** — strašidelný je hromadná zkáza (většina
+  na nule), „co to jako je“ je šok z výsledku proti konsenzu.
+- **„zavři krám“ × „tvrdá koleda“ × „kriplfight“** — nejtvrdší je „zavři krám“
+  (≤ 2 b za kolo). Když platí, koleda se ve fallbacku vynechá.
+
+### Tón a ochrany
+
+- „Budeme se o tom ještě bavit.“ je **pointa na závěr**, ne rýpnutí.
+- „Můžeš zavřít krám a jít do prdele.“ je nejtvrdší hláška katalogu. Nikdy
+  nepadne na někoho, kdo prostě netipoval — vyžaduje aspoň tři vyhodnocené tipy.
+
+Katalog má nyní **15 hlášek**. Limity beze změny: finální recap max 3,
+průběžný max 2.

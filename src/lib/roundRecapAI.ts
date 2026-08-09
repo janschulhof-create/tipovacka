@@ -26,10 +26,13 @@ export class RoundRecapAiError extends Error {
 }
 import { fallbackRoundRecap, type RoundRecapFacts } from './roundRecap';
 import { buildRecapPhraseFacts, maxPhrasesForMode, RECAP_PHRASES } from './roundRecapPhrases';
+import { shouldCallModel, slimRecapFacts, stableRecapCacheKey } from './roundRecapPayload';
 
 const cachedRoundRecap = unstable_cache(
-  async (serializedFacts: string) => {
-    const facts = JSON.parse(serializedFacts) as RoundRecapFacts;
+  // `_cacheKey` je stabilní otisk kola – je součástí klíče cache, ale do
+  // promptu nevstupuje. `serializedFacts` je ZEŠTÍHLENÝ payload pro model.
+  async (_cacheKey: string, serializedFacts: string, serializedFull: string) => {
+    const facts = JSON.parse(serializedFull) as RoundRecapFacts;
     const modeRules = facts.mode === 'final'
       ? 'Napiš 8 až 14 krátkých vět rozdělených do 3 až 5 krátkých odstavců. Použij nejvýše TŘI katalogové hlášky, každou k jiné situaci a organicky vplетenou do textu.'
       : 'Napiš 5 až 8 krátkých vět rozdělených do 2 až 3 krátkých odstavců. Výslovně řekni, že kolo ještě pokračuje. Použij nejvýše DVĚ katalogové hlášky.';
@@ -39,10 +42,23 @@ const cachedRoundRecap = unstable_cache(
       ? '(žádná katalogová hláška z této skupiny není povolená — nepoužívej je)'
       : phraseFacts.eligiblePhraseIds
           .map((id) => `- ${RECAP_PHRASES[id]} — doloženo: ${JSON.stringify(
-            id === 'painful_zero' ? phraseFacts.painfulZero
-              : id === 'zero_disaster' ? phraseFacts.zeroDisaster
-                : id === 'round_bottom' ? phraseFacts.roundBottom
-                  : phraseFacts.gasStationTip,
+            ({
+              painful_zero: phraseFacts.painfulZero,
+              zero_disaster: phraseFacts.zeroDisaster,
+              round_bottom: phraseFacts.roundBottom,
+              gas_station_tip: phraseFacts.gasStationTip,
+              dance_exit: phraseFacts.danceExit,
+              knows_the_shovel: phraseFacts.knowsTheShovel,
+              what_the_hell: phraseFacts.whatTheHell,
+              levels: phraseFacts.levels,
+              melta: phraseFacts.melta,
+              bagrovana: phraseFacts.bagrovana,
+              kriplfight: phraseFacts.kriplfight,
+              unfinished_business: phraseFacts.unfinishedBusiness,
+              division_performance: phraseFacts.divisionPerformance,
+              spooky: phraseFacts.spooky,
+              close_the_shop: phraseFacts.closeTheShop,
+            })[id],
           )}`)
           .join('\n');
 
@@ -131,8 +147,10 @@ ${serializedFacts}`;
 
     return vysledek.text;
   },
-  ['round-recap-ai-v2-kudy-bezi-zajic'],
-  { revalidate: 600 },
+  ['round-recap-ai-v3-kudy-bezi-zajic'],
+  // Dohrané kolo se už nikdy nezmění, ale klíč je stabilní i pro průběžný
+  // stav – proto stačí jedna delší hodnota pro obojí.
+  { revalidate: 3600 },
 );
 
 function scoreTokens(facts: RoundRecapFacts): Set<string> {
@@ -162,9 +180,17 @@ export function validateRoundRecapText(text: string, facts: RoundRecapFacts): bo
 export async function getRoundRecapText(facts: RoundRecapFacts): Promise<{ text: string; source: 'ai' | 'fallback' }> {
   if (facts.mode === 'waiting') return { text: fallbackRoundRecap(facts), source: 'fallback' };
 
-  const serialized = JSON.stringify(facts);
+  // Na začátku rozehraného kola nemá model co říct – fallback je stejně
+  // dobrý a nestojí nic.
+  if (!shouldCallModel(facts)) {
+    return { text: fallbackRoundRecap(facts), source: 'fallback' };
+  }
+
+  const cacheKey = stableRecapCacheKey(facts);
+  const slim = JSON.stringify(slimRecapFacts(facts));
+
   try {
-    const generated = await cachedRoundRecap(serialized);
+    const generated = await cachedRoundRecap(cacheKey, slim, JSON.stringify(facts));
     if (generated) return { text: generated.trim(), source: 'ai' };
   } catch (error) {
     zalogujSelhani(error, facts);

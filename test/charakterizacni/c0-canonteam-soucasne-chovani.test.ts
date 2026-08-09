@@ -16,32 +16,45 @@ import { canonTeam } from '@/lib/teamAliases';
  *    To je záměr – jejich pád je důkazem, že se chování opravilo.
  *    Při refaktoru je přesunout do `kontraktni/` s opačným očekáváním.
  */
-describe('C0 — charakterizace: canonTeam dnes umí jen přesnou shodu', () => {
+/**
+ * C0 — canonTeam PO OPRAVĚ normalizace (v0.1.63)
+ *
+ * HISTORIE (dohledatelná):
+ *   • Původně tato sada zaznamenávala CHYBNÉ chování: `canonTeam` uměl
+ *     jen přesnou shodu, takže „sk líšeň“ nebo „1. SK Líšeň“ vracel
+ *     nezměněné a živý zápas Artisu se nespároval.
+ *   • V hlavičce tehdy stálo, že po opravě tyto testy záměrně padnou.
+ *     To se v0.1.63 stalo — a testy jsou zde přepsané na chování opravené.
+ *
+ * STARÉ (bug):  canonTeam('sk líšeň') === 'sk líšeň'
+ * NOVÉ (fix):   canonTeam('sk líšeň') === 'Artis Brno'
+ */
+describe('C0 — canonTeam po opravě normalizace', () => {
   test('ořezání mezer na okrajích funguje', () => {
     assert.equal(canonTeam('  SK Líšeň  '), 'Artis Brno');
   });
 
-  // ---- DNEŠNÍ (chybné) chování – po opravě musí tyto testy padnout ----
-  const dnesNeprelozene: [string, string][] = [
-    ['sk líšeň', 'sk líšeň'],
-    ['SK LÍŠEŇ', 'SK LÍŠEŇ'],
-    ['1. SK Líšeň', '1. SK Líšeň'],
-    ['SK  Líšeň', 'SK  Líšeň'],
-    ['FC Artis Brno', 'FC Artis Brno'],
+  // Tvary, které DŘÍV procházely nezměněné (bug) a nyní se správně mapují.
+  const drivRozbite = [
+    'sk líšeň',
+    'SK LÍŠEŇ',
+    '1. SK Líšeň',
+    'SK  Líšeň',
+    'FC Artis Brno',
   ];
 
-  for (const [vstup, dnesniVystup] of dnesNeprelozene) {
-    test(`DNES: „${vstup}" se vrací nezměněné`, () => {
+  for (const varianta of drivRozbite) {
+    test(`OPRAVENO: „${varianta}" → Artis Brno`, () => {
       assert.equal(
-        canonTeam(vstup),
-        dnesniVystup,
-        'Pokud tento test padne, znamená to, že normalizace už funguje – '
-        + 'přesuň ho do kontraktních testů s očekáváním „Artis Brno".',
+        canonTeam(varianta),
+        'Artis Brno',
+        'Do v0.1.62 se tento tvar vracel nezměněný – to byla příčina '
+        + 'nespárovaných živých zápasů Artisu.',
       );
     });
   }
 
-  test('DNES: prázdný vstup vrací prázdný řetězec', () => {
+  test('prázdný vstup vrací prázdný řetězec', () => {
     assert.equal(canonTeam(''), '');
   });
 });

@@ -14,7 +14,7 @@ import { canonTeam } from '@/lib/teamAliases';
  * Oprava (etapa 6): normalizace jména + provider ID jako primární identita
  * + práh jistoty. Po opravě přesunout do zelené regresní sady.
  */
-describe('R1 — identita týmu musí přežít neznámé tvary názvu', () => {
+describe('C8 — identita týmu přežije neznámé tvary názvu (opraveno v0.1.63)', () => {
   const CANONICAL = 'Artis Brno';
 
   const tvaryOdPoskytovatele = [

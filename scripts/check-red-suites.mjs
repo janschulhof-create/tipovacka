@@ -11,9 +11,10 @@ const OCEKAVANI = [
   {
     sada: 'regresni-red',
     suite: 'red',
-    tests: 24,
-    fail: 24,
-    poznamka: 'Známé chyby: identita týmů (5), vlastnictví syncu (2), úplnost schématu (17).',
+    tests: 19,
+    fail: 19,
+    poznamka: 'Známé chyby: vlastnictví syncu (2), úplnost schématu (17). '
+      + 'Identita týmů (5) OPRAVENA v0.1.63 – přesunuta do zelené sady jako C8.',
   },
   {
     sada: 'kontraktni',

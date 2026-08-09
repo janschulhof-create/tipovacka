@@ -476,12 +476,46 @@ export function fallbackRoundRecap(facts: RoundRecapFacts): string {
   const hlaskaOutsider = phrases.gasStationTip
     ? `${phrases.gasStationTip.playerName} věřil výhře ${phrases.gasStationTip.team} proti ${phrases.gasStationTip.opponent} a nevyšlo to. Tohle jsou tipy někde z benzinky, vole.`
     : '';
-  const hlaskaPosledni = !phrases.zeroDisaster && phrases.roundBottom
+  // Nové katalogové hlášky – i fallback smí být šťavnatý.
+  const hlaskaZapas = phrases.bagrovana
+    ? `${phrases.bagrovana.match} skončil ${phrases.bagrovana.score}. To byla bagrovaná.`
+    : phrases.melta
+      ? `${phrases.melta.match} nabídl ${phrases.melta.totalGoals} gólů a skončil ${phrases.melta.score}. To byla melta.`
+      : '';
+  const hlaskaSok = phrases.whatTheHell
+    ? `${phrases.whatTheHell.match} skončil ${phrases.whatTheHell.score}, i když ${Math.round(phrases.whatTheHell.share * 100)} % tipérů čekalo opak. Pičo vole, co to jako je?`
+    : '';
+  const hlaskaLevely = phrases.levels
+    ? `${phrases.levels.playerName} vzal kolo o ${phrases.levels.gap} bodů. Levely.`
+    : '';
+  const hlaskaMatador = phrases.knowsTheShovel
+    ? `${phrases.knowsTheShovel.playerName} trefil ${phrases.knowsTheShovel.match} přesně, když se dav mýlil. On ví, jak se na lopatě sedí.`
+    : '';
+  const hlaskaPad = phrases.danceExit
+    ? `${phrases.danceExit.playerName} spadl o ${phrases.danceExit.places} místa. Odchod z tančírny.`
+    : '';
+  const hlaskaStrasidlo = phrases.spooky
+    ? `${phrases.spooky.match} sebral body ${phrases.spooky.zeros} tipérům z ${phrases.spooky.totalTips}. To je strašidelný.`
+    : '';
+  const hlaskaKram = phrases.closeTheShop
+    ? `${phrases.closeTheShop.playerName} má za celé kolo ${phrases.closeTheShop.points} bodů. Můžeš zavřít krám a jít do prdele.`
+    : '';
+  const hlaskaDivizni = phrases.divisionPerformance
+    ? `${phrases.divisionPerformance.playerName} je ${phrases.divisionPerformance.drop} bodu pod svým loňským průměrem. Tohle je naprosto divizní výkon.`
+    : '';
+  const hlaskaJeste = phrases.unfinishedBusiness
+    ? `${phrases.unfinishedBusiness.leader} vede o ${phrases.unfinishedBusiness.gap} b před ${phrases.unfinishedBusiness.challenger}. Budeme se o tom ještě bavit.`
+    : '';
+  const hlaskaKripl = phrases.kriplfight
+    ? `Na dně se přetahují ${phrases.kriplfight.first} a ${phrases.kriplfight.second}. Kriplfight.`
+    : '';
+
+  const hlaskaPosledni = !phrases.zeroDisaster && !phrases.kriplfight && !phrases.closeTheShop && phrases.roundBottom
     ? `Na dně kola je ${phrases.roundBottom.playerName} s ${phrases.roundBottom.points} body. Tady jde někdo pro tvrdou koledu.`
     : '';
 
   if (facts.mode === 'progress') {
-    return `${facts.completedMatches} z ${facts.totalMatches} zápasů je dohráno, takže verdikt je pořád průběžný. ${leader}. ${xb} ${xbSlaby} ${lastYear} ${hlaskaNula} ${drama} Zbývá ${facts.remainingMatches} zápasů a zajíc ještě může změnit směr.`.replace(/\s+/g, ' ').trim();
+    return `${facts.completedMatches} z ${facts.totalMatches} zápasů je dohráno, takže verdikt je pořád průběžný. ${leader}. ${xb} ${xbSlaby} ${lastYear} ${hlaskaLevely} ${hlaskaZapas} ${hlaskaNula} ${drama} Zbývá ${facts.remainingMatches} zápasů a zajíc ještě může změnit směr.`.replace(/\s+/g, ' ').trim();
   }
 
   const exact = facts.totalExactHits
@@ -490,8 +524,10 @@ export function fallbackRoundRecap(facts: RoundRecapFacts): string {
   return [
     `Kolo je zavřené. ${leader}. ${exact}`,
     `${xb} ${xbSlaby} ${lastYear}`.trim(),
-    `${hlaskaNula} ${hlaskaOutsider} ${hlaskaPosledni} ${drama}`.trim(),
-    'Tabulka nelže, i když by leckdo chtěl. Tohle je konečný zápis Kudy běží zajíc.',
+    `${hlaskaLevely} ${hlaskaMatador}`.trim(),
+    `${hlaskaZapas} ${hlaskaSok} ${hlaskaStrasidlo}`.trim(),
+    `${hlaskaNula} ${hlaskaKram} ${hlaskaDivizni} ${hlaskaOutsider} ${hlaskaPad} ${hlaskaKripl} ${hlaskaPosledni} ${drama}`.trim(),
+    `${hlaskaJeste} Tabulka nelže, i když by leckdo chtěl. Tohle je konečný zápis Kudy běží zajíc.`.trim(),
   ]
     .map((blok) => blok.replace(/\s+/g, ' ').trim())
     .filter(Boolean)
