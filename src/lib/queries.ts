@@ -1228,3 +1228,63 @@ export async function getSeasonXbSnapshotAtRound(
 
   return getSeasonXbProjection(seasonId, { throughRound, cutoffIso });
 }
+
+/**
+ * Kumulativní body po jednotlivých kolech — podklad pro graf v tabulce.
+ *
+ * Odlehčená varianta `getSeasonChartData`: agreguje rovnou po KOLECH, ne po
+ * zápasech, takže z ~280 bodů na tipéra zbude ~30. Díky tomu ji lze zapnout
+ * i pro Chance ligu, kde byl plný graf kvůli objemu dat vypnutý.
+ */
+export async function getSeasonRoundPoints(
+  seasonId: number,
+): Promise<{ rounds: number[]; players: { name: string; cumulative: number[] }[] }> {
+  const sb = createServerReadClient();
+
+  const { data: ms } = await sb
+    .from('matches')
+    .select('id, round')
+    .eq('season_id', seasonId)
+    .gt('round', 0)
+    .eq('status', 'finished')
+    .order('round', { ascending: true });
+
+  const matchRows = (ms as { id: number; round: number }[]) ?? [];
+  if (matchRows.length === 0) return { rounds: [], players: [] };
+
+  const roundByMatch = new Map(matchRows.map((m) => [m.id, m.round]));
+
+  const { data: ps } = await sb
+    .from('predictions')
+    .select('match_id, points, players(name)')
+    .in('match_id', matchRows.map((m) => m.id))
+    .not('points', 'is', null);
+
+  type Row = { match_id: number; points: number | null; players: { name: string } | { name: string }[] | null };
+
+  // body[hráč][kolo] = součet bodů v daném kole
+  const body = new Map<string, Map<number, number>>();
+  for (const r of (ps as Row[]) ?? []) {
+    const name = Array.isArray(r.players) ? r.players[0]?.name : r.players?.name;
+    const round = roundByMatch.get(r.match_id);
+    if (!name || round == null) continue;
+    const perPlayer = body.get(name) ?? new Map<number, number>();
+    perPlayer.set(round, (perPlayer.get(round) ?? 0) + (r.points ?? 0));
+    body.set(name, perPlayer);
+  }
+
+  const rounds = [...new Set(matchRows.map((m) => m.round))].sort((a, b) => a - b);
+
+  const players = [...body.entries()]
+    .map(([name, perRound]) => {
+      let soucet = 0;
+      const cumulative = rounds.map((round) => {
+        soucet += perRound.get(round) ?? 0;
+        return soucet;
+      });
+      return { name, cumulative };
+    })
+    .sort((a, b) => (b.cumulative.at(-1) ?? 0) - (a.cumulative.at(-1) ?? 0));
+
+  return { rounds, players };
+}

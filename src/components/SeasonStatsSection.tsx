@@ -6,6 +6,7 @@ import {
   getMisses,
   getSeasonTipRounds,
   getSeasonXbProjection,
+  getSeasonRoundPoints,
   getStoppageStats,
   getWizardAndContinentStats,
 } from '@/lib/pageQueries';
@@ -81,7 +82,12 @@ export async function UnifiedStandingsSection({
   currentPlayerId?: number;
   compact?: boolean;
 }) {
-  const rows = await getSeasonXbProjection(seasonId);
+  // Graf i pořadí se načtou paralelně – graf je odlehčený (agregace po kolech).
+  const [rows, roundPoints] = await Promise.all([
+    getSeasonXbProjection(seasonId),
+    getSeasonRoundPoints(seasonId),
+  ]);
+
   return (
     <UnifiedStandingsTable
       rows={rows}
@@ -89,6 +95,7 @@ export async function UnifiedStandingsSection({
       hasLive={hasLive}
       currentPlayerId={currentPlayerId}
       compact={compact}
+      roundPoints={roundPoints}
     />
   );
 }

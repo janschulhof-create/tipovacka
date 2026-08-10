@@ -14,6 +14,7 @@ import {
   getRoundMatches as readRoundMatches,
   getSeasonChartData as readSeasonChartData,
   getSeasonXbProjection as readSeasonXbProjection,
+  getSeasonRoundPoints as readSeasonRoundPoints,
   getSeasonXbSnapshotAtRound as readSeasonXbSnapshotAtRound,
   getSeasonRounds as readSeasonRounds,
   getSeasonTipRounds as readSeasonTipRounds,
@@ -82,6 +83,13 @@ export const getSeasonXbSnapshotAtRound = unstable_cache(
   async (seasonId: number, throughRound: number) =>
     readSeasonXbSnapshotAtRound(seasonId, throughRound),
   ['page-season-xb-snapshot-v1'],
+  { revalidate: 300, tags: ['tipovacka-data'] },
+);
+
+/** Body po kolech pro graf v tabulce. */
+export const getSeasonRoundPoints = unstable_cache(
+  async (seasonId: number) => readSeasonRoundPoints(seasonId),
+  ['page-season-round-points-v1'],
   { revalidate: 300, tags: ['tipovacka-data'] },
 );
 
