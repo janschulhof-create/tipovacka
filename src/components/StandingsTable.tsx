@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { RoundPointsChart, type RoundPointsData } from './RoundPointsChart';
 import Link from 'next/link';
 import type { StandingRow } from '@/lib/types';
 import type { SeasonXbRow } from '@/lib/queries';
@@ -135,7 +136,7 @@ export function StandingsTable({
 }
 
 
-type UnifiedRankMode = 'current' | 'live' | 'xb';
+type UnifiedRankMode = 'current' | 'live' | 'graf' | 'xb';
 
 type SarcasmResult = {
   label: string;
@@ -172,14 +173,25 @@ export function UnifiedStandingsTable({
   hasLive = false,
   currentPlayerId,
   compact = false,
+  roundPoints,
 }: {
   rows: SeasonXbRow[];
   liveInc?: Record<string, number>;
   hasLive?: boolean;
   currentPlayerId?: number;
   compact?: boolean;
+  /** Body po kolech pro graf. Když se hraje, ustoupí živému pořadí. */
+  roundPoints?: RoundPointsData;
 }) {
   const [mode, setMode] = useState<UnifiedRankMode>('current');
+
+  // Třetí záložka je dynamická: když se hraje, patří živému pořadí,
+  // jinak grafu vývoje bodů. Rozehraný zápas má vždy přednost.
+  const tretiZalozka: UnifiedRankMode = hasLive ? 'live' : 'graf';
+  const aktivni: UnifiedRankMode =
+    mode === 'live' && !hasLive ? 'graf'
+      : mode === 'graf' && hasLive ? 'live'
+        : mode;
   if (!rows.length) return null;
 
   const ranked = rows
@@ -189,12 +201,12 @@ export function UnifiedStandingsTable({
       live_points: row.actual_points + (liveInc[row.name] ?? 0),
     }))
     .sort((a, b) => {
-      const aValue = mode === 'xb' ? a.projected_points : mode === 'live' ? a.live_points : a.actual_points;
-      const bValue = mode === 'xb' ? b.projected_points : mode === 'live' ? b.live_points : b.actual_points;
+      const aValue = aktivni === 'xb' ? a.projected_points : aktivni === 'live' ? a.live_points : a.actual_points;
+      const bValue = aktivni === 'xb' ? b.projected_points : aktivni === 'live' ? b.live_points : b.actual_points;
       return bValue - aValue || b.actual_points - a.actual_points || a.name.localeCompare(b.name, 'cs');
     });
 
-  const displayedValues = ranked.map((row) => mode === 'xb' ? row.projected_points : mode === 'live' ? row.live_points : row.actual_points);
+  const displayedValues = ranked.map((row) => aktivni === 'xb' ? row.projected_points : aktivni === 'live' ? row.live_points : row.actual_points);
   const min = displayedValues.length ? Math.min(...displayedValues) : 0;
   const max = displayedValues.length ? Math.max(...displayedValues) : 0;
   const finished = rows[0]?.finished_matches ?? 0;
@@ -206,11 +218,13 @@ export function UnifiedStandingsTable({
     return Math.max(4, Math.min(100, (value / max) * 100));
   };
 
-  const subtitle = mode === 'current'
+  const subtitle = aktivni === 'current'
     ? 'Skutečné body proti xB ze stejných odehraných zápasů.'
-    : mode === 'live'
+    : aktivni === 'live'
       ? 'Průběžné body a posun během právě hraných zápasů.'
-      : `Odhad konečných bodů podle historie, formy a rozpisu ${total} zápasů.`;
+      : aktivni === 'graf'
+        ? 'Vývoj nasbíraných bodů po jednotlivých kolech.'
+        : `Odhad konečných bodů podle historie, formy a rozpisu ${total} zápasů.`;
 
   return (
     <div className="panel-flush overflow-hidden">
@@ -220,19 +234,20 @@ export function UnifiedStandingsTable({
             <h2 className="eyebrow"><span className="flag-chip" /> Pořadí</h2>
             <p className={`mt-1 leading-snug text-copy-muted ${compact ? 'text-[10px]' : 'text-[11px]'}`}>{subtitle}</p>
           </div>
-          <span className={`shrink-0 rounded-full border px-2.5 py-1 font-bold uppercase tracking-wide ${mode === 'live' && hasLive ? 'border-state-success/30 bg-state-success/10 text-state-success' : 'border-violet-400/25 bg-violet-500/10 text-violet-200'} ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
-            {mode === 'live' && hasLive ? '● živě' : `${finished}/${total}`}
+          <span className={`shrink-0 rounded-full border px-2.5 py-1 font-bold uppercase tracking-wide ${aktivni === 'live' && hasLive ? 'border-state-success/30 bg-state-success/10 text-state-success' : 'border-violet-400/25 bg-violet-500/10 text-violet-200'} ${compact ? 'text-[9px]' : 'text-[10px]'}`}>
+            {aktivni === 'live' && hasLive ? '● živě' : `${finished}/${total}`}
           </span>
         </div>
 
         <div className="mt-3 grid grid-cols-3 rounded-xl border border-line-subtle bg-app-deep/35 p-1">
           {([
-            ['current', 'Body'],
-            ['live', 'Live'],
-            ['xb', 'xBody'],
-          ] as const).map(([value, label]) => {
-            const disabled = value === 'live' && !hasLive;
-            const active = mode === value;
+            ['current', 'Body'] as const,
+            [tretiZalozka, hasLive ? 'Live' : 'Graf'] as const,
+            ['xb', 'xBody'] as const,
+          ]).map(([value, label]) => {
+            // Graf potřebuje aspoň dvě odehraná kola.
+            const disabled = value === 'graf' && (roundPoints?.rounds.length ?? 0) < 2;
+            const active = aktivni === value;
             return (
               <button
                 key={value}
@@ -254,7 +269,7 @@ export function UnifiedStandingsTable({
           })}
         </div>
 
-        {mode === 'xb' && !compact && (
+        {aktivni === 'xb' && !compact && (
           <div className="mt-3 grid grid-cols-3 divide-x divide-line-subtle rounded-xl border border-line-subtle bg-app-deep/25 py-2">
             <div className="px-2 text-center"><div className="font-display text-base font-bold text-copy-primary">{Math.max(0, total - finished)}</div><div className="text-[8px] uppercase tracking-wide text-copy-muted">zbývá zápasů</div></div>
             <div className="px-2 text-center"><div className="font-display text-base font-bold text-copy-primary">{averageConfidence} %</div><div className="text-[8px] uppercase tracking-wide text-copy-muted">jistota</div></div>
@@ -263,15 +278,19 @@ export function UnifiedStandingsTable({
         )}
       </div>
 
+      {aktivni === 'graf' ? (
+        <RoundPointsChart data={roundPoints ?? { rounds: [], players: [] }} compact={compact} />
+      ) : (
+      <>
       <div className={`grid border-b border-line-subtle font-semibold uppercase tracking-wide text-copy-muted ${compact ? 'grid-cols-[24px_minmax(0,1fr)_60px] gap-2 px-3 py-1.5 text-[8px]' : 'grid-cols-[32px_minmax(0,1fr)_72px] gap-3 px-4 py-2 text-[9px]'}`}>
-        <span>#</span><span>Tipař</span><span className="text-right">{mode === 'xb' ? 'Odhad' : 'Body'}</span>
+        <span>#</span><span>Tipař</span><span className="text-right">{aktivni === 'xb' ? 'Odhad' : 'Body'}</span>
       </div>
 
       <ol className={compact ? 'px-2 py-2' : 'space-y-1 px-2 py-2 sm:px-3'}>
         {ranked.map((row, index) => {
           const mine = currentPlayerId === row.player_id;
-          const value = mode === 'xb' ? row.projected_points : mode === 'live' ? row.live_points : row.actual_points;
-          const color = max > min ? qualityColor(value, min, max) : mode === 'xb' ? '#A46AF7' : '#5DA9FF';
+          const value = aktivni === 'xb' ? row.projected_points : aktivni === 'live' ? row.live_points : row.actual_points;
+          const color = max > min ? qualityColor(value, min, max) : aktivni === 'xb' ? '#A46AF7' : '#5DA9FF';
           const baseRank = [...rows]
             .sort((a, b) => b.actual_points - a.actual_points || a.name.localeCompare(b.name, 'cs'))
             .findIndex((candidate) => candidate.player_id === row.player_id) + 1;
@@ -330,11 +349,14 @@ export function UnifiedStandingsTable({
           );
         })}
       </ol>
+      </>
+      )}
 
       <div className={`border-t border-line-subtle leading-relaxed text-copy-muted ${compact ? 'px-3 py-2 text-[9px]' : 'px-4 py-3 text-[10.5px]'}`}>
-        {mode === 'current' && 'Rozdíl porovnává skutečně získané body se součtem xB pouze ze stejných vyhodnocených zápasů.'}
-        {mode === 'live' && (hasLive ? 'Live pořadí se přepočítává z právě hraných zápasů.' : 'Žádný zápas právě neběží.')}
-        {mode === 'xb' && 'xB je průběžná projekce konečného bodového zisku, nikoli slib ani pravděpodobnost přesného výsledku.'}
+        {aktivni === 'current' && 'Rozdíl porovnává skutečně získané body se součtem xB pouze ze stejných vyhodnocených zápasů.'}
+        {aktivni === 'live' && 'Live pořadí se přepočítává z právě hraných zápasů.'}
+        {aktivni === 'graf' && 'Kumulativní body po kolech. Jakmile začne zápas, záložka se přepne na živé pořadí.'}
+        {aktivni === 'xb' && 'xB je průběžná projekce konečného bodového zisku, nikoli slib ani pravděpodobnost přesného výsledku.'}
       </div>
     </div>
   );
