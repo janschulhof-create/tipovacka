@@ -372,3 +372,12 @@ describe('RACE-17 — mobil si zachová svislé posouvání stránky', () => {
     assert.ok(/aria-label="Další kolo"/.test(race));
   });
 });
+
+
+describe('RACE-18 - production crash guard', () => {
+  test('roundPoints bez matches nesmi shodit tabulku', () => {
+    const zdroj = readFileSync(path.join(KOREN, 'src/components/StandingsTable.tsx'), 'utf8');
+    assert.ok(zdroj.includes('roundPoints?.matches?.length'), 'matches musi byt chranene optional chainingem.');
+    assert.ok(!zdroj.includes('roundPoints?.matches.length'), 'Nechraneny pristup k matches.length se nesmi vratit.');
+  });
+});
