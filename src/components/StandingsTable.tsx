@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { RoundPointsChart, type RoundPointsData } from './RoundPointsChart';
+import { StandingsChart } from './StandingsChart';
 import Link from 'next/link';
 import type { StandingRow } from '@/lib/types';
 import type { SeasonXbRow } from '@/lib/queries';
@@ -180,8 +180,12 @@ export function UnifiedStandingsTable({
   hasLive?: boolean;
   currentPlayerId?: number;
   compact?: boolean;
-  /** Body po kolech pro graf. Když se hraje, ustoupí živému pořadí. */
-  roundPoints?: RoundPointsData;
+  /**
+   * Body po kolech pro graf. Používá STEJNÝ `StandingsChart` jako /historie,
+   * aby existovala jedna implementace grafu, ne dvě.
+   * Když se hraje, záložka ustoupí živému pořadí.
+   */
+  roundPoints?: { matches: { round: number; pts: Record<string, number> }[]; players: string[] };
 }) {
   const [mode, setMode] = useState<UnifiedRankMode>('current');
 
@@ -246,7 +250,7 @@ export function UnifiedStandingsTable({
             ['xb', 'xBody'] as const,
           ]).map(([value, label]) => {
             // Graf potřebuje aspoň dvě odehraná kola.
-            const disabled = value === 'graf' && (roundPoints?.rounds.length ?? 0) < 2;
+            const disabled = value === 'graf' && (roundPoints?.matches.length ?? 0) < 2;
             const active = aktivni === value;
             return (
               <button
@@ -279,7 +283,14 @@ export function UnifiedStandingsTable({
       </div>
 
       {aktivni === 'graf' ? (
-        <RoundPointsChart data={roundPoints ?? { rounds: [], players: [] }} compact={compact} />
+        <div className={compact ? 'px-2 py-2' : 'px-3 py-3'}>
+          <StandingsChart
+            matches={roundPoints?.matches ?? []}
+            players={roundPoints?.players ?? []}
+            variant="seasonRace"
+            interactionMode="focus"
+          />
+        </div>
       ) : (
       <>
       <div className={`grid border-b border-line-subtle font-semibold uppercase tracking-wide text-copy-muted ${compact ? 'grid-cols-[24px_minmax(0,1fr)_60px] gap-2 px-3 py-1.5 text-[8px]' : 'grid-cols-[32px_minmax(0,1fr)_72px] gap-3 px-4 py-2 text-[9px]'}`}>

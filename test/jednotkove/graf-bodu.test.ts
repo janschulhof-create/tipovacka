@@ -46,7 +46,11 @@ describe('GRAF-1…GRAF-3 — přepínání třetí záložky', () => {
 });
 
 describe('GRAF-4…GRAF-6 — data grafu', () => {
-  /** Kumulativní součet, jaký počítá `getSeasonRoundPoints`. */
+  /**
+   * Kumulaci dělá `StandingsChart` sám (stejně jako na /historie).
+   * Dotaz proto vrací body ZA KOLO, ne kumulativně – tady ověřujeme,
+   * že se z nich složí správná křivka.
+   */
   function kumulativne(perRound: Record<number, number>, rounds: number[]): number[] {
     let soucet = 0;
     return rounds.map((r) => {
@@ -70,20 +74,48 @@ describe('GRAF-4…GRAF-6 — data grafu', () => {
   });
 
   test('GRAF-6: graf potřebuje aspoň dvě kola', () => {
-    const malo = { rounds: [1], players: [{ name: 'Šulda', cumulative: [20] }] };
-    const dost = { rounds: [1, 2], players: [{ name: 'Šulda', cumulative: [20, 34] }] };
+    const malo = { matches: [{ round: 1, pts: { 'Šulda': 20 } }], players: ['Šulda'] };
+    const dost = {
+      matches: [{ round: 1, pts: { 'Šulda': 20 } }, { round: 2, pts: { 'Šulda': 14 } }],
+      players: ['Šulda'],
+    };
 
-    assert.ok(malo.rounds.length < 2, 'Jedno kolo → záložka zakázaná.');
-    assert.ok(dost.rounds.length >= 2, 'Dvě kola → graf se vykreslí.');
+    assert.ok(malo.matches.length < 2, 'Jedno kolo → záložka zakázaná.');
+    assert.ok(dost.matches.length >= 2, 'Dvě kola → graf se vykreslí.');
   });
 
-  test('hráči jsou seřazení podle konečného počtu bodů', () => {
-    const hraci = [
-      { name: 'Maroš', cumulative: [10, 18] },
-      { name: 'Šulda', cumulative: [20, 34] },
-      { name: 'Franz', cumulative: [14, 26] },
-    ].sort((a, b) => (b.cumulative.at(-1) ?? 0) - (a.cumulative.at(-1) ?? 0));
+  test('GRAF-7: datový tvar je shodný se vstupem StandingsChart', () => {
+    // Stejná struktura jako `getSeasonChartData` používaná na /historie,
+    // jen agregovaná po kolech. Díky tomu lze použít existující graf.
+    const data = {
+      matches: [
+        { round: 1, pts: { 'Šulda': 20, 'Maroš': 8 } },
+        { round: 2, pts: { 'Šulda': 14, 'Maroš': 10 } },
+      ],
+      players: ['Šulda', 'Maroš'],
+    };
 
-    assert.deepEqual(hraci.map((h) => h.name), ['Šulda', 'Franz', 'Maroš']);
+    for (const m of data.matches) {
+      assert.equal(typeof m.round, 'number');
+      assert.equal(typeof m.pts, 'object');
+      assert.ok(!('kickoff' in m), 'Bez kickoff → graf zvolí pohled „po kolech".');
+    }
+    assert.ok(Array.isArray(data.players));
+  });
+
+  test('GRAF-8: kumulace odpovídá tomu, co dělá StandingsChart', () => {
+    // Replikace řádku 183 ve StandingsChart: running[p] += g.pts[p] ?? 0
+    const matches = [
+      { round: 1, pts: { 'Šulda': 20 } },
+      { round: 2, pts: { 'Šulda': 14 } },
+      { round: 3, pts: { 'Šulda': 22 } },
+    ];
+    const running: Record<string, number> = { 'Šulda': 0 };
+    const series: number[] = [];
+    for (const m of matches) {
+      running['Šulda'] += m.pts['Šulda'] ?? 0;
+      series.push(running['Šulda']);
+    }
+    assert.deepEqual(series, [20, 34, 56]);
   });
 });

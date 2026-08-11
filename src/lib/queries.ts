@@ -1230,15 +1230,20 @@ export async function getSeasonXbSnapshotAtRound(
 }
 
 /**
- * Kumulativní body po jednotlivých kolech — podklad pro graf v tabulce.
+ * Body po jednotlivých kolech ve tvaru, kterému rozumí `StandingsChart`.
  *
- * Odlehčená varianta `getSeasonChartData`: agreguje rovnou po KOLECH, ne po
- * zápasech, takže z ~280 bodů na tipéra zbude ~30. Díky tomu ji lze zapnout
- * i pro Chance ligu, kde byl plný graf kvůli objemu dat vypnutý.
+ * Záměrně vrací STEJNOU strukturu jako `getSeasonChartData`, aby se dal použít
+ * existující graf z /historie a nevznikala druhá SVG implementace. Rozdíl je
+ * jen v granularitě: agreguje se po KOLECH, ne po zápasech, takže z ~280
+ * datových bodů na tipéra zbude ~30. Díky tomu jde graf zapnout i pro Chance
+ * ligu, kde byl plný rozpad kvůli objemu dat vypnutý.
+ *
+ * `kickoff` se ZÁMĚRNĚ nevyplňuje — graf tím pozná, že má použít pohled
+ * „po kolech“ místo „po dnech“.
  */
 export async function getSeasonRoundPoints(
   seasonId: number,
-): Promise<{ rounds: number[]; players: { name: string; cumulative: number[] }[] }> {
+): Promise<{ matches: { round: number; pts: Record<string, number> }[]; players: string[] }> {
   const sb = createServerReadClient();
 
   const { data: ms } = await sb
@@ -1250,7 +1255,7 @@ export async function getSeasonRoundPoints(
     .order('round', { ascending: true });
 
   const matchRows = (ms as { id: number; round: number }[]) ?? [];
-  if (matchRows.length === 0) return { rounds: [], players: [] };
+  if (matchRows.length === 0) return { matches: [], players: [] };
 
   const roundByMatch = new Map(matchRows.map((m) => [m.id, m.round]));
 
@@ -1262,29 +1267,22 @@ export async function getSeasonRoundPoints(
 
   type Row = { match_id: number; points: number | null; players: { name: string } | { name: string }[] | null };
 
-  // body[hráč][kolo] = součet bodů v daném kole
-  const body = new Map<string, Map<number, number>>();
+  const perRound = new Map<number, Record<string, number>>();
+  const names = new Set<string>();
+
   for (const r of (ps as Row[]) ?? []) {
     const name = Array.isArray(r.players) ? r.players[0]?.name : r.players?.name;
     const round = roundByMatch.get(r.match_id);
     if (!name || round == null) continue;
-    const perPlayer = body.get(name) ?? new Map<number, number>();
-    perPlayer.set(round, (perPlayer.get(round) ?? 0) + (r.points ?? 0));
-    body.set(name, perPlayer);
+    names.add(name);
+    const bucket = perRound.get(round) ?? {};
+    bucket[name] = (bucket[name] ?? 0) + (r.points ?? 0);
+    perRound.set(round, bucket);
   }
 
-  const rounds = [...new Set(matchRows.map((m) => m.round))].sort((a, b) => a - b);
+  const matches = [...perRound.keys()]
+    .sort((a, b) => a - b)
+    .map((round) => ({ round, pts: perRound.get(round)! }));
 
-  const players = [...body.entries()]
-    .map(([name, perRound]) => {
-      let soucet = 0;
-      const cumulative = rounds.map((round) => {
-        soucet += perRound.get(round) ?? 0;
-        return soucet;
-      });
-      return { name, cumulative };
-    })
-    .sort((a, b) => (b.cumulative.at(-1) ?? 0) - (a.cumulative.at(-1) ?? 0));
-
-  return { rounds, players };
+  return { matches, players: [...names] };
 }
