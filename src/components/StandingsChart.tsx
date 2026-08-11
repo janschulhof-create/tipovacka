@@ -1,6 +1,16 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import {
+  buildCumulativeSeries,
+  buildRankSeries,
+  buildRoundSnapshot,
+  hasEnoughRounds,
+  movementLabel,
+  resolveLabelCollisions,
+  roundIndexFromRatio,
+  shouldSelectOnPointerMove,
+} from '@/lib/seasonRace';
 import { qualityColor } from '@/lib/points';
 
 type MatchPoint = { round: number; kickoff?: string; pts: Record<string, number> };
@@ -24,13 +34,35 @@ const wdIdxOf = (iso: string) => {
 // barevná škála dle pořadí: nejlepší fialová → zelená → modrá → žlutá → červená.
 const rankColor = (i: number, n: number) => qualityColor(n - 1 - i, 0, Math.max(1, n - 1));
 
+/**
+ * Sdílený graf průběhu sezony.
+ *
+ * Tenký přepínač mezi dvěma konfiguracemi téhož grafu — obě sdílejí datový
+ * tvar (`MatchPoint`), barevnou škálu (`rankColor`) i výpočty ze
+ * `@/lib/seasonRace`. Jedna implementace, dvě použití.
+ *
+ * `history`    – původní chování na /historie (dny / kola / sloupce, skrývání).
+ * `seasonRace` – tabulka pořadí (Body / Pořadí, scrubber, detail kola, focus).
+ */
 export function StandingsChart({
   matches,
   players,
+  variant = 'history',
+  interactionMode,
 }: {
   matches: MatchPoint[];
   players: string[];
+  variant?: 'history' | 'seasonRace';
+  /** `hide` = klik skryje čáru (historie), `focus` = klik zvýrazní (Season Race). */
+  interactionMode?: 'hide' | 'focus';
 }) {
+  return variant === 'seasonRace'
+    ? <SeasonRace matches={matches} players={players} interactionMode={interactionMode ?? 'focus'} />
+    : <HistoryChart matches={matches} players={players} />;
+}
+
+/** Původní graf z /historie – chování beze změny. */
+function HistoryChart({ matches, players }: { matches: MatchPoint[]; players: string[] }) {
   const canDay = matches.length > 0 && matches.every((m) => !!m.kickoff);
   const [view, setView] = useState<View>(canDay ? 'lineDay' : 'lineRound');
   const [hidden, setHidden] = useState<Set<string>>(new Set());
@@ -286,6 +318,288 @@ export function StandingsChart({
               </>
             );
           })()}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  SEASON RACE — konfigurace téhož grafu pro tabulku pořadí
+//
+//  Sdílí s historií barevnou škálu (`rankColor`) i tvar dat (`MatchPoint`).
+//  Navíc umí: Body / Pořadí, výběr kola ukazovátkem i dotykem, detail kola
+//  s posunem ▲▼, focus tipéra a scrubber.
+// ─────────────────────────────────────────────────────────────────────────────
+
+type RaceView = 'body' | 'poradi';
+
+function SeasonRace({
+  matches,
+  players,
+  interactionMode,
+}: {
+  matches: MatchPoint[];
+  players: string[];
+  interactionMode: 'hide' | 'focus';
+}) {
+  const [raceView, setRaceView] = useState<RaceView>('body');
+  const [focused, setFocused] = useState<string | null>(null);
+  const [hidden, setHidden] = useState<Set<string>>(new Set());
+  const [selected, setSelected] = useState<number | null>(null);
+  const [playing, setPlaying] = useState(false);
+  const svgRef = useRef<SVGSVGElement>(null);
+
+  const data = { matches, players };
+  const rounds = matches.map((m) => m.round);
+  const n = rounds.length;
+
+  // Výchozí je poslední dohrané kolo.
+  const selectedIndex = selected == null ? Math.max(0, n - 1) : Math.min(selected, n - 1);
+
+  const cumulative = buildCumulativeSeries(data);
+  const rankSeries = buildRankSeries(data);
+  const snapshot = buildRoundSnapshot(data, selectedIndex);
+
+  // Barvy podle konečného pořadí – stejná škála jako historie.
+  const poradiCelkem = [...players].sort((a, b) =>
+    (cumulative[b]?.at(-1) ?? 0) - (cumulative[a]?.at(-1) ?? 0) || a.localeCompare(b, 'cs'));
+  const rankOf: Record<string, number> = Object.fromEntries(poradiCelkem.map((p, i) => [p, i]));
+  const colorOf = (p: string) => rankColor(rankOf[p], Math.max(1, players.length));
+
+  // Přehrávání sezony – jednoduchý interval, bez animační knihovny.
+  useEffect(() => {
+    if (!playing || n < 2) return;
+    const reduced = typeof window !== 'undefined'
+      && window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) { setPlaying(false); return; }
+
+    const timer = setInterval(() => {
+      setSelected((prev) => {
+        const dalsi = (prev == null ? 0 : prev) + 1;
+        if (dalsi >= n) { setPlaying(false); return n - 1; }
+        return dalsi;
+      });
+    }, 900);
+    return () => clearInterval(timer);
+  }, [playing, n]);
+
+  if (!hasEnoughRounds(data)) {
+    return (
+      <div className="px-4 py-6 text-center text-[11px] text-copy-muted">
+        Graf se objeví po druhém odehraném kole.
+      </div>
+    );
+  }
+
+  const W = 360, H = 210, padL = 30, padR = 42, padT = 14, padB = 26;
+  const x = (i: number) => padL + (i / Math.max(1, n - 1)) * (W - padL - padR);
+
+  const yMaxBody = Math.max(1, ...players.map((p) => cumulative[p]?.at(-1) ?? 0));
+  const yBody = (v: number) => padT + (1 - v / yMaxBody) * (H - padT - padB);
+  // Pořadí: 1. místo NAHOŘE.
+  const yRank = (pos: number) =>
+    padT + ((pos - 1) / Math.max(1, players.length - 1)) * (H - padT - padB);
+
+  const hodnota = (p: string, i: number) =>
+    raceView === 'body' ? cumulative[p][i] : rankSeries[p][i];
+  const y = (v: number) => (raceView === 'body' ? yBody(v) : yRank(v));
+
+  const jeSkryty = (p: string) => interactionMode === 'hide' && hidden.has(p);
+  const opacita = (p: string) => {
+    if (jeSkryty(p)) return 0;
+    if (interactionMode !== 'focus' || focused == null) return 1;
+    return p === focused ? 1 : 0.2;
+  };
+
+  /** Výběr kola – jednotně pro myš, dotyk i pero. */
+  const vyberKolo = (e: React.PointerEvent<SVGSVGElement>) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const pomer = (e.clientX - rect.left) / rect.width;
+    const vnitrni = (pomer * W - padL) / (W - padL - padR);
+    setSelected(roundIndexFromRatio(vnitrni, n));
+    setPlaying(false);
+  };
+
+  const klikNaHrace = (p: string) => {
+    setPlaying(false);
+    if (interactionMode === 'hide') {
+      setHidden((prev) => {
+        const next = new Set(prev);
+        if (next.has(p)) next.delete(p); else next.add(p);
+        return next;
+      });
+      return;
+    }
+    setFocused((prev) => (prev === p ? null : p));
+  };
+
+  // Popisky na konci čar – s ošetřením překryvu.
+  const koncoveY = poradiCelkem.map((p) => y(hodnota(p, n - 1)));
+  const rozmistene = resolveLabelCollisions(koncoveY, 9);
+
+  const vedouci = snapshot[0];
+  const druhy = snapshot[1];
+  const tabCls = (active: boolean) =>
+    `rounded-md px-2.5 py-1 text-[10px] font-semibold transition ${
+      active ? 'bg-surface-3 text-copy-primary' : 'text-copy-muted hover:text-copy-primary'}`;
+
+  return (
+    <div className="space-y-2">
+      {/* souhrn vybraného kola */}
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 px-1">
+        <div className="text-[11px] font-semibold text-copy-primary">
+          {rounds[selectedIndex]}. kolo
+          {vedouci && <span className="ml-2 text-copy-muted">1. {vedouci.name} {vedouci.cumulative} b</span>}
+        </div>
+        {vedouci && druhy && (
+          <div className="text-[10px] text-copy-muted">
+            Rozdíl {vedouci.cumulative - druhy.cumulative} b
+          </div>
+        )}
+      </div>
+
+      {/* přepínač Body / Pořadí */}
+      <div className="flex items-center gap-1 px-1">
+        <button onClick={() => setRaceView('body')} className={tabCls(raceView === 'body')}>Body</button>
+        <button onClick={() => setRaceView('poradi')} className={tabCls(raceView === 'poradi')}>Pořadí</button>
+        {focused && (
+          <button
+            onClick={() => setFocused(null)}
+            className="ml-auto rounded-md px-2 py-1 text-[10px] text-copy-muted hover:text-copy-primary"
+          >
+            Všichni
+          </button>
+        )}
+      </div>
+
+      {/*
+        Dotykové chování: `touch-pan-y` nechá svislé posouvání stránky na
+        prohlížeči (prst přes graf tedy stránku normálně posune) a vodorovná
+        gesta si bere graf pro výběr kola. Zakázání všech gest by z grafu
+        udělalo past přes celou šířku displeje.
+      */}
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${H}`}
+        className="w-full touch-pan-y select-none"
+        role="img"
+        aria-label={raceView === 'body' ? 'Vývoj bodů po kolech' : 'Vývoj pořadí po kolech'}
+        onPointerDown={vyberKolo}
+        onPointerMove={(e) => {
+          // Myš: stačí přejet. Dotyk: až při skutečném tažení.
+          if (shouldSelectOnPointerMove(e.pointerType, e.buttons)) vyberKolo(e);
+        }}
+      >
+        {[0, 0.5, 1].map((podil) => (
+          <line
+            key={podil}
+            x1={padL} x2={W - padR}
+            y1={padT + podil * (H - padT - padB)} y2={padT + podil * (H - padT - padB)}
+            stroke="currentColor" strokeWidth="0.5" className="text-line-subtle"
+          />
+        ))}
+
+        {/* svislé ukazovátko vybraného kola */}
+        <line
+          x1={x(selectedIndex)} x2={x(selectedIndex)} y1={padT} y2={H - padB}
+          stroke="currentColor" strokeWidth="1" strokeDasharray="3 3" className="text-copy-muted"
+        />
+
+        {poradiCelkem.map((p, i) => {
+          if (jeSkryty(p)) return null;
+          const body = Array.from({ length: n }, (_, idx) => `${x(idx)},${y(hodnota(p, idx))}`).join(' ');
+          const zvyrazneny = interactionMode === 'focus' && focused === p;
+          return (
+            <g key={p} opacity={opacita(p)}>
+              <polyline
+                points={body} fill="none" stroke={colorOf(p)}
+                strokeWidth={zvyrazneny ? 2.6 : 1.6}
+                strokeLinejoin="round" strokeLinecap="round"
+              />
+              <circle cx={x(selectedIndex)} cy={y(hodnota(p, selectedIndex))} r={zvyrazneny ? 3 : 2.2} fill={colorOf(p)} />
+              <text
+                x={W - padR + 3} y={rozmistene[i] + 3}
+                fontSize="7.5" fontWeight="700" fill={colorOf(p)}
+                className="hidden sm:block"
+              >
+                {p.length > 7 ? `${p.slice(0, 7)}…` : p} {hodnota(p, n - 1)}
+              </text>
+            </g>
+          );
+        })}
+
+        <text x={padL} y={H - 8} fontSize="8" className="fill-current text-copy-muted">{rounds[0]}. kolo</text>
+        <text x={W - padR} y={H - 8} fontSize="8" textAnchor="end" className="fill-current text-copy-muted">
+          {rounds[n - 1]}. kolo
+        </text>
+      </svg>
+
+      {/* scrubber */}
+      <div className="flex items-center gap-2 px-1">
+        <button
+          onClick={() => { setSelected(Math.max(0, selectedIndex - 1)); setPlaying(false); }}
+          disabled={selectedIndex === 0}
+          className="rounded-md px-2 py-1 text-xs text-copy-muted disabled:opacity-30"
+          aria-label="Předchozí kolo"
+        >◀</button>
+
+        <input
+          type="range" min={0} max={n - 1} value={selectedIndex}
+          onChange={(e) => { setSelected(Number(e.target.value)); setPlaying(false); }}
+          className="h-4 flex-1 accent-brand-primary"
+          aria-label="Vybrané kolo"
+        />
+
+        <button
+          onClick={() => { setSelected(Math.min(n - 1, selectedIndex + 1)); setPlaying(false); }}
+          disabled={selectedIndex === n - 1}
+          className="rounded-md px-2 py-1 text-xs text-copy-muted disabled:opacity-30"
+          aria-label="Další kolo"
+        >▶</button>
+
+        <button
+          onClick={() => { if (playing) setPlaying(false); else { setSelected(0); setPlaying(true); } }}
+          className="rounded-md px-2 py-1 text-[10px] text-copy-muted hover:text-copy-primary"
+        >
+          {playing ? '❚❚' : '▶ Přehrát'}
+        </button>
+      </div>
+
+      {/* detail vybraného kola – pod grafem, ne přes něj */}
+      <div className="overflow-hidden rounded-lg border border-line-subtle">
+        {snapshot.map((row) => {
+          const zvyrazneny = interactionMode === 'focus' && focused === row.name;
+          return (
+            <button
+              key={row.name}
+              onClick={() => klikNaHrace(row.name)}
+              className={`flex w-full items-center gap-2 border-b border-line-subtle px-2.5 py-1.5 text-left text-[11px] last:border-0 transition ${
+                zvyrazneny ? 'bg-surface-3' : ''
+              } ${jeSkryty(row.name) ? 'opacity-35' : ''}`}
+            >
+              <span className="w-4 shrink-0 tabular-nums text-copy-muted">{row.position}.</span>
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ background: colorOf(row.name) }} />
+              <span className={`min-w-0 flex-1 truncate ${zvyrazneny ? 'font-semibold text-copy-primary' : 'text-copy-primary'}`}>
+                {row.name}
+              </span>
+              <span className="shrink-0 tabular-nums text-copy-primary">{row.cumulative} b</span>
+              <span className="w-9 shrink-0 text-right tabular-nums text-state-success">
+                {row.roundPoints > 0 ? `+${row.roundPoints}` : row.roundPoints}
+              </span>
+              <span className={`w-7 shrink-0 text-right tabular-nums ${
+                row.movement > 0 ? 'text-state-success' : row.movement < 0 ? 'text-state-danger' : 'text-copy-muted'
+              }`}>
+                {movementLabel(row.movement)}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <p className="px-1 text-[9px] leading-snug text-copy-muted">
+        Klepni na tipéra pro zvýraznění, tažením v grafu vyber kolo.
+      </p>
     </div>
   );
 }
