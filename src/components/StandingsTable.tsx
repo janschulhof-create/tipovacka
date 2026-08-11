@@ -250,7 +250,7 @@ export function UnifiedStandingsTable({
             ['xb', 'xBody'] as const,
           ]).map(([value, label]) => {
             // Graf potřebuje aspoň dvě odehraná kola.
-            const disabled = value === 'graf' && (roundPoints?.matches.length ?? 0) < 2;
+            const disabled = value === 'graf' && (roundPoints?.matches?.length ?? 0) < 2;
             const active = aktivni === value;
             return (
               <button
