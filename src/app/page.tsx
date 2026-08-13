@@ -7,12 +7,14 @@ import {
   getStandings,
   getPlayers,
   getSeasonChartData,
+  getPostponedMatches,
   getLiveMatches,
   getLivePointsByPlayer,
   getRoundLabels,
   getRoundPredictions,
 } from '@/lib/pageQueries';
 import { RoundPanel } from '@/components/RoundPanel';
+import { POSTPONED_ROUND, POSTPONED_ROUND_LABEL, isTippingLocked } from '@/lib/postponed';
 import { LigaDesktopBoard } from '@/components/LigaDesktopBoard';
 import { RoundSelector } from '@/components/RoundSelector';
 import { roundLabel } from '@/lib/roundLabel';
@@ -59,9 +61,20 @@ export default async function Home({
 
   // Přípravné zápasy (kolo 0) zůstávají pouze v databázi jako technický archiv.
   // V Chance lize je nezobrazujeme ani nenabízíme v přepínači kol.
-  const rounds = competition.key === 'liga'
+  const baseRounds = competition.key === 'liga'
     ? allRounds.filter((round) => round > 0)
     : allRounds;
+  // Odložené zápasy potřebujeme znát dřív, než se rozhodne o výběru kola.
+  // Dotaz je levný – vrací jen zápasy se stavem `postponed`.
+  const postponedMatches = await getPostponedMatches(seasonId);
+
+  // Pohled „Odložené zápasy“ se do výběru přidá jen tehdy, když nějaký
+  // odložený zápas existuje. Body zůstávají v původních kolech.
+  const rounds = postponedMatches.length > 0 ? [...baseRounds, POSTPONED_ROUND] : baseRounds;
+  const roundLabelsWithPostponed = postponedMatches.length > 0
+    ? { ...roundLabels, [POSTPONED_ROUND]: POSTPONED_ROUND_LABEL }
+    : roundLabels;
+
   const fallbackRound = currentRound != null && rounds.includes(currentRound)
     ? currentRound
     : rounds[0] ?? null;
@@ -73,7 +86,11 @@ export default async function Home({
   // Vše paralelně; dřív se 5 dotazů volalo za sebou a latence se sčítaly.
   const [matches, standings, players, chart, liveMatches, liveInc, sessionPlayer] =
     await Promise.all([
-      selectedRound != null ? getRoundMatches(seasonId, selectedRound) : Promise.resolve([]),
+      selectedRound === POSTPONED_ROUND
+        ? Promise.resolve(postponedMatches)
+        : selectedRound != null
+          ? getRoundMatches(seasonId, selectedRound)
+          : Promise.resolve([]),
       getStandings(seasonId),
       getPlayers(),
       competition.key === 'liga' ? Promise.resolve({ matches: [], players: [] }) : getSeasonChartData(seasonId),
@@ -102,12 +119,11 @@ export default async function Home({
   // závisí na zápasech, proto až teď
   const predictions = await getRoundPredictions(matches.map((m) => m.id));
   const selectedRoundTitle = selectedRound != null
-    ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout))
+    ? (roundLabelsWithPostponed[selectedRound] ?? roundLabel(selectedRound, knockout))
     : 'Aktuální kolo';
 
-  const roundOpen = matches.some(
-    (m) => m.status === 'scheduled' && new Date(m.kickoff).getTime() > Date.now()
-  );
+  // Sdílené pravidlo – odložený zápas je otevřený do svého nového výkopu.
+  const roundOpen = matches.some((m) => !isTippingLocked(m));
   const activeNames = players.map((p) => p.name);
 
   return (
@@ -118,13 +134,13 @@ export default async function Home({
       {/* hlavička přes celou šířku — horní hrany obou sloupců pak začínají ve stejné výšce */}
       <header className={`flex items-center justify-between gap-3 ${competition.key === 'liga' ? 'min-[1200px]:hidden' : ''}`}>
         <h1 className="font-display text-2xl font-bold tracking-wide text-white sm:text-3xl">
-          {selectedRound != null ? (roundLabels[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
+          {selectedRound != null ? (roundLabelsWithPostponed[selectedRound] ?? roundLabel(selectedRound, knockout)) : 'Aktuální kolo'}
           <span className="ml-2 hidden align-middle text-sm font-normal text-slate-300/50 sm:inline">
             {season.name}
           </span>
         </h1>
         {selectedRound != null && rounds.length > 0 && (
-          <RoundSelector rounds={rounds} current={selectedRound} knockout={knockout} labels={roundLabels} />
+          <RoundSelector rounds={rounds} current={selectedRound} knockout={knockout} labels={roundLabelsWithPostponed} />
         )}
       </header>
 
@@ -143,7 +159,7 @@ export default async function Home({
               rounds={rounds}
               selectedRound={selectedRound ?? currentRound ?? rounds[0] ?? 0}
               knockout={knockout}
-              roundLabels={roundLabels}
+              roundLabels={roundLabelsWithPostponed}
               initialMatchId={!Number.isNaN(zapasParam) ? zapasParam : undefined}
             />
 
@@ -166,6 +182,13 @@ export default async function Home({
               {roundOpen && !sessionPlayer && (
                 <p className="px-1 text-center text-[13px] text-slate-300/60">
                   Pro tipování se <Link prefetch={false} href="/prihlaseni" className="font-semibold text-pitch-light underline-offset-2 hover:underline">přihlas</Link>.
+                </p>
+              )}
+              {selectedRound === POSTPONED_ROUND && (
+                <p className="rounded-lg border border-state-warning/30 bg-state-warning/5 px-3 py-2 text-[11.5px] leading-snug text-copy-muted">
+                  Zápasy odložené na pozdější termín. Body se po dohrání připočtou
+                  do <b className="text-copy-primary">původního kola</b>, takže se
+                  jeho pořadí může zpětně změnit. Tipovat lze až do nového výkopu.
                 </p>
               )}
               {matches.length ? (

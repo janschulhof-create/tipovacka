@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState, useCallback, useMemo, useRef } from 'rea
 import type { Match, Player, RoundPrediction } from '@/lib/types';
 import type { TeamStats, MatchDetail, MatchLineups, LineupPlayer } from '@/lib/espn';
 import { pointsBadgeClass } from '@/lib/points';
+import { isPostponed, isTippingLocked, postponedLabel, sortWithPostponedLast } from '@/lib/postponed';
 import { calculatePoints } from '@/lib/scoring';
 import { Flag } from './Flag';
 import { H2HContent, LeagueTableContent, PredictionContent, XbContent, useInsight } from './MatchIntel';
@@ -138,7 +139,7 @@ export function RoundPanel({
   }, []);
 
   const isLocked = (m: Match) =>
-    m.status !== 'scheduled' || new Date(m.kickoff).getTime() <= now;
+    isTippingLocked(m, now);
 
   const setVal = (mid: number, side: 'h' | 'a', raw: string) => {
     let v = raw.replace(/[^0-9]/g, '').slice(0, 2);
@@ -281,7 +282,11 @@ export function RoundPanel({
   const openCount = matches.filter((m) => !isLocked(m)).length;
   const anyPlayed = matches.some((m) => m.status === 'finished' || m.status === 'live');
   const visibleIdSet = useMemo(() => visibleMatchIds ? new Set(visibleMatchIds) : null, [visibleMatchIds]);
-  const renderedMatches = visibleIdSet ? matches.filter((match) => visibleIdSet.has(match.id)) : matches;
+  // Odložené zápasy patří na konec kola – nehrají se se zbytkem a jejich
+  // výkop je mimo obvyklý termín kola.
+  const renderedMatches = sortWithPostponedLast(
+    visibleIdSet ? matches.filter((match) => visibleIdSet.has(match.id)) : matches,
+  );
 
   // bodování za kolo
   const roundScores = players
@@ -743,17 +748,25 @@ export function DesktopMatchDetail({
   predictions: RoundPrediction[];
   selectedName?: string;
 }) {
-  const locked = match.status !== 'scheduled' || new Date(match.kickoff).getTime() <= Date.now();
+  // Odložený zápas zůstává tipovatelný do svého NOVÉHO výkopu.
+  const locked = isTippingLocked(match);
   const live = match.status === 'live';
   const matchPredictions = predictions.filter((prediction) => prediction.match_id === match.id);
   const myTip = selectedName ? matchPredictions.find((prediction) => prediction.name === selectedName) : undefined;
-  const status = live ? liveStatus(match.minute, match.clock) : match.status === 'finished' ? 'konec' : 'otevřeno';
+  const postponed = isPostponed(match);
+  const status = live
+    ? liveStatus(match.minute, match.clock)
+    : match.status === 'finished'
+      ? 'konec'
+      : postponed
+        ? postponedLabel(match.kickoff)
+        : 'otevřeno';
 
   return (
     <section className="panel-flush w-full max-w-full min-w-0 overflow-hidden shadow-elevated">
       <div className="border-b border-line-subtle bg-gradient-to-br from-violet-500/10 via-surface-2/75 to-surface-1 px-4 py-3.5 2xl:px-5">
         <div className="mb-3 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-copy-muted">
-          <span className={live ? 'text-state-live' : ''}>{status}</span>
+          <span className={live ? 'text-state-live' : postponed ? 'text-state-warning' : ''}>{status}</span>
           <span>{dt(match.kickoff)}</span>
         </div>
 

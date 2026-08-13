@@ -19,6 +19,7 @@ import {
 import { selectionReason } from '@/lib/cupSelection';
 import { runRoastBatch } from '@/lib/roastBatch';
 import { canonTeam, externalTeamAliases, isSameFixture } from '@/lib/teamAliases';
+import { resolveExistingFixture } from '@/lib/postponed';
 import type { MatchDetail, HighlightlySyncMeta } from '@/lib/espn';
 import { getVerifiedMatchCorrection, mergeVerifiedMatchDetail } from '@/lib/verifiedMatchCorrections';
 
@@ -1144,6 +1145,7 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       }
     }
 
+
     // Jednorázová samooprava starých chybných importů. Mazání proběhne až po
     // úspěšném načtení nového zdroje; případné tipy se odstraní kaskádou,
     // protože byly vytvořené nad nesprávným zápasem/sezonou.
@@ -1151,11 +1153,39 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       const selectedKeys = new Set(
         selected.map((match) => `${match.source_league}|${match.external_api_id}`),
       );
+
+      // KRITICKÉ: zápas nesmí být označen za „stale“ jen proto, že mu
+      // poskytovatel po přeložení přidělil NOVÉ provider ID. Bez této
+      // ochrany by se smazal i s tipy (predictions mizí kaskádou) —
+      // tedy právě ten zápas, který se fallback snaží zachránit.
+      const zachranenaIds = new Set<number>();
+      const nejednoznacneIds = new Set<number>();
+
+      for (const kandidat of selected) {
+        const vysledek = resolveExistingFixture(existingRows, kandidat, isSameFixture);
+        if (vysledek.match) {
+          zachranenaIds.add(vysledek.match.id);
+          continue;
+        }
+        // Nejednoznačná identita: nevíme, který z kandidátů je ten pravý.
+        // Nesmíme proto smazat ANI JEDEN – jinak by zmizel i ten s tipy.
+        // Duplicitu musí vyřešit člověk, automatika radši neudělá nic.
+        for (const id of vysledek.ambiguousIds) nejednoznacneIds.add(id);
+      }
+
+      if (nejednoznacneIds.size > 0) {
+        sourceErrors.push({
+          source: 'ambiguous-fixture-identity',
+          error: `Nejednoznačná identita zápasů (${[...nejednoznacneIds].join(', ')}) – `
+            + 'chráněny před smazáním, duplicitu je potřeba vyřešit ručně.',
+        });
+      }
       const staleRows = existingRows.filter((match) => {
         if (key === 'evropa') {
           const sourceKey = match.source_league && match.external_api_id != null
             ? `${match.source_league}|${match.external_api_id}`
             : '';
+          if (zachranenaIds.has(match.id) || nejednoznacneIds.has(match.id)) return false;
           return new Date(match.kickoff).getTime() < seasonStartMs
             || !competition.espnSlugs.includes(match.source_league ?? '')
             || !sourceKey
@@ -1163,7 +1193,11 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
         }
         return match.source_league === 'cze.1'
           && match.external_api_id != null
-          && !selectedKeys.has(`cze.1|${match.external_api_id}`);
+          && !selectedKeys.has(`cze.1|${match.external_api_id}`)
+          // Spárováno podle týmů → jde o týž zápas s novým ID, ne o stale.
+          && !zachranenaIds.has(match.id)
+          // Nejednoznačná duplicita → nikdy nemazat automaticky.
+          && !nejednoznacneIds.has(match.id);
       });
 
       if (staleRows.length > 0) {
@@ -1188,9 +1222,23 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
 
     const inserts: Record<string, unknown>[] = [];
     const updates: { id: number; payload: Record<string, unknown>; pairingChanged: boolean }[] = [];
+    let preskocenoProNejednoznacnost = 0;
 
     for (const m of selected) {
-      const existing = existingBySourceId.get(`${m.source_league}|${m.external_api_id}`);
+      // Provider ID má přednost; jméno slouží jako záchrana, když zdroj
+      // po přeložení zápasu vydá nové ID.
+      // Jediné pravidlo identity – provider ID > týmy+kolo > jediný odložený.
+      const identita = resolveExistingFixture(existingRows, m, isSameFixture);
+
+      // Nejednoznačná identita: nevíme, který z kandidátů je ten pravý.
+      // Nesmíme ani zapisovat, ani vkládat – INSERT by vytvořil TŘETÍ
+      // duplicitu. Zápas přeskočíme a necháme ho vyřešit člověku.
+      if (!identita.match && identita.ambiguousIds.length > 0) {
+        preskocenoProNejednoznacnost++;
+        continue;
+      }
+
+      const existing = identita.match;
 
       // Veřejný ligový web během poločasu, nastaveného času nebo krátkého
       // přepnutí stavu někdy dočasně vrátí „Živě“ bez skóre a bez minuty.
@@ -1204,14 +1252,27 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
           ? 'finished'
           : existing?.status === 'live' && incomingStatus === 'scheduled'
             ? 'live'
-            : incomingStatus;
+            // Odložený zápas zůstává odložený, dokud se opravdu nezačne hrát.
+            // Poskytovatel po stanovení nového termínu často znovu hlásí
+            // `scheduled`; kdyby to prošlo, zápas by zmizel z pohledu
+            // „Odložené zápasy“ a jeho vzdálený výkop by držel původní kolo
+            // jako aktuální celé týdny.
+            : existing?.status === 'postponed' && incomingStatus === 'scheduled'
+              ? 'postponed'
+              : incomingStatus;
       const keepKnownLiveData = stableStatus === 'live' || stableStatus === 'finished';
       const payload = {
         season_id: season.id,
         external_api_id: m.external_api_id,
         source_league: m.source_league,
-        round: m.round,
-        round_label: m.round_label,
+        // Kolo existujícího zápasu je NEMĚNNÉ. Odložený zápas patří bodově
+        // do svého původního kola i po přeložení na jiný termín; kdyby ho
+        // zdroj přeřadil, body by se připsaly do špatného kola.
+        // Opravu lze provést jen ručně, ne běžnou synchronizací.
+        round: existing?.round ?? m.round,
+        // Label musí držet krok s `round` – jinak by vzniklo round=4
+        // s popiskem „7. kolo“.
+        round_label: existing?.round_label ?? m.round_label,
         kickoff: m.kickoff,
         home_team: m.home_team,
         away_team: m.away_team,
@@ -1234,6 +1295,11 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       }
 
       const changed =
+        // KRITICKÉ: bez tohoto by se nové provider ID neuložilo. Pozdější
+        // live synchronizace pak volá zdroj se STARÝM ID a zápas nedohledá –
+        // nepřijde LIVE ani FINISHED a body se nepropíšou.
+        !sameValue(existing.external_api_id, payload.external_api_id) ||
+        !sameValue(existing.source_league, payload.source_league) ||
         !sameValue(existing.round, payload.round) ||
         !sameValue(existing.round_label, payload.round_label) ||
         new Date(existing.kickoff).getTime() !== new Date(payload.kickoff).getTime() ||
@@ -1254,9 +1320,23 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       if (changed) updates.push({
         id: existing.id,
         payload,
-        pairingChanged: existing.home_team !== payload.home_team || existing.away_team !== payload.away_team,
+        // Kosmetická změna názvu (diakritika, klubový prefix) NENÍ změna
+        // dvojice. Raw porovnání by kvůli „Hradec Kralove“ vs „Hradec
+        // Králové“ smazalo uložené tipy.
+        pairingChanged: !isSameFixture(
+          { home: existing.home_team, away: existing.away_team },
+          { home: String(payload.home_team), away: String(payload.away_team) },
+        ),
       });
       else unchanged++;
+    }
+
+    if (preskocenoProNejednoznacnost > 0) {
+      sourceErrors.push({
+        source: 'ambiguous-fixture-skipped',
+        error: `Přeskočeno ${preskocenoProNejednoznacnost} zápasů s nejednoznačnou identitou `
+          + '(nezapsáno ani nevloženo) – duplicitu je potřeba vyřešit ručně.',
+      });
     }
 
     if (inserts.length > 0) {

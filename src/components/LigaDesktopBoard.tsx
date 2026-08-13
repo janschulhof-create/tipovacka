@@ -1,12 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import { isTippingLocked } from '@/lib/postponed';
 import type { Match, Player, RoundPrediction } from '@/lib/types';
 import { DesktopMatchDetail, RoundPanel } from '@/components/RoundPanel';
 import { RoundSelector } from '@/components/RoundSelector';
 
+/** Otevřený = jde na něj tipovat. Odložený zápas je otevřený do nového výkopu. */
 function isOpen(match: Match, now: number) {
-  return match.status === 'scheduled' && new Date(match.kickoff).getTime() > now;
+  return !isTippingLocked(match, now);
 }
 
 export function LigaDesktopBoard({
