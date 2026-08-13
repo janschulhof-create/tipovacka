@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { isTippingLocked } from '@/lib/postponed';
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Flag } from '@/components/Flag';
@@ -566,8 +567,8 @@ export function AIAnalysisSection({
       return;
     }
     const update = () => {
-      const kickoff = new Date(selectedMatch.kickoff).getTime();
-      setCanEditSelectedMatch(selectedMatch.status === 'scheduled' && Number.isFinite(kickoff) && kickoff > Date.now());
+      // Sdílené pravidlo – odložený zápas je tipovatelný do nového výkopu.
+      setCanEditSelectedMatch(!isTippingLocked(selectedMatch));
     };
     update();
     const timer = window.setInterval(update, 60_000);
@@ -589,8 +590,7 @@ export function AIAnalysisSection({
 
   const saveSimulatedTip = async () => {
     if (!selectedMatch || tipSaving) return;
-    const kickoff = new Date(selectedMatch.kickoff).getTime();
-    if (selectedMatch.status !== 'scheduled' || !Number.isFinite(kickoff) || kickoff <= Date.now()) {
+    if (isTippingLocked(selectedMatch)) {
       setTipMessage('Zápas už není otevřený pro změnu tipu.');
       return;
     }

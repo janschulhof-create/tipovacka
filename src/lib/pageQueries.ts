@@ -15,6 +15,7 @@ import {
   getSeasonChartData as readSeasonChartData,
   getSeasonXbProjection as readSeasonXbProjection,
   getSeasonRoundPoints as readSeasonRoundPoints,
+  getPostponedMatches as readPostponedMatches,
   getSeasonXbSnapshotAtRound as readSeasonXbSnapshotAtRound,
   getSeasonRounds as readSeasonRounds,
   getSeasonTipRounds as readSeasonTipRounds,
@@ -90,6 +91,13 @@ export const getSeasonXbSnapshotAtRound = unstable_cache(
 export const getSeasonRoundPoints = unstable_cache(
   async (seasonId: number) => readSeasonRoundPoints(seasonId),
   ['page-season-round-points-v1'],
+  { revalidate: 300, tags: ['tipovacka-data'] },
+);
+
+/** Odložené zápasy pro přehledový panel. */
+export const getPostponedMatches = unstable_cache(
+  async (seasonId: number) => readPostponedMatches(seasonId),
+  ['page-postponed-v1'],
   { revalidate: 300, tags: ['tipovacka-data'] },
 );
 

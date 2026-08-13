@@ -3,10 +3,12 @@ import {
   getActiveSeasonId,
   getCurrentChanceRound,
   getPlayerProfile,
+  getPostponedMatches,
   getRoundMatches,
   getRoundPredictions,
 } from '@/lib/queries';
 import { getSessionPlayer } from '@/lib/auth';
+import { POSTPONED_ROUND } from '@/lib/postponed';
 import { createServerAuthClient } from '@/lib/supabase/server';
 import {
   AIAnalysisSection,
@@ -104,7 +106,13 @@ export default async function ProfilPage() {
     getCurrentChanceRound(seasonId),
   ]);
 
-  const roundMatches = currentRound != null
+  // `POSTPONED_ROUND` je jen UI sentinel – v databázi žádné round = -1 není.
+  // V období, kdy je vybraný pohled odložených, ukážeme odložené zápasy.
+  const roundMatches = currentRound === POSTPONED_ROUND
+    ? (await getPostponedMatches(seasonId)).filter(
+        (match) => match.source_league === 'cze.1' && match.round > 0,
+      )
+    : currentRound != null
     ? (await getRoundMatches(seasonId, currentRound)).filter(
         (match) => match.source_league === 'cze.1' && match.round > 0,
       )

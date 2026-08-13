@@ -250,6 +250,9 @@ export function UnifiedStandingsTable({
             ['xb', 'xBody'] as const,
           ]).map(([value, label]) => {
             // Graf potřebuje aspoň dvě odehraná kola.
+            // `?.matches?.length` – volitelný přístup na OBOU úrovních. Samotné
+            // `?.matches.length` spadne, když objekt existuje bez pole `matches`
+            // (produkční pád: Cannot read properties of undefined).
             const disabled = value === 'graf' && (roundPoints?.matches?.length ?? 0) < 2;
             const active = aktivni === value;
             return (

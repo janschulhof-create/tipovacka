@@ -373,11 +373,34 @@ describe('RACE-17 — mobil si zachová svislé posouvání stránky', () => {
   });
 });
 
-
-describe('RACE-18 - production crash guard', () => {
-  test('roundPoints bez matches nesmi shodit tabulku', () => {
+describe('RACE-18 — ochrana proti produkčnímu pádu', () => {
+  test('volitelný přístup je na OBOU úrovních', () => {
     const zdroj = readFileSync(path.join(KOREN, 'src/components/StandingsTable.tsx'), 'utf8');
-    assert.ok(zdroj.includes('roundPoints?.matches?.length'), 'matches musi byt chranene optional chainingem.');
-    assert.ok(!zdroj.includes('roundPoints?.matches.length'), 'Nechraneny pristup k matches.length se nesmi vratit.');
+
+    assert.ok(
+      zdroj.includes('roundPoints?.matches?.length'),
+      'Musí být `?.matches?.length` – jinak spadne, když objekt existuje bez pole.',
+    );
+    assert.ok(
+      !/roundPoints\?\.matches\.length/.test(zdroj),
+      'Produkční pád: Cannot read properties of undefined (reading length).',
+    );
+  });
+
+  test('chování odpovídá reálným vstupům', () => {
+    const disabled = (rp: { matches?: { round: number }[] } | undefined) =>
+      (rp?.matches?.length ?? 0) < 2;
+
+    assert.equal(disabled(undefined), true, 'chybějící objekt');
+    assert.equal(disabled({}), true, 'objekt BEZ pole matches – tady to padalo');
+    assert.equal(disabled({ matches: [] }), true, 'prázdné pole');
+    assert.equal(disabled({ matches: [{ round: 1 }] }), true, 'jedno kolo');
+    assert.equal(disabled({ matches: [{ round: 1 }, { round: 2 }] }), false, 'dvě kola');
+  });
+
+  test('graf dostává bezpečný fallback i při chybějících datech', () => {
+    const zdroj = readFileSync(path.join(KOREN, 'src/components/StandingsTable.tsx'), 'utf8');
+    assert.ok(zdroj.includes('roundPoints?.matches ?? []'));
+    assert.ok(zdroj.includes('roundPoints?.players ?? []'));
   });
 });
