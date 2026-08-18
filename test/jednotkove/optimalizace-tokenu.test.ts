@@ -4,7 +4,6 @@ import {
   stableRecapCacheKey,
   slimRecapFacts,
   shouldCallModel,
-  MIN_PROGRESS_FOR_AI,
 } from '@/lib/roundRecapPayload';
 import type { RoundRecapFacts } from '@/lib/roundRecap';
 
@@ -172,22 +171,24 @@ describe('OPT-5…OPT-7 — zeštíhlený payload', () => {
   });
 });
 
-describe('OPT-8…OPT-9 — model se nevolá zbytečně', () => {
-  test('OPT-8: na začátku rozehraného kola se model nevolá', () => {
-    for (const dohrano of [0, 1, 2, 3]) {
+describe('OPT-8…OPT-9 — model se volá jen po dohrání kola', () => {
+  /**
+   * ZMĚNA v0.1.74: dřív se text generoval i průběžně od poloviny kola
+   * (MIN_PROGRESS_FOR_AI = 0.5) a při každém dalším dohraném zápase se
+   * přepsal. Za kolo to bylo ~5 volání místo jednoho.
+   */
+  test('OPT-8: rozehrané kolo model NEVOLÁ v žádné fázi', () => {
+    for (const dohrano of [0, 1, 3, 4, 5, 7]) {
       const f = fakta({ mode: 'progress', completedMatches: dohrano, totalMatches: 8 });
-      assert.equal(shouldCallModel(f), false, `${dohrano}/8 → fallback`);
+      assert.equal(
+        shouldCallModel(f),
+        false,
+        `${dohrano}/8 → fallback, ne placené volání.`,
+      );
     }
   });
 
-  test('OPT-9: od poloviny kola se model volá', () => {
-    for (const dohrano of [4, 5, 7]) {
-      const f = fakta({ mode: 'progress', completedMatches: dohrano, totalMatches: 8 });
-      assert.equal(shouldCallModel(f), true, `${dohrano}/8 → volá model`);
-    }
-  });
-
-  test('finální recap se generuje vždy', () => {
+  test('OPT-9: dohrané kolo se generuje právě jednou', () => {
     assert.equal(shouldCallModel(fakta({ mode: 'final' })), true);
   });
 
@@ -195,7 +196,13 @@ describe('OPT-8…OPT-9 — model se nevolá zbytečně', () => {
     assert.equal(shouldCallModel(fakta({ mode: 'waiting' })), false);
   });
 
-  test('práh je na jednom místě', () => {
-    assert.equal(MIN_PROGRESS_FOR_AI, 0.5);
+  test('úspora: ~5 volání za kolo → 1', () => {
+    // Simulace průběhu kola: po každém dohraném zápase se přepočítají fakta.
+    const behem = [1, 2, 3, 4, 5, 6, 7].map((n) =>
+      shouldCallModel(fakta({ mode: 'progress', completedMatches: n, totalMatches: 8 })));
+    const finale = shouldCallModel(fakta({ mode: 'final' }));
+
+    assert.equal(behem.filter(Boolean).length, 0, 'Během kola žádné placené volání.');
+    assert.equal(finale, true, 'Jediné volání až na konci.');
   });
 });

@@ -935,6 +935,68 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       continue;
     }
 
+    // ── LEVNÝ TEST NEČINNOSTI ────────────────────────────────────────────
+    // Tato zkratka platí pouze pro běžnou synchronizaci. `live_only` už má
+    // vlastní úzkou cestu výše a další COUNT dotazy by mu během zápasu jen
+    // zbytečně přidávaly práci.
+    //
+    // Mimo zápasy zkontrolujeme levně:
+    //   1) zápas v okně −4 h až +30 min,
+    //   2) zastaralý live stav starší než 4 h,
+    //   3) zda není po intervalu splatná pravidelná obnova rozpisu.
+    //
+    // Pokud nic z toho neplatí, skončíme před načtením celé sezóny.
+    const explicitniPozadavek = full || repairRequested || highlightlyBootstrap
+      || highlightlyForce || requestedRange != null;
+
+    if (!explicitniPozadavek) {
+      const okno = {
+        od: new Date(nowMs - 4 * 60 * 60 * 1000).toISOString(),
+        do: new Date(nowMs + 30 * 60 * 1000).toISOString(),
+      };
+
+      const { count: aktivnich } = await supabase
+        .from('matches')
+        .select('id', { count: 'exact', head: true })
+        .eq('season_id', season.id)
+        .in('status', ['live', 'scheduled', 'postponed'])
+        .gte('kickoff', okno.od)
+        .lte('kickoff', okno.do);
+
+      const { count: zastaralychLive } = await supabase
+        .from('matches')
+        .select('id', { count: 'exact', head: true })
+        .eq('season_id', season.id)
+        .eq('status', 'live')
+        .lt('kickoff', okno.od);
+
+      // Zachováme původní pravidelnou obnovu budoucího rozpisu. Bez této
+      // kontroly by levná zkratka mohla přeskočit změnu termínu zápasu,
+      // dokud by nebyl téměř výkop.
+      const { data: scheduleMarkerLite } = await supabase
+        .from('matches')
+        .select('kickoff, updated_at')
+        .eq('season_id', season.id)
+        .neq('status', 'cancelled')
+        .gt('kickoff', now.toISOString())
+        .order('kickoff', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+
+      const scheduleDueLite = !!scheduleMarkerLite
+        && nowMs - new Date(scheduleMarkerLite.updated_at).getTime() >= scheduleRefreshHours * 3600_000;
+
+      if ((aktivnich ?? 0) === 0 && (zastaralychLive ?? 0) === 0 && !scheduleDueLite) {
+        results[key] = {
+          ok: true,
+          idle: true,
+          reason: 'no active or pending matches',
+          season: season.name,
+        };
+        continue;
+      }
+    }
+
     const { data: existingData, error: existingError } = await supabase
       .from('matches')
       .select(
@@ -1436,10 +1498,13 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
   }
 
   const overallOk = keys.every((key) => (results[key] as { ok?: boolean } | undefined)?.ok !== false);
-  // Synchronizace je jediný okamžik, kdy se mění veřejná zápasová data.
-  // Dlouhé cache tak můžeme bezpečně invalidovat jedním tagem místo toho,
-  // aby se náročné dotazy znovu počítaly při každém otevření stránky.
-  revalidateTag('tipovacka-data');
+  const allIdle = keys.length > 0
+    && keys.every((key) => (results[key] as { idle?: boolean } | undefined)?.idle === true);
+
+  // Čistě nečinný běh nic nezměnil, proto nesmí zahodit právě prodlouženou
+  // cache a vynutit drahý render při následujícím otevření stránky.
+  if (!allIdle) revalidateTag('tipovacka-data');
+
   return NextResponse.json({ ok: overallOk, results, at: new Date().toISOString() });
 }
 

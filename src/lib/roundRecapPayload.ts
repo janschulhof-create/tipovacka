@@ -43,21 +43,20 @@ export function stableRecapCacheKey(facts: RoundRecapFacts): string {
   return createHash('sha256').update(podstatne).digest('hex').slice(0, 32);
 }
 
-/** Kolik procent kola musí být dohráno, aby mělo smysl generovat průběžný text. */
-export const MIN_PROGRESS_FOR_AI = 0.5;
-
 /**
  * Má se pro tato fakta vůbec volat model?
  *
- * Po prvním dohraném zápase z osmi nemá recap co říct — fallback je stejně
- * dobrý a je zdarma. Finální recap se generuje vždy.
+ * ÚSPORA KREDITŮ: Claude se volá POUZE po dohrání celého kola.
+ *
+ * Dřív se text generoval i průběžně (od poloviny kola) a při každém dalším
+ * dohraném zápase se přepsal — platilo se tedy za verze, které nikdo nedočetl.
+ * Za jedno kolo to dělalo zhruba pět volání místo jednoho.
+ *
+ * V rozehraném kole se ukazuje deterministický fallback: má stejná fakta
+ * i katalogové hlášky, jen ho nepíše model. Je zdarma.
  */
 export function shouldCallModel(facts: RoundRecapFacts): boolean {
-  if (facts.mode === 'waiting') return false;
-  if (facts.mode === 'final') return true;
-
-  if (facts.totalMatches <= 0) return false;
-  return facts.completedMatches / facts.totalMatches >= MIN_PROGRESS_FOR_AI;
+  return facts.mode === 'final';
 }
 
 /**

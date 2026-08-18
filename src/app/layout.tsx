@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from 'next';
+import { ClientErrorReporter } from '@/components/ClientErrorReporter';
 import Link from 'next/link';
 import './globals.css';
 import { SideRail, BottomNav } from '@/components/Nav';
@@ -35,6 +36,8 @@ export default async function RootLayout({ children }: { children: React.ReactNo
   return (
     <html lang="cs">
       <body className="min-h-dvh font-sans antialiased">
+        {/* Odchyt chyb mimo React boundary – hlavně selhání načtení chunku. */}
+        <ClientErrorReporter />
         <ServiceWorkerRegister />
         <SideRail />
 

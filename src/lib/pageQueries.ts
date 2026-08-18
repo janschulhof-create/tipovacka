@@ -1,4 +1,17 @@
 import { unstable_cache } from 'next/cache';
+
+/*
+ * POZNÁMKA K DÉLCE CACHE
+ *
+ * Synchronizace po každém zápisu volá `revalidateTag('tipovacka-data')`,
+ * takže se všechny tyto položky obnoví OKAMŽITĚ, jakmile se něco změní.
+ * Krátké `revalidate` proto nepřinášelo čerstvější data — jen nutilo server
+ * přepočítávat dotazy i ve chvílích, kdy se nic nezměnilo (typicky mimo
+ * zápasy, kdy si někdo jen otevře tabulku).
+ *
+ * Hodnoty jsou proto nastavené jako HORNÍ MEZ zastarání, ne jako
+ * mechanismus aktualizace.
+ */
 import type { CompetitionKey } from './competitions';
 import {
   getActiveSeason as readActiveSeason,
@@ -61,13 +74,13 @@ export const getCurrentChanceRound = unstable_cache(
 export const getRoundMatches = unstable_cache(
   async (seasonId: number, round: number) => readRoundMatches(seasonId, round),
   ['page-round-matches-v2'],
-  { revalidate: 60, tags: ['tipovacka-data'] },
+  { revalidate: 300, tags: ['tipovacka-data'] },
 );
 
 export const getRoundPredictions = unstable_cache(
   async (matchIds: number[]) => readRoundPredictions(matchIds),
   ['page-round-predictions-v1'],
-  { revalidate: 30, tags: ['tipovacka-data'] },
+  { revalidate: 300, tags: ['tipovacka-data'] },
 );
 
 export const getSeasonXbProjection = unstable_cache(
@@ -104,7 +117,7 @@ export const getPostponedMatches = unstable_cache(
 export const getStandings = unstable_cache(
   async (seasonId: number) => readStandings(seasonId),
   ['page-standings-v1'],
-  { revalidate: 60, tags: ['tipovacka-data'] },
+  { revalidate: 300, tags: ['tipovacka-data'] },
 );
 
 export const getPlayers = unstable_cache(
@@ -119,6 +132,11 @@ export const getSeasonChartData = unstable_cache(
   { revalidate: 300, tags: ['tipovacka-data'] },
 );
 
+/**
+ * Živá data si záměrně nechávají kratší interval jako pojistku pro případ,
+ * že by invalidace přes `revalidateTag` selhala. Mimo zápasy jsou tyto dotazy
+ * levné (vrací prázdno), takže na spotřebu nemají vliv.
+ */
 export const getLiveMatches = unstable_cache(
   async (seasonId: number) => readLiveMatches(seasonId),
   ['page-live-matches-v1'],
