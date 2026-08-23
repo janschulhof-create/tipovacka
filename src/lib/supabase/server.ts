@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js';
+import { boundedSupabaseFetch } from './boundedFetch';
 
 // Server-side klient pro čtení (anon). Použij v Server Components.
 export function createServerReadClient() {
@@ -31,6 +32,7 @@ export async function createServerAuthClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: boundedSupabaseFetch },
       cookies: {
         getAll() {
           return cookieStore.getAll();
