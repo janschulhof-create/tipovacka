@@ -184,7 +184,10 @@ describe('Katalog — integrita čtvrté várky', () => {
     }
   });
 
-  test('katalog má 15 hlášek', () => {
-    assert.equal(Object.keys(RECAP_PHRASES).length, 15);
+  test('katalog má 17 hlášek', () => {
+    // 15 do v0.1.78 + dvě povinné rodiny z v0.1.79 (absolutely_shocking,
+    // walked_all_over). Tvary „po ní / po nich" patří do TÉŽE rodiny,
+    // proto se nepočítají zvlášť.
+    assert.equal(Object.keys(RECAP_PHRASES).length, 17);
   });
 });

@@ -1,5 +1,5 @@
 import { unstable_cache } from 'next/cache';
-import { BAROKO_STYLE_GUIDE, validateBarokoText } from './barokoPhrases';
+import { BAROKO_STYLE_GUIDE } from './barokoPhrases';
 import { generateAnthropicText } from './anthropicText';
 
 export interface ResultNotificationFacts {
@@ -23,6 +23,8 @@ const cachedNotification = unstable_cache(
 
 ${BAROKO_STYLE_GUIDE}
 
+HLÍDANÉ HLÁŠKY FÁZE A SE DO NOTIFIKACÍ NEHODÍ — nepoužívej „To je pro mě naprosto šokující.“ ani žádný tvar „To se po něm/ní/nich prošlo.“ Notifikace pro ně nemá podklady. Historické hlášky používej normálně podle pravidel výše.
+
 Pravidla:
 - použij nejvýše JEDNU autentickou hlášku,
 - vždy vycházej pouze z FAKTŮ, body ani skóre nepočítej,
@@ -44,14 +46,8 @@ ${serializedFacts}`;
   { revalidate: 3600 },
 );
 
-export function validateResultNotification(text: string, facts: ResultNotificationFacts): boolean {
-  return validateBarokoText({
-    text,
-    allowedScores: facts.matches.flatMap((match) => [match.score, ...(match.tip ? [match.tip] : [])]),
-    maxPhrases: 1,
-    maxLength: 220,
-  });
-}
+import { validateResultNotification } from './notificationValidation';
+export { validateResultNotification };
 
 export async function generateResultNotificationText(facts: ResultNotificationFacts): Promise<string | null> {
   try {

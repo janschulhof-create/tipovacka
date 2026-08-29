@@ -310,3 +310,168 @@ seznam místo komentáře.
 
 Katalog má nyní **15 hlášek**. Limity beze změny: finální recap max 3,
 průběžný max 2.
+
+---
+
+## Povinné hlášky v0.1.79 (fáze A)
+
+Katalog má nyní **17 rodin**. Obě nové jsou dostupné v Baroku i v Kudy běží zajíc.
+
+### `absolutely_shocking`
+
+**Text:** „To je pro mě naprosto šokující." (přesné znění, bez variant)
+
+**Význam:** údiv nad ZÁPASEM, jehož výsledek popřel drtivý konsenzus.
+Nikdy posměch konkrétnímu tipérovi.
+
+| Podmínka | Konstanta | Hodnota |
+|---|---|---|
+| podíl tipérů na jednom výsledku | `SHOCKING_MIN_CONSENSUS_SHARE` | **0,85** |
+| minimální vzorek vyhodnocených tipů | `SHOCKING_MIN_SAMPLE` | **5** |
+| dav se musel splést | existující `crowdShock` | — |
+
+**Proč 0,85:** existující `crowdShock` má práh 0,67 a živí mírnější hlášky
+(„Pičo vole, co to jako je?", „To je strašidelný."). Aby „naprosto šokující"
+neznamenalo totéž, je laťka výš — při osmi tipérech aspoň sedm proti jednomu.
+
+**Proč vzorek 5:** ze tří tipů „drtivá většina" nevznikne, poměr by byl náhoda.
+
+**Příklad:** 7 z 8 čekalo výhru Slavie, skončilo 0:3 → eligible.
+**Protipříklad:** 5 z 8 čekalo výhru, prohrála → NENÍ eligible (62 %).
+
+### `walked_all_over`
+
+**Rodina se třemi tvary** — jedna hláška, ne tři:
+
+| Tvar | Text |
+|---|---|
+| `masculine` | „To se po něm prošlo." |
+| `feminine` | „To se po ní prošlo." |
+| `plural` | „To se po nich prošlo." |
+
+**Tvar určuje aplikace** v poli `variant`, model si ho nevybírá. Do promptu
+jde právě jeden povolený tvar — česká gramatická rodová shoda se neodhaduje
+z názvu klubu.
+
+Rodina má **dva významy** rozlišené polem `context`:
+
+#### `context: 'team'` — převálcovaný soupeř
+
+| Podmínka | Konstanta | Hodnota |
+|---|---|---|
+| brankový rozdíl | `WALKED_OVER_MIN_GOAL_DIFF` | **5** |
+
+**Proč 5:** přísnější než `BAGROVANA_MIN_DIFF` (4). Prahy se nepřekrývají
+náhodně — každý rozdíl ≥ 5 je zároveň bagrovaná, ale ne naopak.
+
+**Příklad:** 6:0 → eligible. **Protipříklad:** 2:0 i 4:3 → ne.
+
+#### `context: 'tipster'` — zničená předpověď
+
+| Podmínka | Konstanta | Hodnota |
+|---|---|---|
+| vzdálenost tipu od skutečnosti | `WALKED_OVER_MIN_MISS_DISTANCE` | **7** |
+| navíc špatně určený vítěz | — | povinné |
+| tip musí být vyhodnocený | — | povinné |
+
+Vzdálenost = `|tip_domácí − skutečnost_domácí| + |tip_hosté − skutečnost_hosté|`.
+
+**Proč 7 a proč nestačí nula bodů:**
+
+| Tip | Výsledek | Vzdálenost | Eligible |
+|---|---|---|---|
+| 1:0 | 0:1 | 2 | ne — běžná chyba |
+| 4:0 | 0:4 | **8** | ano |
+| 5:0 | 1:0 | 4 | ne — vítěz sedí |
+
+**Ochrana:** kdo netipoval (`points === null`), toho se hláška nikdy netýká.
+
+### Determinismus
+
+Žádné `Math.random`. Stejná fakta → stejná eligibilita → stejné doklady.
+Ověřeno testem MAND-21.
+
+Limity počtu hlášek beze změny: finální recap 3, průběžný 2.
+
+### Oprava po revizi fáze A
+
+**Sdílená cesta eligibility.** `buildMatchPhraseEligibility()` v
+`roundRecapPhrases.ts` počítá eligibilitu pro JEDEN zápas (Baroko) týmiž
+prahy, jaké používá hodnocení celého kola. V `roast.ts` žádné hodnoty nejsou.
+
+**Seznam povolený pro požadavek.** Validátor dostává `allowedGatedPhraseTexts` —
+přesné texty doložené pro tento konkrétní požadavek. Katalogová hláška, která
+v seznamu není, se odmítne s důvodem `unsupported_authentic_phrase`.
+Platí i pro **jiný rodový tvar téže rodiny**.
+
+Bez tohoto pole se kontrola přeskočí, takže stávající volající fungují beze
+změny.
+
+**Referent místo hádání rodu.** Zájmeno se neváže na název klubu ani na jméno
+hráče, ale na dodané podstatné jméno:
+
+| Kontext | Referent | Tvar | Proč |
+|---|---|---|---|
+| `team` | „mužstvo“ | něm | funguje pro Spartu i pro Baník |
+| `tipster` | „tip“ | něm | funguje i pro tipérku |
+
+Prompt tuto vazbu obsahuje, takže model postaví větu kolem správného slova.
+
+### Regrese a její oprava (revize 2)
+
+**Příčina:** první podoba brány porovnávala **všechny** hlášky
+z `AUTHENTIC_BAROKO_PHRASES` proti seznamu povolených. Ten obsahoval jen dvě
+rodiny fáze A, takže historické hlášky („Tak poď vole.“, „Blamáž.“,
+„To bylo cinema.“) začaly padat jako `unsupported_authentic_phrase`.
+
+**Oprava:** brána se týká výhradně výslovného seznamu
+
+```ts
+GATED_PHASE_A_PHRASES = [
+  '„To je pro mě naprosto šokující.“',
+  '„To se po něm prošlo.“',
+  '„To se po ní prošlo.“',
+  '„To se po nich prošlo.“',
+];
+```
+
+Pole se jmenuje `allowedGatedPhraseTexts`, aby bylo zřejmé, čeho se týká.
+Nová hlídaná hláška se sem musí přidat **vědomě, spolu se svým pravidlem** —
+žádné odvozování z prefixu.
+
+| Cesta | Chování |
+|---|---|
+| Baroko | eligibilita pro daný zápas; historické hlášky beze změny |
+| Kudy běží zajíc | eligibilita pro dané kolo; historické hlášky beze změny |
+| Notifikace | **prázdný seznam** — hlídané hlášky odmítnuty, historické beze změny |
+
+**Jeden validační kontrakt:** `validateRoundRecapText()` deleguje na
+`validateRoundRecapDetailed()`. Dřív měly vlastní těla a rozcházely se.
+
+Validace se přesunula do `roundRecapValidation.ts` a `notificationValidation.ts` —
+bez závislosti na `next/cache`, takže je lze testovat přímo.
+
+
+### Kontrakt promptu (revize 3)
+
+Stylová příručka dřív obsahovala globální „Hlášky vybírej POUZE
+z eligiblePhraseIds“. Baroko ale dostávalo eligiblePhraseIds jen pro dvě
+rodiny fáze A, takže prompt fakticky zakazoval i historické hlášky —
+přestože je validátor správně propouštěl.
+
+Znění nyní rozlišuje dvě skupiny:
+
+| Skupina | Čím se řídí |
+|---|---|
+| **historické** (Blamáž, cinema, Sněhulák, divize, Tak poď vole…) | svými pravidly ve stylové příručce, beze změny |
+| **hlídané fáze A** | výslovným povolením pro daný požadavek |
+
+Blok v Baroku se jmenuje **„POVOLENÉ HLÍDANÉ HLÁŠKY FÁZE A“**, aby nevypadal
+jako úplný katalog. Když není povolená žádná, prompt výslovně dodá, že
+historické hlášky tím zakázané nejsou.
+
+Sestavení bloku je v čisté funkci `buildGatedPhraseBlock()`, takže se text
+promptu dá testovat přímo.
+
+**Notifikace** mají navíc výslovný zákaz hlídaných hlášek v promptu — bez něj
+by je model vygeneroval a validace by shodila celou notifikaci do fallbacku.
