@@ -1,6 +1,6 @@
 {
   "name": "chance-liga-tipovacka",
-  "version": "0.1.77",
+  "version": "0.1.78",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -15,10 +15,11 @@
     "test:kontraktni": "node scripts/run-test-suite.mjs contract",
     "test:red": "node scripts/run-test-suite.mjs red",
     "test:vse": "node scripts/run-test-suite.mjs all",
-    "ci": "npm run security:check && npm run lint:ci && npx tsc --noEmit && npm test && npm run test:red:check && npm run verify:sources",
+    "ci": "npm run check:layout && npm run security:check && npm run lint:ci && npx tsc --noEmit && npm test && npm run test:red:check && npm run verify:sources",
     "test:red:check": "node scripts/check-red-suites.mjs",
     "seed:player": "node scripts/seed-player.mjs",
-    "security:check": "node scripts/check-secrets.mjs"
+    "security:check": "node scripts/check-secrets.mjs",
+    "check:layout": "node scripts/check-source-layout.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.5.2",
