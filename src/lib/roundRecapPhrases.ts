@@ -23,7 +23,9 @@ export type RecapPhraseId =
   | 'unfinished_business'
   | 'division_performance'
   | 'spooky'
-  | 'close_the_shop';
+  | 'close_the_shop'
+  | 'absolutely_shocking'
+  | 'walked_all_over';
 
 export const RECAP_PHRASES: Record<RecapPhraseId, string> = {
   painful_zero: '„Tady cejtím, že bude mrzení.“',
@@ -41,7 +43,62 @@ export const RECAP_PHRASES: Record<RecapPhraseId, string> = {
   division_performance: '„Tohle je naprosto divizní výkon.“',
   spooky: '„To je strašidelný.“',
   close_the_shop: '„Můžeš zavřít krám a jít do prdele.“',
+  absolutely_shocking: '„To je pro mě naprosto šokující.“',
+  // Rod se volí podle `variant` v dokladu – nikdy odhadem ze jména.
+  walked_all_over: '„To se po něm prošlo.“',
 };
+
+/**
+ * Povolené tvary rodiny „To se po … prošlo.“
+ *
+ * Jde o JEDNU rodinu se třemi tvary, ne o tři samostatné hlášky. Který tvar
+ * je povolený, určuje aplikace podle typu cíle — model si ho nevybírá sám
+ * a nesmí použít jiný.
+ */
+export const WALKED_ALL_OVER_VARIANTS = {
+  masculine: '„To se po něm prošlo.“',
+  feminine: '„To se po ní prošlo.“',
+  plural: '„To se po nich prošlo.“',
+} as const;
+
+export type WalkedVariant = keyof typeof WALKED_ALL_OVER_VARIANTS;
+
+/**
+ * Jak silný musí být konsenzus, aby šlo o „naprosto šokující“ výsledek.
+ *
+ * Existující `crowdShock` má práh 0,67 a živí mírnější hlášky. Pro tuhle
+ * je laťka výš: musí se mýlit drtivá většina, ne jen nadpoloviční. Při osmi
+ * tipérech to znamená aspoň sedm proti jednomu.
+ */
+export const SHOCKING_MIN_CONSENSUS_SHARE = 0.85;
+
+/**
+ * Kolik tipérů musí zápas vůbec tipovat, aby se dal konsenzus měřit.
+ *
+ * Ze dvou tipů „drtivá většina“ nevznikne — poměr by byl náhoda.
+ */
+export const SHOCKING_MIN_SAMPLE = 5;
+
+/**
+ * Brankový rozdíl, od kterého se dá mluvit o převálcování týmu.
+ *
+ * Vyšší než `BAGROVANA_MIN_DIFF` (4). Bagrovaná je jednostranný výprask,
+ * tohle je jeho krajní podoba — a proto se prahy nepřekrývají náhodně:
+ * každý rozdíl ≥ 5 je zároveň bagrovaná, ale ne naopak.
+ */
+export const WALKED_OVER_MIN_GOAL_DIFF = 5;
+
+/**
+ * Jak daleko musí být tip od skutečnosti, aby šlo o zničenou předpověď.
+ *
+ * Měří se součet odchylek obou skóre. Pro ilustraci:
+ *   tip 1:0, výsledek 0:1  →  1 + 1 = 2   (běžná chyba)
+ *   tip 4:0, výsledek 0:4  →  4 + 4 = 8   (katastrofa)
+ *
+ * Práh 7 je nad běžnou chybou a zároveň pod nedosažitelnou hranicí.
+ * Samotná nula bodů nestačí — musí k tomu být i špatný vítěz.
+ */
+export const WALKED_OVER_MIN_MISS_DISTANCE = 7;
 
 /** Jak těsné musí být čelo tabulky, aby se o tom „ještě bavilo“. */
 export const UNFINISHED_BUSINESS_MAX_GAP = 5;
@@ -207,6 +264,65 @@ export interface CloseTheShopFact {
   evaluatedTips: number;
 }
 
+export interface AbsolutelyShockingFact {
+  type: 'absolutely_shocking';
+  match: string;
+  score: string;
+  /** Tým, kterému věřila drtivá většina. */
+  expectedTeam: string | null;
+  /** Podíl tipérů, kteří se mýlili. */
+  share: number;
+  /** Kolik tipů se zápasu vůbec týkalo – kvůli velikosti vzorku. */
+  sampleSize: number;
+  zeros: number;
+}
+
+/**
+ * Podstatné jméno, na které se zájmeno v hlášce váže.
+ *
+ * Rod se NEODHADUJE z názvu klubu ani ze jména hráče. Aplikace dodá
+ * konkrétní referent a k němu odpovídající tvar, takže věta „…mužstvo
+ * Artisu, to se po něm prošlo“ je gramaticky bezpečná i pro klub,
+ * jehož název je ženského rodu (Sparta, Slavia).
+ */
+export interface WalkedReferent {
+  /** Podstatné jméno pro zájmeno, např. „mužstvo“ nebo „obrana“. */
+  noun: string;
+  /** Tvar hlášky, který k tomuto podstatnému jménu patří. */
+  variant: WalkedVariant;
+}
+
+/**
+ * Referenty pro oba významy.
+ *
+ * `team`    → „mužstvo“ (střední rod, zájmeno „něm“) — funguje pro každý
+ *             klub bez ohledu na rod jeho názvu.
+ * `tipster` → „tip“ (mužský rod) — váže se na TIP, ne na osobu, takže
+ *             hláška funguje i pro tipérku.
+ */
+export const WALKED_REFERENTS: Record<'team' | 'tipster', WalkedReferent> = {
+  team: { noun: 'mužstvo', variant: 'masculine' },
+  tipster: { noun: 'tip', variant: 'masculine' },
+};
+
+export interface WalkedAllOverFact {
+  type: 'walked_all_over';
+  /** `team` = převálcovaný tým, `tipster` = zničená předpověď. */
+  context: 'team' | 'tipster';
+  /** Koho se to týká. U týmu poražený, u tipéra jeho jméno. */
+  target: string;
+  /** Povolený tvar hlášky. Určuje aplikace, ne model. */
+  variant: WalkedVariant;
+  /** Na co se zájmeno váže. Model musí větu postavit kolem tohoto slova. */
+  referentNoun: string;
+  match: string;
+  score: string;
+  /** Vítěz (u kontextu týmu) nebo tip (u kontextu tipéra). */
+  detail: string;
+  /** Brankový rozdíl u týmu, vzdálenost tipu u tipéra. */
+  evidence: number;
+}
+
 export interface RecapPhraseFacts {
   painfulZero: PainfulZeroFact | null;
   zeroDisaster: ZeroDisasterFact | null;
@@ -223,6 +339,8 @@ export interface RecapPhraseFacts {
   divisionPerformance: DivisionPerformanceFact | null;
   spooky: SpookyFact | null;
   closeTheShop: CloseTheShopFact | null;
+  absolutelyShocking: AbsolutelyShockingFact | null;
+  walkedAllOver: WalkedAllOverFact | null;
   eligiblePhraseIds: RecapPhraseId[];
   /** Kolik katalogových hlášek smí text obsahovat. */
   maxPhrases: number;
@@ -622,6 +740,135 @@ function najdiCloseTheShop(facts: RoundRecapFacts): CloseTheShopFact | null {
   };
 }
 
+
+/**
+ * „To je pro mě naprosto šokující.“ — výsledek proti drtivému konsenzu.
+ *
+ * Přísnější než existující `crowdShock` (0,67): musí se mýlit skoro všichni
+ * a vzorek musí být dost velký, aby poměr nebyl náhoda.
+ */
+function najdiAbsolutelyShocking(facts: RoundRecapFacts): AbsolutelyShockingFact | null {
+  const kandidati = facts.matches
+    .filter((match) => {
+      const favorit = match.crowdFavorite;
+      if (!favorit) return false;
+      // Zápas se musí počítat jen z vyhodnocených tipů.
+      const vyhodnocene = match.tips.filter((tip) => typeof tip.points === 'number').length;
+      if (vyhodnocene < SHOCKING_MIN_SAMPLE) return false;
+      if (favorit.share < SHOCKING_MIN_CONSENSUS_SHARE) return false;
+      // A dav se musel skutečně splést.
+      return match.crowdShock;
+    })
+    .sort((a, b) =>
+      (b.crowdFavorite?.share ?? 0) - (a.crowdFavorite?.share ?? 0)
+      || b.zeroTipsters.length - a.zeroTipsters.length
+      || a.id - b.id);
+
+  const zapas = kandidati[0];
+  if (!zapas) return null;
+
+  return {
+    type: 'absolutely_shocking',
+    match: zapas.label,
+    score: zapas.score,
+    expectedTeam: zapas.crowdFavorite?.team ?? null,
+    share: Number((zapas.crowdFavorite?.share ?? 0).toFixed(3)),
+    sampleSize: zapas.tips.filter((tip) => typeof tip.points === 'number').length,
+    zeros: zapas.zeroTipsters.length,
+  };
+}
+
+/** Vzdálenost tipu od skutečnosti: součet odchylek obou skóre. */
+export function predictionMissDistance(tip: string, score: string): number | null {
+  const [th, ta] = tip.split(':').map(Number);
+  const [sh, sa] = score.split(':').map(Number);
+  if (![th, ta, sh, sa].every(Number.isFinite)) return null;
+  return Math.abs(th - sh) + Math.abs(ta - sa);
+}
+
+/** Vítěz podle skóre, nebo `null` u remízy. */
+function vitezPodleSkore(score: string): 'home' | 'away' | null {
+  const [h, a] = score.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(a) || h === a) return null;
+  return h > a ? 'home' : 'away';
+}
+
+/**
+ * „To se po … prošlo.“ — jedna rodina, dva významy.
+ *
+ * A) TÝM: převálcovaný soupeř (brankový rozdíl ≥ 5).
+ * B) TIPÉR: zničená předpověď — velká vzdálenost od skutečnosti
+ *    A ZÁROVEŇ špatně určený vítěz. Samotná nula bodů nestačí.
+ *
+ * Přednost má drtivější doklad; při shodě rozhoduje pořadí zápasů,
+ * takže výsledek je deterministický.
+ */
+function najdiWalkedAllOver(facts: RoundRecapFacts): WalkedAllOverFact | null {
+  // ── A) převálcovaný tým ───────────────────────────────────────────────
+  const drtivy = facts.matches
+    .filter((m) => m.goalDifference >= WALKED_OVER_MIN_GOAL_DIFF)
+    .sort((a, b) => b.goalDifference - a.goalDifference || a.id - b.id)[0];
+
+  const teamFact: WalkedAllOverFact | null = drtivy
+    ? (() => {
+      const vitez = vitezPodleSkore(drtivy.score);
+      const porazeny = vitez === 'home' ? drtivy.awayTeam : drtivy.homeTeam;
+      const vyhral = vitez === 'home' ? drtivy.homeTeam : drtivy.awayTeam;
+      return {
+        type: 'walked_all_over' as const,
+        context: 'team' as const,
+        target: porazeny,
+        variant: WALKED_REFERENTS.team.variant,
+        referentNoun: WALKED_REFERENTS.team.noun,
+        match: drtivy.label,
+        score: drtivy.score,
+        detail: vyhral,
+        evidence: drtivy.goalDifference,
+      };
+    })()
+    : null;
+
+  // ── B) zničená předpověď ──────────────────────────────────────────────
+  let tipsterFact: WalkedAllOverFact | null = null;
+  let nejhorsi = WALKED_OVER_MIN_MISS_DISTANCE - 1;
+
+  for (const match of facts.matches) {
+    const skutecnyVitez = vitezPodleSkore(match.score);
+    for (const tip of match.tips) {
+      // Kdo netipoval, toho se hláška netýká.
+      if (typeof tip.points !== 'number') continue;
+
+      const vzdalenost = predictionMissDistance(tip.tip, match.score);
+      if (vzdalenost == null || vzdalenost < WALKED_OVER_MIN_MISS_DISTANCE) continue;
+
+      // Musí se splést i ve vítězi – jinak jde jen o nepřesné skóre.
+      const tipovanyVitez = vitezPodleSkore(tip.tip);
+      if (tipovanyVitez === skutecnyVitez) continue;
+
+      if (vzdalenost > nejhorsi) {
+        nejhorsi = vzdalenost;
+        tipsterFact = {
+          type: 'walked_all_over',
+          context: 'tipster',
+          target: tip.name,
+          variant: WALKED_REFERENTS.tipster.variant,
+          referentNoun: WALKED_REFERENTS.tipster.noun,
+          match: match.label,
+          score: match.score,
+          detail: tip.tip,
+          evidence: vzdalenost,
+        };
+      }
+    }
+  }
+
+  // Drtivější doklad vyhrává; u shody má přednost tým (viditelnější).
+  if (teamFact && tipsterFact) {
+    return tipsterFact.evidence > teamFact.evidence + 2 ? tipsterFact : teamFact;
+  }
+  return teamFact ?? tipsterFact;
+}
+
 /**
  * Kolik katalogových hlášek smí text obsahovat.
  *
@@ -652,6 +899,8 @@ export function buildRecapPhraseFacts(
   const divisionPerformance = najdiDivisionPerformance(facts);
   const spooky = najdiSpooky(facts);
   const closeTheShop = najdiCloseTheShop(facts);
+  const absolutelyShocking = najdiAbsolutelyShocking(facts);
+  const walkedAllOver = najdiWalkedAllOver(facts);
 
   const eligiblePhraseIds: RecapPhraseId[] = [];
   if (painfulZero) eligiblePhraseIds.push('painful_zero');
@@ -669,6 +918,8 @@ export function buildRecapPhraseFacts(
   if (divisionPerformance) eligiblePhraseIds.push('division_performance');
   if (spooky) eligiblePhraseIds.push('spooky');
   if (closeTheShop) eligiblePhraseIds.push('close_the_shop');
+  if (absolutelyShocking) eligiblePhraseIds.push('absolutely_shocking');
+  if (walkedAllOver) eligiblePhraseIds.push('walked_all_over');
 
   return {
     painfulZero,
@@ -686,7 +937,193 @@ export function buildRecapPhraseFacts(
     divisionPerformance,
     spooky,
     closeTheShop,
+    absolutelyShocking,
+    walkedAllOver,
     eligiblePhraseIds,
     maxPhrases: maxPhrasesForMode(facts.mode),
   };
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+//  ELIGIBILITA PRO JEDEN ZÁPAS — sdílené jádro pro Baroko
+//
+//  Kudy běží zajíc hodnotí celé kolo, Baroko jeden zápas. Prahy jsou ale
+//  stejné, proto se sem soustředí a `buildRecapPhraseFacts` i Baroko je
+//  berou odsud. Žádná kopie v roast.ts.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** Minimální vstup, který o zápase potřebujeme. Sedí na Baroko i na recap. */
+export interface SingleMatchInput {
+  homeTeam: string;
+  awayTeam: string;
+  /** Konečné skóre „2:1“. */
+  score: string;
+  tips: { name: string; tip: string; points: number | null }[];
+}
+
+export interface SingleMatchEligibility {
+  eligiblePhraseIds: RecapPhraseId[];
+  absolutelyShocking: AbsolutelyShockingFact | null;
+  walkedAllOver: WalkedAllOverFact | null;
+  /**
+   * Přesné texty hlášek povolené PRO TENTO požadavek.
+   *
+   * U rodiny „prošlo“ obsahuje jen ten jediný tvar, který odpovídá
+   * zvolenému referentu — ostatní tvary jsou nepovolené.
+   */
+  allowedPhraseTexts: string[];
+}
+
+/** Brankový rozdíl ze skóre, nebo `null` u neplatného vstupu. */
+function goalDifference(score: string): number | null {
+  const [h, a] = score.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(a)) return null;
+  return Math.abs(h - a);
+}
+
+/** Kdo byl favoritem davu a jak silně. */
+function crowdConsensus(input: SingleMatchInput) {
+  const vyhodnocene = input.tips.filter((t) => typeof t.points === 'number');
+  if (vyhodnocene.length === 0) return null;
+
+  const counts = { home: 0, draw: 0, away: 0 };
+  for (const t of vyhodnocene) {
+    const v = vitezPodleSkore(t.tip);
+    counts[v === null ? 'draw' : v] += 1;
+  }
+  const poradi = ['home', 'draw', 'away'] as const;
+  const favorit = poradi.reduce((best, v) => (counts[v] > counts[best] ? v : best), 'home' as const);
+  const max = counts[favorit];
+  if (max === 0 || poradi.filter((v) => counts[v] === max).length > 1) return null;
+
+  return {
+    outcome: favorit,
+    share: max / vyhodnocene.length,
+    sampleSize: vyhodnocene.length,
+    team: favorit === 'home' ? input.homeTeam : favorit === 'away' ? input.awayTeam : null,
+  };
+}
+
+/**
+ * Eligibilita obou povinných rodin pro JEDEN zápas.
+ *
+ * Používá TYTÉŽ prahy jako hodnocení celého kola — proto je jádro sdílené
+ * a v `roast.ts` žádné hodnoty nejsou.
+ */
+export function buildMatchPhraseEligibility(input: SingleMatchInput): SingleMatchEligibility {
+  const eligiblePhraseIds: RecapPhraseId[] = [];
+  const allowedPhraseTexts: string[] = [];
+
+  // ── „To je pro mě naprosto šokující.“ ──────────────────────────────────
+  const konsenzus = crowdConsensus(input);
+  const skutecnyVitez = vitezPodleSkore(input.score);
+  let absolutelyShocking: AbsolutelyShockingFact | null = null;
+
+  if (konsenzus
+    && konsenzus.sampleSize >= SHOCKING_MIN_SAMPLE
+    && konsenzus.share >= SHOCKING_MIN_CONSENSUS_SHARE
+    && konsenzus.outcome !== (skutecnyVitez ?? 'draw')) {
+    absolutelyShocking = {
+      type: 'absolutely_shocking',
+      match: `${input.homeTeam} – ${input.awayTeam}`,
+      score: input.score,
+      expectedTeam: konsenzus.team,
+      share: Number(konsenzus.share.toFixed(3)),
+      sampleSize: konsenzus.sampleSize,
+      zeros: input.tips.filter((t) => t.points === 0).length,
+    };
+    eligiblePhraseIds.push('absolutely_shocking');
+    allowedPhraseTexts.push(RECAP_PHRASES.absolutely_shocking);
+  }
+
+  // ── „To se po … prošlo.“ ───────────────────────────────────────────────
+  let walkedAllOver: WalkedAllOverFact | null = null;
+  const rozdil = goalDifference(input.score);
+  const label = `${input.homeTeam} – ${input.awayTeam}`;
+
+  if (rozdil != null && rozdil >= WALKED_OVER_MIN_GOAL_DIFF && skutecnyVitez) {
+    const porazeny = skutecnyVitez === 'home' ? input.awayTeam : input.homeTeam;
+    const vitez = skutecnyVitez === 'home' ? input.homeTeam : input.awayTeam;
+    walkedAllOver = {
+      type: 'walked_all_over',
+      context: 'team',
+      target: porazeny,
+      variant: WALKED_REFERENTS.team.variant,
+      referentNoun: WALKED_REFERENTS.team.noun,
+      match: label,
+      score: input.score,
+      detail: vitez,
+      evidence: rozdil,
+    };
+  } else {
+    let nejhorsi = WALKED_OVER_MIN_MISS_DISTANCE - 1;
+    for (const tip of input.tips) {
+      if (typeof tip.points !== 'number') continue;
+      const vzdalenost = predictionMissDistance(tip.tip, input.score);
+      if (vzdalenost == null || vzdalenost < WALKED_OVER_MIN_MISS_DISTANCE) continue;
+      if (vitezPodleSkore(tip.tip) === skutecnyVitez) continue;
+      if (vzdalenost > nejhorsi) {
+        nejhorsi = vzdalenost;
+        walkedAllOver = {
+          type: 'walked_all_over',
+          context: 'tipster',
+          target: tip.name,
+          variant: WALKED_REFERENTS.tipster.variant,
+          referentNoun: WALKED_REFERENTS.tipster.noun,
+          match: label,
+          score: input.score,
+          detail: tip.tip,
+          evidence: vzdalenost,
+        };
+      }
+    }
+  }
+
+  if (walkedAllOver) {
+    eligiblePhraseIds.push('walked_all_over');
+    // POUZE zvolený tvar – ostatní jsou pro tento požadavek nepovolené.
+    allowedPhraseTexts.push(WALKED_ALL_OVER_VARIANTS[walkedAllOver.variant]);
+  }
+
+  return { eligiblePhraseIds, absolutelyShocking, walkedAllOver, allowedPhraseTexts };
+}
+
+/**
+ * Přesné texty hlášek povolené pro celé kolo (Kudy běží zajíc).
+ * U rodiny „prošlo“ opět jen zvolený tvar.
+ */
+export function allowedPhraseTextsFor(facts: RecapPhraseFacts): string[] {
+  return facts.eligiblePhraseIds.map((id) =>
+    id === 'walked_all_over' && facts.walkedAllOver
+      ? WALKED_ALL_OVER_VARIANTS[facts.walkedAllOver.variant]
+      : RECAP_PHRASES[id]);
+}
+
+/**
+ * Blok povolených hlídaných hlášek pro prompt.
+ *
+ * Čistá funkce — používá ji Baroko i testy, takže se text v promptu dá
+ * ověřit přímo, ne čtením zdrojáku.
+ *
+ * Když není povolená žádná, vrací větu, která výslovně říká, že se to týká
+ * JEN hlídaných hlášek. Historické tím zakázané nejsou.
+ */
+export function buildGatedPhraseBlock(e: SingleMatchEligibility): string {
+  if (e.eligiblePhraseIds.length === 0) {
+    return 'Žádná hlídaná hláška fáze A není pro tento zápas povolená. '
+      + 'Historické hlášky tím zakázané nejsou — řiď se jejich vlastními pravidly.';
+  }
+
+  return e.eligiblePhraseIds
+    .map((id) => {
+      const doklad = id === 'absolutely_shocking' ? e.absolutelyShocking : e.walkedAllOver;
+      const text = id === 'walked_all_over' && e.walkedAllOver
+        ? WALKED_ALL_OVER_VARIANTS[e.walkedAllOver.variant]
+        : RECAP_PHRASES[id];
+      const vazba = id === 'walked_all_over' && e.walkedAllOver
+        ? ` Zájmeno se váže na slovo „${e.walkedAllOver.referentNoun}“ — postav větu tak, aby to bylo jasné.`
+        : '';
+      return `- ${text} — doloženo: ${JSON.stringify(doklad)}.${vazba}`;
+    })
+    .join('\n');
 }

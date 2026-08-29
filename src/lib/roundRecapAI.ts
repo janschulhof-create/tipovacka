@@ -1,5 +1,5 @@
 import { unstable_cache } from 'next/cache';
-import { BAROKO_STYLE_GUIDE, validateBarokoText, validateBarokoTextDetailed, type BarokoValidationResult } from './barokoPhrases';
+import { BAROKO_STYLE_GUIDE } from './barokoPhrases';
 import { generateAnthropicText, getRoastModel } from './anthropicText';
 import type { AnthropicFailureReason } from './anthropicErrors';
 import type { BarokoValidationReason } from './barokoPhrases';
@@ -25,7 +25,7 @@ export class RoundRecapAiError extends Error {
   }
 }
 import { fallbackRoundRecap, type RoundRecapFacts } from './roundRecap';
-import { buildRecapPhraseFacts, maxPhrasesForMode, RECAP_PHRASES } from './roundRecapPhrases';
+import { buildRecapPhraseFacts, RECAP_PHRASES, WALKED_ALL_OVER_VARIANTS } from './roundRecapPhrases';
 import { shouldCallModel, slimRecapFacts, stableRecapCacheKey } from './roundRecapPayload';
 
 const cachedRoundRecap = unstable_cache(
@@ -39,9 +39,13 @@ const cachedRoundRecap = unstable_cache(
 
     const phraseFacts = buildRecapPhraseFacts(facts);
     const phraseRules = phraseFacts.eligiblePhraseIds.length === 0
-      ? '(žádná katalogová hláška z této skupiny není povolená — nepoužívej je)'
+      ? 'Žádná hláška z této skupiny není pro toto kolo doložená — nepoužívej je. Historické hlášky se řídí svými pravidly.'
       : phraseFacts.eligiblePhraseIds
-          .map((id) => `- ${RECAP_PHRASES[id]} — doloženo: ${JSON.stringify(
+          .map((id) => `- ${
+            id === 'walked_all_over' && phraseFacts.walkedAllOver
+              ? WALKED_ALL_OVER_VARIANTS[phraseFacts.walkedAllOver.variant]
+              : RECAP_PHRASES[id]
+          } — doloženo: ${JSON.stringify(
             ({
               painful_zero: phraseFacts.painfulZero,
               zero_disaster: phraseFacts.zeroDisaster,
@@ -58,8 +62,14 @@ const cachedRoundRecap = unstable_cache(
               division_performance: phraseFacts.divisionPerformance,
               spooky: phraseFacts.spooky,
               close_the_shop: phraseFacts.closeTheShop,
+              absolutely_shocking: phraseFacts.absolutelyShocking,
+              walked_all_over: phraseFacts.walkedAllOver,
             })[id],
-          )}`)
+          )}${
+            id === 'walked_all_over' && phraseFacts.walkedAllOver
+              ? ` Zájmeno se váže na slovo „${phraseFacts.walkedAllOver.referentNoun}“ — postav větu tak, aby to bylo jasné.`
+              : ''
+          }`)
           .join('\n');
 
     const prompt = `Jsi autor a analytik sekce Kudy běží zajíc v české fotbalové tipovačce kamarádů. Nejde už o stručné Baroko, ale o hlavní televizní pozápasové studio celého kola.
@@ -84,7 +94,7 @@ Stavba textu:
 - Odstavec 4 — kontext: loňský průměr, letošní forma, trend.
 - Odstavec 5 — krátká studiová pointa.
 
-POVOLENÉ KATALOGOVÉ HLÁŠKY (eligiblePhraseIds) — jiné z tohoto seznamu NESMÍŠ použít:
+POVOLENÉ HLÁŠKY S DOLOŽENOU ELIGIBILITOU — jiné z TÉTO skupiny nepoužívej:
 ${phraseRules}
 
 Speciální hlášky Kudy běží zajíc:
@@ -153,29 +163,10 @@ ${serializedFacts}`;
   { revalidate: 3600 },
 );
 
-function scoreTokens(facts: RoundRecapFacts): Set<string> {
-  return new Set(facts.matches.flatMap((match) => [match.score, ...match.tips.map((tip) => tip.tip)]));
-}
 
 /** Základní ochrana proti zjevnému modelovému výmyslu. */
-export function validateRoundRecapDetailed(text: string, facts: RoundRecapFacts): BarokoValidationResult {
-  return validateBarokoTextDetailed({
-    text,
-    allowedScores: scoreTokens(facts),
-    maxPhrases: maxPhrasesForMode(facts.mode),
-    maxLength: 4600,
-  });
-}
-
-/** Zpětně kompatibilní boolean varianta. */
-export function validateRoundRecapText(text: string, facts: RoundRecapFacts): boolean {
-  return validateBarokoText({
-    text,
-    allowedScores: scoreTokens(facts),
-    maxPhrases: maxPhrasesForMode(facts.mode),
-    maxLength: 4600,
-  });
-}
+import { validateRoundRecapDetailed, validateRoundRecapText } from './roundRecapValidation';
+export { validateRoundRecapDetailed, validateRoundRecapText };
 
 export async function getRoundRecapText(facts: RoundRecapFacts): Promise<{ text: string; source: 'ai' | 'fallback' }> {
   if (facts.mode === 'waiting') return { text: fallbackRoundRecap(facts), source: 'fallback' };

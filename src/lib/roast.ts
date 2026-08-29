@@ -1,5 +1,6 @@
 import { generateAnthropicText } from './anthropicText';
 import { BAROKO_STYLE_GUIDE, validateBarokoText } from './barokoPhrases';
+import { buildGatedPhraseBlock, buildMatchPhraseEligibility } from './roundRecapPhrases';
 
 /**
  * Generátor vtipného zhodnocení zápasu přes Anthropic API.
@@ -32,6 +33,17 @@ export async function generateRoastLLM(input: {
   redCards?: Array<{ side: 'home' | 'away'; player?: string }>;
   standings?: string | null; // průběžné celkové pořadí (kontext)
 }): Promise<string | null> {
+  // Deterministická eligibilita pro TENTO zápas. Prahy jsou ve sdíleném
+  // jádru (`roundRecapPhrases`), tady se nekopírují.
+  const eligibilita = buildMatchPhraseEligibility({
+    homeTeam: input.home,
+    awayTeam: input.away,
+    score: input.score,
+    tips: input.tips,
+  });
+
+  const povoleneHlasky = buildGatedPhraseBlock(eligibilita);
+
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || input.tips.length === 0) return null;
 
@@ -59,6 +71,9 @@ Struktura těch 3 vět:
 
 Styl a závazný katalog hlášek:
 ${BAROKO_STYLE_GUIDE}
+
+POVOLENÉ HLÍDANÉ HLÁŠKY FÁZE A (týká se JEN jich, historických hlášek ne):
+${povoleneHlasky}
 
 Specificky pro jeden zápas:
 - použij nejvýše JEDNU autentickou hlášku,
@@ -92,6 +107,8 @@ ${tipsText}`;
     ],
     maxPhrases: 1,
     maxLength: 1600,
+    // Katalogová hláška smí zaznít jen tehdy, když ji doložila fakta.
+    allowedGatedPhraseTexts: eligibilita.allowedPhraseTexts,
   });
   return valid ? cleaned : null;
 }
