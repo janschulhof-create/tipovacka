@@ -1,4 +1,5 @@
 import { createServerReadClient } from '@/lib/supabase/server';
+import { footballDayKey } from './matchday';
 import type { Match, StandingRow, GoalStatRow, MissRow, RoundPrediction, Player } from '@/lib/types';
 import type { MatchDetail } from './espn';
 import { calculatePoints } from './scoring';
@@ -248,12 +249,28 @@ export interface SeasonXbRow {
 export interface SeasonXbCutoff {
   throughRound?: number;
   cutoffIso?: string | null;
+  /**
+   * Pražský fotbalový den `YYYY-MM-DD`. Zahrnou se jen zápasy do tohoto dne
+   * včetně.
+   *
+   * `throughRound` sám nestačí: jeho hranicí je výkop dalšího kola, takže
+   * do sobotní verze by po neděli protekly nedělní výsledky téhož kola.
+   * Používá se stejný klíč dne jako všude jinde, takže nikde nepočítáme
+   * s posuny pásma ručně.
+   */
+  throughFootballDay?: string | null;
 }
 
 export async function getSeasonXbProjection(
   seasonId: number,
   cutoff: SeasonXbCutoff = {},
 ): Promise<SeasonXbRow[]> {
+  /** Zápas patří do výpočtu jen tehdy, když jeho pražský den nepřesáhl mez. */
+  const vRozsahuDne = (kickoff: string | null | undefined): boolean => {
+    if (!cutoff.throughFootballDay || !kickoff) return true;
+    const den = footballDayKey(kickoff);
+    return den == null || den <= cutoff.throughFootballDay;
+  };
   const sb = createServerReadClient();
   const [{ data: playerData }, { data: matchData }, { data: msSeasonData }] = await Promise.all([
     sb.from('players').select('id, name, is_active').eq('is_active', true).order('name'),
@@ -296,6 +313,8 @@ export async function getSeasonXbProjection(
       const kickoffMs = Date.parse(match.kickoff);
       if (!Number.isFinite(kickoffMs) || kickoffMs > cutoffMs) return false;
     }
+    // Mez podle pražského fotbalového dne – kvůli verzím po uzavřeném dni.
+    if (!vRozsahuDne(match.kickoff)) return false;
     return true;
   });
 

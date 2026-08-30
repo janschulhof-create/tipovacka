@@ -98,6 +98,17 @@ export interface RoundRecapFacts {
   snowman: { name: string; points: number; zeros: number; xbDelta: number | null } | null;
   blamageCandidate: { label: string; detail: string } | null;
   overallStandings: Array<{ name: string; points: number }>;
+  /**
+   * Kontext uzavřeného fotbalového dne. Vyplněn jen u automatického
+   * generování — u interaktivního zobrazení chybí.
+   */
+  matchdayContext?: {
+    footballDay: string;
+    dayClosed: boolean;
+    roundComplete: boolean;
+    activeRemainingMatchCount: number;
+    postponedMatchCount: number;
+  } | null;
 }
 
 function redCardCount(match: Match): number {

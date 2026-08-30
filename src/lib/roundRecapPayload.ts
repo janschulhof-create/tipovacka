@@ -44,6 +44,18 @@ export function stableRecapCacheKey(facts: RoundRecapFacts): string {
 }
 
 /**
+ * Kdo generování vyvolal.
+ *
+ * `interactive` – někdo si otevřel stránku. Model se volá jen u dohraného
+ *                 kola, jinak se ukáže deterministický fallback zdarma.
+ * `closedDay`   – automatické generování po uzavřeném fotbalovém dni.
+ *
+ * ZÁMĚRNĚ se neobchází přes `mode = 'final'` — model by pak nepravdivě
+ * tvrdil, že je kolo dohrané, i když čeká odložený zápas.
+ */
+export type GenerationContext = 'interactive' | 'closedDay';
+
+/**
  * Má se pro tato fakta vůbec volat model?
  *
  * ÚSPORA KREDITŮ: Claude se volá POUZE po dohrání celého kola.
@@ -55,7 +67,17 @@ export function stableRecapCacheKey(facts: RoundRecapFacts): string {
  * V rozehraném kole se ukazuje deterministický fallback: má stejná fakta
  * i katalogové hlášky, jen ho nepíše model. Je zdarma.
  */
-export function shouldCallModel(facts: RoundRecapFacts): boolean {
+export function shouldCallModel(
+  facts: RoundRecapFacts,
+  context: GenerationContext = 'interactive',
+): boolean {
+  // Automatické generování po uzavřeném dni smí volat model i u rozehraného
+  // kola — právě o to ve fázi B jde. Výsledek se uloží a při dalších
+  // zobrazeních se čte z databáze, takže se model nevolá znovu.
+  if (context === 'closedDay') return true;
+
+  // Interaktivní zobrazení: model jen u dohraného kola. Zachovává úsporu
+  // kreditů, kvůli které pravidlo vzniklo.
   return facts.mode === 'final';
 }
 

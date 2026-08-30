@@ -91,8 +91,11 @@ describe('CPU-6 — cache spoléhá na invalidaci, ne na krátký interval', () 
 
   test('sync po práci invaliduje cache, čisté idle ji neshodí', () => {
     assert.ok(
-      sync.includes("if (!allIdle) revalidateTag('tipovacka-data')"),
-      'Čistě nečinný sync nesmí vynutit drahý přepočet cache.',
+      sync.includes("if (!allIdle || vzniklyRecapy) revalidateTag('tipovacka-data')"),
+      // ZMĚNA ve fázi B: cache se obnoví i tehdy, když při jinak nečinném
+      // běhu vzniklo hodnocení (opakování dřív selhaného generování).
+      // Čistě nečinný běh BEZ hodnocení ji dál neshodí.
+      'Čistě nečinný sync bez nového hodnocení nesmí vynutit přepočet cache.',
     );
   });
 

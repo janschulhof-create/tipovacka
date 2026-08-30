@@ -1,4 +1,5 @@
 import { unstable_cache } from 'next/cache';
+import { createServerReadClient } from './supabase/server';
 
 /*
  * POZNÁMKA K DÉLCE CACHE
@@ -177,4 +178,34 @@ export const getWizardAndContinentStats = unstable_cache(
   async (seasonId: number) => readWizardAndContinentStats(seasonId),
   ['page-wizard-continent-region-v2'],
   { revalidate: 900, tags: ['tipovacka-data'] },
+);
+
+
+/**
+ * Nejnovější ÚSPĚŠNÉ uložené hodnocení kola.
+ *
+ * Čte se běžným serverovým klientem — politika RLS propouští jen
+ * `status = 'success'`, takže rozdělaná ani selhaná verze nikdy nezakryje
+ * tu poslední povedenou. Prohlížeč do tabulky nezapisuje.
+ */
+export const getStoredRoundRecap = unstable_cache(
+  async (seasonId: number, competition: string, round: number) => {
+    const sb = createServerReadClient();
+    const { data } = await sb
+      .from('round_recaps')
+      .select('text, matchday_date, round_complete, generated_at')
+      .eq('season_id', seasonId)
+      .eq('competition', competition)
+      .eq('round', round)
+      .eq('status', 'success')
+      .order('generated_at', { ascending: false })
+      .limit(1);
+
+    const radek = (data ?? [])[0] as
+      | { text: string | null; matchday_date: string | null; round_complete: boolean }
+      | undefined;
+    return radek?.text ? radek : null;
+  },
+  ['page-stored-round-recap-v1'],
+  { revalidate: 300, tags: ['tipovacka-data'] },
 );

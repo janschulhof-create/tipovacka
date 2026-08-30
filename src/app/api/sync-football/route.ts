@@ -21,9 +21,88 @@ import { runRoastBatch } from '@/lib/roastBatch';
 import { canonTeam, externalTeamAliases, isSameFixture } from '@/lib/teamAliases';
 import { resolveExistingFixture } from '@/lib/postponed';
 import type { MatchDetail, HighlightlySyncMeta } from '@/lib/espn';
+import type { MatchChange, MatchdayMatch } from '@/lib/matchday';
+import {
+  MATCH_CHANGE_COLUMNS,
+  changeFromUpdated,
+  changesFromPersistedFinish,
+  changesFromInserted,
+} from '@/lib/matchChangeBuilder';
+import { processMatchdayRecaps } from '@/lib/matchdayRecap';
+import { createSupabaseRecapStore } from '@/lib/supabaseRecapStore';
+import { buildMatchdayRecapFacts } from '@/lib/matchdayRecapFacts';
+import { getRoundRecapText } from '@/lib/roundRecapAI';
 import { getVerifiedMatchCorrection, mergeVerifiedMatchDetail } from '@/lib/verifiedMatchCorrections';
 
 export const dynamic = 'force-dynamic';
+
+/**
+ * Spustí automatické hodnocení uzavřených dnů.
+ *
+ * Fakta staví přes existující `buildRoundRecapFacts` a text přes
+ * `getRoundRecapText`, takže deterministická eligibilita hlášek z fáze A
+ * platí i tady beze změny.
+ */
+/**
+ * Bezpečné spuštění hodnocení pro Chance ligu.
+ *
+ * Používají ho OBĚ cesty — `live_only` i plná synchronizace — aby se logika
+ * neduplikovala a aby změny z živého syncu nezůstaly zahozené.
+ *
+ * Selhání hodnocení NIKDY neshodí synchronizaci výsledků.
+ */
+async function runLigaMatchdayRecapsSafely(
+  changes: MatchChange[],
+  seasonId: number,
+  admin: ReturnType<typeof createAdminClient>,
+): Promise<unknown[] | null> {
+  try {
+    const recapy = await runMatchdayRecaps(changes, { seasonId, competition: 'liga' }, admin);
+    return recapy.length > 0 ? recapy : null;
+  } catch (error) {
+    console.warn(JSON.stringify({
+      event: 'round_recap_generation_failed',
+      competition: 'liga',
+      reason: (error as Error)?.name ?? 'unknown',
+    }));
+    return null;
+  }
+}
+
+async function runMatchdayRecaps(
+  changes: MatchChange[],
+  context: { seasonId: number; competition: string },
+  admin: ReturnType<typeof createAdminClient>,
+) {
+  const store = createSupabaseRecapStore(
+    admin as unknown as Parameters<typeof createSupabaseRecapStore>[0],
+    context,
+  );
+
+  return processMatchdayRecaps(changes, context, {
+    store,
+    async loadRoundMatches(seasonId, round) {
+      const { data } = await admin
+        .from('matches')
+        .select('id, round, kickoff, status, home_score, away_score')
+        .eq('season_id', seasonId)
+        .eq('round', round);
+      return (data ?? []) as MatchdayMatch[];
+    },
+    async buildFacts(input) {
+      return buildMatchdayRecapFacts(admin, input);
+    },
+    // Dostane přesně ta fakta, ze kterých vznikl otisk – žádné druhé čtení.
+    async generate(facts) {
+      // `closedDay` – model se volá i u rozehraného kola. Fakta přitom
+      // nesou `roundComplete: false`, takže netvrdí, že je kolo za námi.
+      const { text, source } = await getRoundRecapText(facts, 'closedDay');
+      // Fallback se neukládá jako úspěšné generování – ať se dá zkusit znovu.
+      return source === 'ai' ? text : null;
+    },
+    log: (event, data) => console.warn(JSON.stringify({ event, ...data })),
+  });
+}
 export const maxDuration = 60;
 
 type SyncKey = Extract<CompetitionKey, 'liga' | 'evropa'>;
@@ -118,6 +197,11 @@ const HIGHLIGHTLY_PREP_FROM = '2026-07-17';
 const HIGHLIGHTLY_PREP_TO = '2026-07-24';
 
 type HighlightlyReport = {
+  /**
+   * Sémantické změny zapsané touto synchronizací (pro hodnocení dne).
+   * Nepovinné být nemusí – report ho drží od svého vzniku.
+   */
+  semanticChanges: MatchChange[];
   configured: boolean;
   requests: number;
   remaining: number | null;
@@ -285,7 +369,18 @@ async function syncHighlightlyLiga(args: {
   const pollMinutes = Math.max(2, Number(process.env.HIGHLIGHTLY_LIVE_POLL_MINUTES ?? 5));
   const reserve = Math.max(8, Number(process.env.HIGHLIGHTLY_RESERVE_REQUESTS ?? 12));
   const allowPreparationImport = false;
+  /**
+   * Sémantické změny, které tato synchronizace opravdu zapsala.
+   *
+   * Pole je do reportu vloženo HNED při jeho vzniku, takže report drží
+   * TUTÉŽ referenci. Každý `push` je proto vidět přes všechny návratové
+   * cesty včetně předčasných — dřív se přiřazovalo až u posledního
+   * `return report` a změny z opravy detailu se ztrácely.
+   */
+  const semanticChanges: MatchChange[] = [];
+
   const report: HighlightlyReport = {
+    semanticChanges,
     configured: highlightlyConfigured(), requests: 0, remaining: null, limit: null,
     pollMinutes, reserve,
     prep: { requested: false, fetched: 0, selected: 0, inserted: 0, updated: 0, league: null },
@@ -507,7 +602,22 @@ async function syncHighlightlyLiga(args: {
           updatePayload.reg_home = regular.home;
           updatePayload.reg_away = regular.away;
         }
-        const { error: repairUpdateError } = await args.supabase.from('matches').update(updatePayload).eq('id', row.id);
+        // `detail` sám o sobě fakta modelu nemění. Ale `reg_home`/`reg_away`
+        // vstupují do `scoreChangedInStoppage()`, takže jejich oprava změní
+        // to, co model vidí – a musí vyvolat přehodnocení dne.
+        const meniRegularniSkore = regular != null
+          && (row.reg_home !== regular.home || row.reg_away !== regular.away);
+
+        const { data: ulozenaOprava, error: repairUpdateError } = await args.supabase
+          .from('matches')
+          .update(updatePayload)
+          .eq('id', row.id)
+          .select(MATCH_CHANGE_COLUMNS);
+        if (!repairUpdateError && meniRegularniSkore) {
+          const zmena = changeFromUpdated(
+            row as unknown as Record<string, unknown>, (ulozenaOprava ?? [])[0]);
+          if (zmena) semanticChanges.push(zmena);
+        }
         if (repairUpdateError) report.warnings.push(`Uložení finálního detailu ${row.id}: ${repairUpdateError.message}`);
         else {
           report.live.finalRepairs++;
@@ -818,9 +928,21 @@ async function syncHighlightlyLiga(args: {
         pen_away: match.penAway ?? row.pen_away,
         detail,
       };
-      const { error: updateError } = await args.supabase.from('matches').update(payload).eq('id', row.id);
+      // Skóre a stav jsou sémantické – tenhle zápis může uzavřít fotbalový
+      // den. Událost proto vzniká z toho, co databáze vrátila.
+      const { data: ulozenyLive, error: updateError } = await args.supabase
+        .from('matches')
+        .update(payload)
+        .eq('id', row.id)
+        .select(MATCH_CHANGE_COLUMNS);
       if (updateError) report.warnings.push(`Live update ${row.id}: ${updateError.message}`);
-      else { report.live.updated++; report.live.details += detailRequests; }
+      else {
+        report.live.updated++;
+        report.live.details += detailRequests;
+        const zmena = changeFromUpdated(
+          row as unknown as Record<string, unknown>, (ulozenyLive ?? [])[0]);
+        if (zmena) semanticChanges.push(zmena);
+      }
     }
   } catch (error) {
     report.warnings.push(`Highlightly live: ${String(error)}`);
@@ -841,12 +963,20 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
   const liveOnly = req.nextUrl.searchParams.get('live_only') === '1';
   const supabase = createAdminClient();
   const results: Record<string, unknown> = {};
+  /** Změny napříč soutěžemi – podklad pro automatické hodnocení dne. */
+  /** Výsledky automatického hodnocení, po soutěžích. */
+  const recapResults: Record<string, unknown> = {};
   const now = new Date();
   const nowMs = now.getTime();
   const liveRefreshMinutes = Math.max(5, Number(process.env.PUBLIC_FEED_LIVE_REFRESH_MINUTES ?? 10));
   const scheduleRefreshHours = Math.max(6, Number(process.env.PUBLIC_FEED_SCHEDULE_REFRESH_HOURS ?? 12));
 
   for (const key of keys) {
+    /**
+     * Změny zápasů této soutěže. Vzniká vždy AŽ po úspěšném zápisu.
+     * Sbírá se per soutěž, aby se Liga a Evropa nikdy nemíchaly.
+     */
+    const matchChanges: MatchChange[] = [];
     const competition = getCompetition(key);
     let { data: season, error: seasonError } = await supabase
       .from('seasons')
@@ -898,7 +1028,9 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       let forcedFinished = 0;
       const { data: staleLiveData, error: staleLiveReadError } = await supabase
         .from('matches')
-        .select('id, kickoff, home_score, away_score')
+        // MATCH_CHANGE_COLUMNS, ne užší výběr: bez `round` by z řádku nešlo
+        // sestavit událost a vynucené uzavření by ji tiše nevytvořilo.
+        .select(MATCH_CHANGE_COLUMNS)
         .eq('season_id', season.id)
         .eq('source_league', 'cze.1')
         .eq('status', 'live');
@@ -913,15 +1045,35 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
           })
           .map((row) => row.id);
         if (staleIds.length > 0) {
-          const { error: staleLiveUpdateError } = await supabase
+          // Zápis vrací uložený stav, takže událost odpovídá skutečnosti
+          // v databázi – stejně jako u ostatních cest.
+          const { data: ulozene, error: staleLiveUpdateError } = await supabase
             .from('matches')
             .update({ status: 'finished', minute: null, clock: null, updated_at: now.toISOString() })
-            .in('id', staleIds);
-          if (!staleLiveUpdateError) forcedFinished = staleIds.length;
+            .in('id', staleIds)
+            .select(MATCH_CHANGE_COLUMNS);
+          if (!staleLiveUpdateError) {
+            forcedFinished = staleIds.length;
+            // Právě tenhle přechod bývá tím, co uzavře fotbalový den.
+            matchChanges.push(...changesFromPersistedFinish(
+              staleLiveData as unknown as Record<string, unknown>[],
+              ulozene as unknown as Record<string, unknown>[]));
+          }
           else highlightly.warnings.push(`Uzavření zastaralého live stavu: ${staleLiveUpdateError.message}`);
         }
       } else {
         highlightly.warnings.push(`Kontrola zastaralého live stavu: ${staleLiveReadError.message}`);
+      }
+
+      // Sémantické zápisy z Highlightly – i ty mohou uzavřít fotbalový den.
+      matchChanges.push(...(highlightly.semanticChanges ?? []));
+
+      // Živý sync bývá první, kdo konečný výsledek zapíše. Bez tohohle
+      // volání by se změny zahodily při `continue` a hodnocení by čekalo
+      // až na další běh cronu.
+      if (key === 'liga') {
+        const recapy = await runLigaMatchdayRecapsSafely(matchChanges, season.id, supabase);
+        if (recapy) recapResults[key] = recapy;
       }
 
       results[key] = {
@@ -934,6 +1086,7 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       };
       continue;
     }
+
 
     // ── LEVNÝ TEST NEČINNOSTI ────────────────────────────────────────────
     // Tato zkratka platí pouze pro běžnou synchronizaci. `live_only` už má
@@ -1029,11 +1182,20 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       });
       if (staleLiveRows.length > 0) {
         const staleIds = staleLiveRows.map((row) => row.id);
-        const { error: staleLiveError } = await supabase
+        // Zápis vrací uložený stav, takže událost odpovídá skutečnosti
+        // v databázi – stejně jako u ostatních cest.
+        const { data: ulozeneStale, error: staleLiveError } = await supabase
           .from('matches')
           .update({ status: 'finished', minute: null, clock: null, updated_at: now.toISOString() })
-          .in('id', staleIds);
+          .in('id', staleIds)
+          .select(MATCH_CHANGE_COLUMNS);
         if (!staleLiveError) {
+          // Tenhle přechod může uzavřít fotbalový den stejně jako ostatní –
+          // nestačí opravit jen lokální pole.
+          matchChanges.push(...changesFromPersistedFinish(
+            staleLiveRows as unknown as Record<string, unknown>[],
+            ulozeneStale as unknown as Record<string, unknown>[]));
+
           const staleSet = new Set(staleIds);
           existingRows = existingRows.map((row) => staleSet.has(row.id)
             ? { ...row, status: 'finished', minute: null, clock: null, updated_at: now.toISOString() }
@@ -1283,7 +1445,8 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
     }
 
     const inserts: Record<string, unknown>[] = [];
-    const updates: { id: number; payload: Record<string, unknown>; pairingChanged: boolean }[] = [];
+    const updates: { id: number; payload: Record<string, unknown>; pairingChanged: boolean; before: Record<string, unknown> }[] = [];
+
     let preskocenoProNejednoznacnost = 0;
 
     for (const m of selected) {
@@ -1352,6 +1515,8 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       };
 
       if (!existing) {
+        // Událost NELZE vytvořit teď – payload ještě nemá id z databáze.
+        // Vznikne až po úspěšném INSERT, z vrácených řádků.
         inserts.push(payload);
         continue;
       }
@@ -1380,6 +1545,7 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
         !sameValue(existing.selection_reason, payload.selection_reason);
 
       if (changed) updates.push({
+        before: existing as unknown as Record<string, unknown>,
         id: existing.id,
         payload,
         // Kosmetická změna názvu (diakritika, klubový prefix) NENÍ změna
@@ -1402,9 +1568,17 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
     }
 
     if (inserts.length > 0) {
-      const { error } = await supabase.from('matches').insert(inserts);
+      // `.select()` vrátí uložené řádky včetně id – bez nich nelze určit
+      // dotčený den. Při chybě zápisu nevznikne žádná událost.
+      const { data: vlozene, error } = await supabase
+        .from('matches')
+        .insert(inserts)
+        .select(MATCH_CHANGE_COLUMNS);
       if (error) sourceErrors.push({ source: 'database-insert', error: error.message });
-      else inserted = inserts.length;
+      else {
+        inserted = inserts.length;
+        matchChanges.push(...changesFromInserted(vlozene));
+      }
     }
 
     const pairingChangedIds = updates.filter((item) => item.pairingChanged).map((item) => item.id);
@@ -1419,9 +1593,19 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
     }
 
     for (const item of updates) {
-      const { error } = await supabase.from('matches').update(item.payload).eq('id', item.id);
+      // Událost vzniká z toho, co databáze vrátila – nikdy z optimistického
+      // sloučení. Neúspěšný zápis nesmí spustit hodnocení dne.
+      const { data: ulozeno, error } = await supabase
+        .from('matches')
+        .update(item.payload)
+        .eq('id', item.id)
+        .select(MATCH_CHANGE_COLUMNS);
       if (error) sourceErrors.push({ source: `database-update:${item.id}`, error: error.message });
-      else updated++;
+      else {
+        updated++;
+        const zmena = changeFromUpdated(item.before, (ulozeno ?? [])[0]);
+        if (zmena) matchChanges.push(zmena);
+      }
     }
 
     // updated_at používáme zároveň jako levný throttle. I když se skóre nezměnilo,
@@ -1468,6 +1652,16 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       });
     }
 
+    // ── AUTOMATICKÉ „KUDY BĚŽÍ ZAJÍC“ ───────────────────────────────────
+    // Uvnitř smyčky a jen pro Chance ligu: změny se tak nikdy nesmíchají
+    // napříč soutěžemi a `season.id` vždy patří té soutěži, která se
+    // právě zpracovává. Evropa se do hodnocení nedostane vůbec.
+    if (key === 'liga') {
+      matchChanges.push(...(highlightly?.semanticChanges ?? []));
+      const recapy = await runLigaMatchdayRecapsSafely(matchChanges, season.id, supabase);
+      if (recapy) recapResults[key] = recapy;
+    }
+
     results[key] = {
       ok: sourceErrors.length === 0,
       idle: mode === 'idle' && !highlightlyBootstrap && !(highlightly?.live.due ?? false),
@@ -1501,9 +1695,19 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
   const allIdle = keys.length > 0
     && keys.every((key) => (results[key] as { idle?: boolean } | undefined)?.idle === true);
 
-  // Čistě nečinný běh nic nezměnil, proto nesmí zahodit právě prodlouženou
-  // cache a vynutit drahý render při následujícím otevření stránky.
-  if (!allIdle) revalidateTag('tipovacka-data');
+  // ── AUTOMATICKÉ „KUDY BĚŽÍ ZAJÍC“ ───────────────────────────────────────
+  // Věší se na autoritativní sync, ke kterému se dostane externí cron
+  // (každých 20 min) přes /api/sync i prohlížeč přes /api/live-sync.
+  // Žádný druhý plánovač; idempotence zabrání dvojímu generování.
+  // Úspěšné hodnocení může vzniknout i při jinak nečinném běhu — třeba když
+  // se opakuje dřív selhané generování. Bez invalidace by ho parta na
+  // stránce neuviděla.
+  const vzniklyRecapy = Object.values(recapResults).some((r) =>
+    Array.isArray(r) && r.some((v) => (v as { outcome?: string })?.outcome === 'generated'));
+
+  if (!allIdle || vzniklyRecapy) revalidateTag('tipovacka-data');
+
+  if (Object.keys(recapResults).length > 0) results.recaps = recapResults;
 
   return NextResponse.json({ ok: overallOk, results, at: new Date().toISOString() });
 }
