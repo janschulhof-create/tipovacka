@@ -1,6 +1,6 @@
 import type { Match, Player, RoundPrediction, StandingRow } from '@/lib/types';
 import historie from '@/data/historie.json';
-import { getSeasonXbProjection, getSeasonXbSnapshotAtRound } from '@/lib/pageQueries';
+import { getStoredRoundRecap, getSeasonXbProjection, getSeasonXbSnapshotAtRound } from '@/lib/pageQueries';
 import {
   buildRoundRecapFacts,
   type RoundRecapPreviousSeasonStat,
@@ -71,15 +71,35 @@ export async function RoundRecapSection({
       expectedXb: row.expected_actual_xb,
     })),
   });
-  const recap = await getRoundRecapText(facts);
+  /**
+   * Uložené hodnocení má přednost.
+   *
+   * Vzniklo automaticky po uzavřeném fotbalovém dni a je to nejnovější
+   * ÚSPĚŠNÁ verze. Rozdělaná ani selhaná ji nikdy nezakryje — filtruje se
+   * v dotazu. Když uložené není, zůstává dosavadní chování beze změny.
+   */
+  const ulozeny = selectedRound != null
+    ? await getStoredRoundRecap(seasonId, 'liga', selectedRound)
+    : null;
+
+  const recap = ulozeny?.text
+    ? { text: ulozeny.text, source: 'ai' as const }
+    : await getRoundRecapText(facts);
+
+  /** Nenápadný popisek dne, dokud kolo není dohrané. */
+  const matchdayLabel = ulozeny && !ulozeny.round_complete && ulozeny.matchday_date
+    ? `Po programu ${new Date(ulozeny.matchday_date).toLocaleDateString('cs-CZ', {
+      day: 'numeric', month: 'numeric',
+    })}`
+    : null;
   const progress = facts.totalMatches > 0
     ? Math.round((facts.completedMatches / facts.totalMatches) * 100)
     : 0;
-  const stateLabel = facts.mode === 'final'
+  const stateLabel = matchdayLabel ?? (facts.mode === 'final'
     ? 'Závěrečný verdikt kola'
     : facts.mode === 'progress'
       ? 'Průběžné studio kola'
-      : 'Studio čeká na první dohraný zápas';
+      : 'Studio čeká na první dohraný zápas');
 
   const realityCheck = facts.xbOverperformer && facts.xbUnderperformer
     ? `${facts.xbOverperformer.name} ${signed(facts.xbOverperformer.delta)} proti xB · ${facts.xbUnderperformer.name} ${signed(facts.xbUnderperformer.delta)}`

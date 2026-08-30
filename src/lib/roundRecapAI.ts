@@ -26,7 +26,7 @@ export class RoundRecapAiError extends Error {
 }
 import { fallbackRoundRecap, type RoundRecapFacts } from './roundRecap';
 import { buildRecapPhraseFacts, RECAP_PHRASES, WALKED_ALL_OVER_VARIANTS } from './roundRecapPhrases';
-import { shouldCallModel, slimRecapFacts, stableRecapCacheKey } from './roundRecapPayload';
+import { shouldCallModel, slimRecapFacts, stableRecapCacheKey, type GenerationContext } from './roundRecapPayload';
 
 const cachedRoundRecap = unstable_cache(
   // `_cacheKey` je stabilní otisk kola – je součástí klíče cache, ale do
@@ -87,6 +87,14 @@ Povinná dramaturgie, pokud pro ni existují fakta:
 4. Zápasová pitva: consensusShock, divizeCandidate, cinemaCandidate, blamageCandidate, mostMissedMatch, redCards a stoppageChangedScore jsou deterministické podklady. Použij je jen pokud existují.
 5. Závěr: jedna krátká věta, kam kolo směřuje nebo co po sobě zanechalo.
 
+${facts.matchdayContext ? `STAV KOLA — ŘIĎ SE TÍM DOSLOVA:
+- Hodnotíš program dne ${facts.matchdayContext.footballDay}.
+- Kolo dohrané: ${facts.matchdayContext.roundComplete ? 'ANO' : 'NE'}.
+- Zbývá odehrát: ${facts.matchdayContext.activeRemainingMatchCount} zápasů, odložených ${facts.matchdayContext.postponedMatchCount}.
+${facts.matchdayContext.roundComplete
+  ? '- Kolo je opravdu dohrané, můžeš ho uzavřít.'
+  : '- Kolo NENÍ dohrané. NESMÍŠ napsat „kolo je za námi“, „kolo je uzavřené“ ani nic podobného. Piš o programu dne nebo o průběžném stavu kola — například „po sobotním programu“ nebo „zatím v tomto kole“.'}
+` : ''}
 Stavba textu:
 - Odstavec 1 — co se v kole stalo: vítěz kola, body, náskok, hlavní překvapení.
 - Odstavec 2 — xB reality check se SKUTEČNÝMI čísly (xbOverperformer/xbUnderperformer).
@@ -168,12 +176,15 @@ ${serializedFacts}`;
 import { validateRoundRecapDetailed, validateRoundRecapText } from './roundRecapValidation';
 export { validateRoundRecapDetailed, validateRoundRecapText };
 
-export async function getRoundRecapText(facts: RoundRecapFacts): Promise<{ text: string; source: 'ai' | 'fallback' }> {
+export async function getRoundRecapText(
+  facts: RoundRecapFacts,
+  context: GenerationContext = 'interactive',
+): Promise<{ text: string; source: 'ai' | 'fallback' }> {
   if (facts.mode === 'waiting') return { text: fallbackRoundRecap(facts), source: 'fallback' };
 
   // Na začátku rozehraného kola nemá model co říct – fallback je stejně
   // dobrý a nestojí nic.
-  if (!shouldCallModel(facts)) {
+  if (!shouldCallModel(facts, context)) {
     return { text: fallbackRoundRecap(facts), source: 'fallback' };
   }
 
