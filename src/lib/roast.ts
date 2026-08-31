@@ -1,5 +1,8 @@
 import { generateAnthropicText } from './anthropicText';
-import { BAROKO_STYLE_GUIDE, validateBarokoText } from './barokoPhrases';
+import { AUTHENTIC_BAROKO_PHRASES, BAROKO_STYLE_GUIDE, validateBarokoText } from './barokoPhrases';
+import { loadRecapPhrases } from './phraseLibraryLoader';
+import { richnessFrom, richnessGuidance, selectMatchInterest } from './matchInterest';
+import { buildPhraseLibraryBlock, selectAvailablePhrases } from './phraseLibrary';
 import { buildGatedPhraseBlock, buildMatchPhraseEligibility } from './roundRecapPhrases';
 
 /**
@@ -44,6 +47,21 @@ export async function generateRoastLLM(input: {
 
   const povoleneHlasky = buildGatedPhraseBlock(eligibilita);
 
+  // Knihovna hlášek je NEPOVINNÝ doplněk. Výpadek databáze znamená menší
+  // pestrost, ne chybu — proto se nikdy nečeká na úspěch.
+  // Zajímavosti počítá kód, ne model. Porovnání tipů je levné spočítat
+  // přesně a model pak dostane hotový příběh místo hromady čísel.
+  const zajimavosti = selectMatchInterest(input.tips, input.score);
+  const richness = richnessFrom(zajimavosti.notableCount);
+
+  const knihovna = await loadRecapPhrases();
+  const knihovnaBlok = buildPhraseLibraryBlock(selectAvailablePhrases({
+    rows: knihovna.rows,
+    scope: 'baroko',
+    eligibleRuleKeys: eligibilita.eligiblePhraseIds,
+    builtInTexts: AUTHENTIC_BAROKO_PHRASES,
+  }));
+
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || input.tips.length === 0) return null;
 
@@ -72,8 +90,15 @@ Struktura těch 3 vět:
 Styl a závazný katalog hlášek:
 ${BAROKO_STYLE_GUIDE}
 
+ZAJÍMAVOSTI SPOČÍTANÉ Z TIPŮ (fakta, ne nápady):
+${JSON.stringify(zajimavosti)}
+Piš jen o tom, co v těchto datech opravdu je. Nevymýšlej, co kdo říkal,
+jak se cítil ani co se dělo na hřišti — takové údaje k dispozici nejsou.
+Nevypisuj tipéry za sebou jako seznam; radši je porovnej v jedné větě.
+
 POVOLENÉ HLÍDANÉ HLÁŠKY FÁZE A (týká se JEN jich, historických hlášek ne):
 ${povoleneHlasky}
+${knihovnaBlok}
 
 Specificky pro jeden zápas:
 - použij nejvýše JEDNU autentickou hlášku,
@@ -86,7 +111,8 @@ Pravidla:
 - Používej JMÉNA hráčů a jejich konkrétní tipy/body z dat níže. Dbej na správné skloňování jmen.
 - Buď VŽDY originální — žádné opakování frází mezi zápasy, žádná klišé.
 - Střídej kabinu, hospodu, okresní hřiště, delegáta, svaz, telefonát i rozhodčího; nepoužívej stejný motiv ve všech třech větách.
-- Vrať POUZE ty 3 věty. Bez nadpisu, bez odrážek, bez uvozovek.
+- ${richnessGuidance(richness)}
+- Vrať POUZE výsledný text, nic dalšího. Bez nadpisu, bez odrážek, bez uvozovek.
 
 Zápas: ${input.home} ${input.score} ${input.away}
 ${drama}${redCardsBlock}${standingsBlock}
@@ -94,7 +120,12 @@ ${drama}${redCardsBlock}${standingsBlock}
 Tipy hráčů v tomto zápase:
 ${tipsText}`;
 
-  const generated = await generateAnthropicText(prompt, 320);
+  const generated = await generateAnthropicText(
+    prompt,
+    // 320 → 520. Bohatší text má prostor na druhé pozorování a pointu;
+    // strop drží i nejupovídanější odpověď v rozumné míře.
+    richness === 'low' ? 380 : 520,
+  );
   if (!generated.ok) return null;
 
   const cleaned = generated.text.trim();
@@ -106,7 +137,7 @@ ${tipsText}`;
       ...input.tips.map((tip) => tip.tip),
     ],
     maxPhrases: 1,
-    maxLength: 1600,
+    maxLength: 2400,
     // Katalogová hláška smí zaznít jen tehdy, když ji doložila fakta.
     allowedGatedPhraseTexts: eligibilita.allowedPhraseTexts,
   });

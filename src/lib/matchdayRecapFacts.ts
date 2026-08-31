@@ -1,5 +1,6 @@
 import { buildRoundRecapFacts, type RoundRecapFacts } from './roundRecap';
 import { footballDayKey } from './matchday';
+import { PREVIOUS_SEASON_NAME, previousSeasonStats } from './previousSeason';
 // ZÁMĚRNĚ ne `pageQueries`: ty jsou obalené `unstable_cache` a
 // synchronizace invaliduje cache až PO generování. Autoritativní cesta
 // by tak mohla vidět stav před vlastním zápisem.
@@ -30,6 +31,21 @@ export async function buildMatchdayRecapFacts(
   admin: ReturnType<typeof createAdminClient>,
   input: MatchdayFactsInput,
 ): Promise<RoundRecapFacts | null> {
+  // Existovalo v tu chvíli už pozdější kolo? Pokud ano, pohyb v pořadí by
+  // sice byl spočítaný správně, ale odpovídal by hypotetické tabulce „jako
+  // by se hrálo jen do 6. kola“ — a parta vidí tabulku po 10. kole.
+  const { data: pozdejsiRows } = await admin
+    .from('matches')
+    .select('round, kickoff, status')
+    .eq('season_id', input.seasonId)
+    .gt('round', input.round)
+    .eq('status', 'finished');
+
+  const existujePozdejsiKolo = (pozdejsiRows ?? []).some((m: { kickoff: string }) => {
+    const den = footballDayKey(m.kickoff);
+    return den != null && den <= input.footballDay;
+  });
+
   const { data: matchRows } = await admin
     .from('matches')
     .select('*')
@@ -107,21 +123,24 @@ export async function buildMatchdayRecapFacts(
     standings: standingsAtCutoff,
     roundTitle: `${input.round}. kolo`,
     seasonName: (season as { name?: string } | null)?.name ?? '',
-    previousSeasonName: null,
-    previousSeasonStats: [],
+    // Tatáž data jako interaktivní zobrazení – jinak by uložené hodnocení
+    // přišlo o fakta „loni vs dnes“ i o hlášky, které se o ně opírají.
+    previousSeasonName: PREVIOUS_SEASON_NAME,
+    previousSeasonStats: previousSeasonStats(),
     // Pohyb v celkovém pořadí dává smysl jen u dohraného kola.
     /**
-     * DOČASNĚ VYPNUTO pro automatická hodnocení (v0.1.80).
+     * Pohyb v pořadí — zapnutý jen u kola, které bylo v tu chvíli poslední.
      *
-     * Stávající výpočet pohybu odečítá body hodnoceného kola od aktuálního
-     * pořadí. U běžného posledního kola to sedí, ale u starého odloženého
-     * zápasu dohraného ve chvíli, kdy se hrají další kola, ne — vyšel by
-     * vymyšlený vzestup nebo pád.
+     * Pořadí je díky `standingsAtCutoff` správné k mezi dne, takže odečtení
+     * bodů kola dá skutečný stav před ním. Matematika by tedy vyšla i u
+     * starého odloženého zápasu.
      *
-     * `biggestRise = null` je lepší než nepravdivé číslo. Interaktivní
-     * zobrazení se nemění; přesný historický pohyb přijde později.
+     * Jenže význam by byl matoucí: u zápasu 6. kola dohraného během 10. kola
+     * by šlo o pohyb v hypotetické tabulce „jako by se hrálo jen do šestého“,
+     * zatímco parta vidí tabulku po desátém. Radši tedy `null` než údaj,
+     * který je formálně správný, ale čte se jako nepravda.
      */
-    includeStandingMovement: false,
+    includeStandingMovement: !existujePozdejsiKolo,
     // xB podle stavu k tomuto kolu – znovupoužívá existující as-of snapshot,
     // takže do staršího hodnocení nikdy neproteče budoucí xB.
     xbSnapshots: xbRows.map((row) => ({

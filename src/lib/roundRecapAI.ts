@@ -1,5 +1,8 @@
 import { unstable_cache } from 'next/cache';
 import { BAROKO_STYLE_GUIDE } from './barokoPhrases';
+import { loadRecapPhrases } from './phraseLibraryLoader';
+import { buildPhraseLibraryBlock, selectAvailablePhrases } from './phraseLibrary';
+import { richnessFrom, richnessGuidance } from './matchInterest';
 import { generateAnthropicText, getRoastModel } from './anthropicText';
 import type { AnthropicFailureReason } from './anthropicErrors';
 import type { BarokoValidationReason } from './barokoPhrases';
@@ -34,10 +37,38 @@ const cachedRoundRecap = unstable_cache(
   async (_cacheKey: string, serializedFacts: string, serializedFull: string) => {
     const facts = JSON.parse(serializedFull) as RoundRecapFacts;
     const modeRules = facts.mode === 'final'
-      ? 'Napiš 8 až 14 krátkých vět rozdělených do 3 až 5 krátkých odstavců. Použij nejvýše TŘI katalogové hlášky, každou k jiné situaci a organicky vplетenou do textu.'
-      : 'Napiš 5 až 8 krátkých vět rozdělených do 2 až 3 krátkých odstavců. Výslovně řekni, že kolo ještě pokračuje. Použij nejvýše DVĚ katalogové hlášky.';
+      ? 'Napiš 12 až 20 krátkých vět ve 3 až 4 odstavcích. Použij nejvýše TŘI katalogové hlášky, každou k jiné situaci a organicky vplетenou do textu.'
+      : 'Napiš 8 až 13 krátkých vět ve 2 až 3 odstavcích. Výslovně řekni, že kolo ještě pokračuje. Použij nejvýše DVĚ katalogové hlášky.';
+
+    /**
+     * Kolik silných příběhů kolo nabízí. Podle toho se volí rozsah — nudné
+     * kolo zůstane krátké, chaotické dostane víc prostoru. Bez druhého
+     * volání modelu: počítá se z faktů, která už máme.
+     */
+    const notableCount = [
+      facts.totalExactHits > 0,
+      facts.mostMissedMatch != null,
+      facts.consensusShock != null,
+      facts.xbOverperformer != null || facts.xbUnderperformer != null,
+      facts.bestVsLastSeason != null || facts.previousBestBeaten != null,
+      facts.biggestRise != null || facts.biggestFall != null,
+      facts.cinemaCandidate != null || facts.snowman != null,
+      (facts.matchdayContext?.postponedMatchCount ?? 0) > 0,
+    ].filter(Boolean).length;
+
+    const richness = richnessFrom(notableCount);
 
     const phraseFacts = buildRecapPhraseFacts(facts);
+
+    // Knihovna hlášek je NEPOVINNÝ doplněk. Výpadek databáze znamená menší
+    // pestrost, ne chybu.
+    const knihovna = await loadRecapPhrases();
+    const knihovnaBlok = buildPhraseLibraryBlock(selectAvailablePhrases({
+      rows: knihovna.rows,
+      scope: 'kudy',
+      eligibleRuleKeys: phraseFacts.eligiblePhraseIds,
+      builtInTexts: Object.values(RECAP_PHRASES),
+    }));
     const phraseRules = phraseFacts.eligiblePhraseIds.length === 0
       ? 'Žádná hláška z této skupiny není pro toto kolo doložená — nepoužívej je. Historické hlášky se řídí svými pravidly.'
       : phraseFacts.eligiblePhraseIds
@@ -95,6 +126,14 @@ ${facts.matchdayContext.roundComplete
   ? '- Kolo je opravdu dohrané, můžeš ho uzavřít.'
   : '- Kolo NENÍ dohrané. NESMÍŠ napsat „kolo je za námi“, „kolo je uzavřené“ ani nic podobného. Piš o programu dne nebo o průběžném stavu kola — například „po sobotním programu“ nebo „zatím v tomto kole“.'}
 ` : ''}
+${knihovnaBlok}
+
+ROZSAH: ${richnessGuidance(richness)}
+Delší text NEZNAMENÁ vymýšlet. Každá věta musí stát na některém z faktů výše —
+na výsledku, tipu, bodech, konsenzu, xB nebo srovnání s loňskem. Nikdy nepiš,
+co kdo říkal, jak se cítil ani co se dělo na hřišti; taková data nemáš.
+Nevypisuj tipéry za sebou jako seznam, radši je porovnej.
+
 Stavba textu:
 - Odstavec 1 — co se v kole stalo: vítěz kola, body, náskok, hlavní překvapení.
 - Odstavec 2 — xB reality check se SKUTEČNÝMI čísly (xbOverperformer/xbUnderperformer).
@@ -135,7 +174,7 @@ ${serializedFacts}`;
     // SUCCESS-ONLY CACHE: uloží se jen text, který prošel voláním API
     // i naší validací. Chyba i odmítnutí vyhodí typovanou výjimku, takže
     // se do cache nedostanou a další požadavek smí Claude zkusit znovu.
-    const vysledek = await generateAnthropicText(prompt, facts.mode === 'final' ? 1250 : 850);
+    const vysledek = await generateAnthropicText(prompt, facts.mode === 'final' ? 1900 : 1400);
 
     if (!vysledek.ok) {
       throw new RoundRecapAiError({

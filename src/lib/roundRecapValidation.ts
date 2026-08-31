@@ -22,7 +22,9 @@ export function validateRoundRecapDetailed(text: string, facts: RoundRecapFacts)
     text,
     allowedScores: scoreTokens(facts),
     maxPhrases: maxPhrasesForMode(facts.mode),
-    maxLength: 4600,
+    // 4600 → 6500. Bohatší text má prostor, ale strop drží i uteklou
+    // odpověď; delší výstup neznamená neomezený.
+    maxLength: 6500,
     // Jen hlášky doložené fakty tohoto kola – včetně jediného povoleného
     // tvaru rodiny „prošlo“.
     allowedGatedPhraseTexts: allowedPhraseTextsFor(buildRecapPhraseFacts(facts)),

@@ -99,6 +99,21 @@ export interface RecapStore {
     competition: string,
     leaseMs: number,
   ): Promise<{ round: number; footballDay: string }[]>;
+  /**
+   * Označí NEÚSPĚŠNÉ pokusy téhož kola a dne s JINÝM otiskem za neaktuální.
+   *
+   * Úspěšné verze se nikdy nemažou ani nemění — jsou to platná historická
+   * hodnocení. Týká se to výhradně stavů `failed` a `generating`.
+   *
+   * Nepovinné, aby stávající napodobeniny v testech fungovaly beze změny.
+   */
+  supersedeOtherAttempts?(
+    seasonId: number,
+    competition: string,
+    round: number,
+    footballDay: string,
+    currentFingerprint: string,
+  ): Promise<void>;
 }
 
 export interface MatchdayRecapDeps<TFacts = unknown> {
@@ -223,6 +238,13 @@ export async function processMatchdayRecaps<TFacts>(
       roundComplete: souhrn.roundComplete,
       completedMatchCount: souhrn.completedMatchCount,
     });
+
+    // ── A4: zastaralý pokus se zahodí ────────────────────────────────────
+    // Když se fakta legitimně změnila, starý selhaný otisk už nepředstavuje
+    // současný stav. Bez tohohle by se každých dvacet minut navěky nabízel
+    // k opakování něco, co je dávno neaktuální.
+    await deps.store.supersedeOtherAttempts?.(
+      context.seasonId, context.competition, round, footballDay, fingerprint);
 
     // Už hotovo se stejnými fakty → model se nevolá.
     if (await deps.store.findByFingerprint(fingerprint)) {
