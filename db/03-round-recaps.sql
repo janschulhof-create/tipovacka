@@ -7,6 +7,10 @@
 --    • RLS zapnuté na matches, predictions, seasons
 --    • žádné indexy round_recaps%
 --
+--  ⚠️ TENTO SOUBOR UŽ V PRODUKCI PROBĚHL (s v0.1.80), ale JEŠTĚ BEZ stavu
+--  `superseded`. Pro existující databázi použij `05-round-recaps-superseded.sql`.
+--  Tady je stav doplněný proto, aby čistá instalace vznikla rovnou správně.
+--
 --  Migrace je ADITIVNÍ: přidává jedinou novou tabulku. Nesahá na `matches`,
 --  `predictions`, `players`, `seasons` ani na historické body.
 --
@@ -50,7 +54,9 @@ create table if not exists public.round_recaps (
 
   -- Stavový automat: jiná hodnota se do tabulky nedostane.
   constraint round_recaps_status_chk
-    check (status in ('generating', 'success', 'failed'))
+    -- `superseded` = pokus, který už nepředstavuje současný stav faktů.
+    -- Nemaže se (kvůli dohledatelnosti), ale k opakování se nenabízí.
+    check (status in ('generating', 'success', 'failed', 'superseded'))
 );
 
 -- ── IDEMPOTENCE A SOUBĚH ────────────────────────────────────────────────────

@@ -41,14 +41,23 @@ describe('SAFE-STAND-1…2 — pořadí k mezi dne, ne dnešní', () => {
     assert.ok(kod.includes('throughFootballDay: input.footballDay'));
   });
 
-  test('pohyb v pořadí je pro automatická hodnocení vypnutý', () => {
-    assert.ok(
-      /includeStandingMovement: false/.test(kod),
-      'Vymyšlený vzestup je horší než žádný.',
-    );
+  test('pohyb je zapnutý jen u kola, které bylo v tu chvíli poslední', () => {
+    // ZMĚNA v0.1.81: pořadí je díky `standingsAtCutoff` správné k mezi, takže
+    // matematika vyjde i u starého kola. Význam by ale byl matoucí — šlo by
+    // o pohyb v hypotetické tabulce „jako by se hrálo jen do šestého kola“.
+    assert.ok(kod.includes('includeStandingMovement: !existujePozdejsiKolo'));
     assert.ok(
       !/includeStandingMovement: input\.roundComplete/.test(kod),
-      'Podmíněné zapnutí by u starého kola dalo nepravdivý výsledek.',
+      'Vazba na dohrání kola by u odloženého zápasu dala matoucí údaj.',
+    );
+  });
+
+  test('pozdější kolo se hledá podle DOHRANÝCH zápasů k mezi dne', () => {
+    assert.ok(kod.includes("gt('round', input.round)"));
+    assert.ok(kod.includes("eq('status', 'finished')"));
+    assert.ok(
+      /existujePozdejsiKolo[\s\S]{0,220}den <= input\.footballDay/.test(kod),
+      'Rozhoduje stav k danému dni, ne dnešek.',
     );
   });
 });

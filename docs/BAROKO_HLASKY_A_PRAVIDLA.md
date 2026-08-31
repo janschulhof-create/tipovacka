@@ -475,3 +475,58 @@ promptu dá testovat přímo.
 
 **Notifikace** mají navíc výslovný zákaz hlídaných hlášek v promptu — bez něj
 by je model vygeneroval a validace by shodila celou notifikaci do fallbacku.
+
+---
+
+## Bohatší texty (v0.1.81)
+
+### Zásada
+
+Víc textu znamená **víc použitých faktů**, ne víc vaty. Nudný zápas zůstává
+krátký; chaotický dostane prostor.
+
+### Rozsah se odvozuje z dat
+
+`selectMatchInterest()` spočítá z tipů zajímavosti, které dřív měl model
+odhadovat sám: přesné trefy, nejbližší a nejvzdálenější tip, osamělý správný
+tip, konsenzus, rozptyl gólů, dva krajní tipy.
+
+Počet silných příběhů určí rozsah — **bez druhého volání modelu**:
+
+| Silných příběhů | Bohatost | Vodítko |
+|---|---|---|
+| 0–1 | `low` | zůstaň krátký, nic nedomýšlej |
+| 2–3 | `medium` | dvě až tři pozorování a pointa |
+| 4+ | `high` | tři až čtyři pozorování, vyber nejsilnější |
+
+### Naměřené rozpočty
+
+| | Bylo | Je |
+|---|---|---|
+| Baroko, model | 320 | 380 (`low`) / 520 |
+| Baroko, strop validace | 1600 | 2400 |
+| Kudy, model | 850 / 1250 | 1400 / 1900 |
+| Kudy, strop validace | 4600 | 6500 |
+| Kudy, pokyn k rozsahu | 5–8 / 8–14 vět | 8–13 / 12–20 vět |
+| **Notifikace** | 220 | **220 — beze změny** |
+
+Strop drží i uteklou odpověď: delší neznamená neomezený.
+
+### Co se nesmí
+
+Model smí fakta vtipně vyložit, ale **nesmí vymýšlet** motivaci, emoce, dění
+na hřišti, zranění, rozhodčího ani co kdo řekl. Taková data nemá. Prompty to
+říkají výslovně a testy to hlídají.
+
+Zákaz tvrdit dohrané kolo při `roundComplete: false` platí i pro delší text —
+delší text má víc příležitostí se splést.
+
+### Knihovna hlášek
+
+Hlášky jsou koření, ne jídlo. Obvykle 0–2 v Baroku, 1–3 napříč Kudy. Nula je
+v pořádku. Hlídané dál potřebují doklad, volné zůstávají nepovinné.
+
+### Jedno volání
+
+Bohatost i zajímavosti se počítají v kódu. Žádné druhé volání modelu na výběr
+příběhů, hlášek ani klasifikaci — hlídá to test.

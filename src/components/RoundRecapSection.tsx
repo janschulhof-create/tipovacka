@@ -1,31 +1,13 @@
 import type { Match, Player, RoundPrediction, StandingRow } from '@/lib/types';
-import historie from '@/data/historie.json';
+import { PREVIOUS_SEASON_NAME, previousSeasonStats } from '@/lib/previousSeason';
 import { getStoredRoundRecap, getSeasonXbProjection, getSeasonXbSnapshotAtRound } from '@/lib/pageQueries';
-import {
-  buildRoundRecapFacts,
-  type RoundRecapPreviousSeasonStat,
-} from '@/lib/roundRecap';
+import { buildRoundRecapFacts } from '@/lib/roundRecap';
 import { getRoundRecapText } from '@/lib/roundRecapAI';
 
 function signed(value: number) {
   return `${value >= 0 ? '+' : ''}${value.toFixed(1)}`;
 }
 
-function previousSeasonStats(): RoundRecapPreviousSeasonStat[] {
-  const stats = historie.stats as Record<string, {
-    avgPoints?: number;
-    bestRound?: number;
-    roundWins?: number;
-    zeros?: number;
-  }>;
-  return Object.entries(stats).map(([name, row]) => ({
-    name,
-    avgPoints: Number(row.avgPoints ?? 0),
-    bestRound: Number(row.bestRound ?? 0),
-    roundWins: Number(row.roundWins ?? 0),
-    zeros: Number(row.zeros ?? 0),
-  }));
-}
 
 export async function RoundRecapSection({
   seasonId,
@@ -63,7 +45,7 @@ export async function RoundRecapSection({
     roundTitle,
     seasonName,
     includeStandingMovement,
-    previousSeasonName: historie.season,
+    previousSeasonName: PREVIOUS_SEASON_NAME,
     previousSeasonStats: previousSeasonStats(),
     xbSnapshots: xbRows.map((row) => ({
       name: row.name,
@@ -86,16 +68,20 @@ export async function RoundRecapSection({
     ? { text: ulozeny.text, source: 'ai' as const }
     : await getRoundRecapText(facts);
 
-  /** Nenápadný popisek dne, dokud kolo není dohrané. */
-  const matchdayLabel = ulozeny && !ulozeny.round_complete && ulozeny.matchday_date
-    ? `Po programu ${new Date(ulozeny.matchday_date).toLocaleDateString('cs-CZ', {
-      day: 'numeric', month: 'numeric',
-    })}`
+  /**
+   * Popisek se váže na ULOŽENÝ TEXT, ne na celou sekci.
+   *
+   * Karty a průběžné statistiky kolem něj ukazují AKTUÁLNÍ stav. Kdyby byl
+   * datum stavem celé sekce, vypadalo by to, že jsou z té staré verze i ony.
+   */
+  const storedTextLabel = ulozeny?.matchday_date
+    ? `Uložené hodnocení po programu ${new Date(ulozeny.matchday_date)
+      .toLocaleDateString('cs-CZ', { day: 'numeric', month: 'numeric' })}`
     : null;
   const progress = facts.totalMatches > 0
     ? Math.round((facts.completedMatches / facts.totalMatches) * 100)
     : 0;
-  const stateLabel = matchdayLabel ?? (facts.mode === 'final'
+  const stateLabel = (facts.mode === 'final'
     ? 'Závěrečný verdikt kola'
     : facts.mode === 'progress'
       ? 'Průběžné studio kola'
@@ -189,6 +175,11 @@ export async function RoundRecapSection({
           <p className="whitespace-pre-line text-[13.5px] leading-7 text-copy-secondary sm:text-[14.5px] sm:leading-7">
             {recap.text}
           </p>
+
+          {/* Popisek patří textu, ne kartám nad ním – ty ukazují aktuální stav. */}
+          {storedTextLabel && (
+            <p className="mt-2 text-[10px] text-copy-muted">{storedTextLabel}</p>
+          )}
 
           {facts.mode !== 'waiting' && (
             <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-semibold">

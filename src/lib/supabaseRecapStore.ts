@@ -182,6 +182,26 @@ export function createSupabaseRecapStore(
     },
 
     /**
+     * Zastaralé pokusy téhož kola a dne se označí jako `superseded`.
+     *
+     * ÚSPĚŠNÉ verze zůstávají nedotčené — podmínka na stav to zajišťuje.
+     * Bez tohoto by selhaný otisk A žádal opakování navěky, i když fakta
+     * dávno vedou na otisk B.
+     */
+    async supersedeOtherAttempts(seasonId, competition, round, footballDay, current) {
+      await sb
+        .from(TABULKA)
+        .update({ status: 'superseded', claim_token: null })
+        .eq('season_id', seasonId)
+        .eq('competition', competition)
+        .eq('round', round)
+        .eq('matchday_date', footballDay)
+        .neq('facts_fingerprint', current)
+        .neq('status', 'success')
+        .select('facts_fingerprint');
+    },
+
+    /**
      * Kola a dny, které zbyly nedokončené.
      *
      * Vrací jen malou množinu: selhané pokusy a rezervace, jejichž lease
@@ -196,6 +216,7 @@ export function createSupabaseRecapStore(
         .eq('season_id', seasonId)
         .eq('competition', competition)
         .neq('status', 'success')
+        .neq('status', 'superseded')
         .order('claimed_at', { ascending: true })
         .limit(20);
 

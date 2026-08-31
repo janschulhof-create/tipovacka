@@ -290,9 +290,15 @@ describe('B.2-2 — UI čte uloženou verzi', () => {
     );
   });
 
-  test('popisek dne se ukáže jen u nedohraného kola', () => {
-    assert.ok(ui.includes('Po programu'));
-    assert.ok(ui.includes('!ulozeny.round_complete'));
+  test('popisek se váže na uložený TEXT, ne na celou sekci', () => {
+    // ZMĚNA v0.1.81: karty nad textem ukazují aktuální stav. Kdyby byl
+    // datum stavem celé sekce, vypadalo by to, že jsou ze staré verze i ony.
+    assert.ok(ui.includes('Uložené hodnocení po programu'));
+    assert.ok(ui.includes('const storedTextLabel'));
+    assert.ok(
+      !ui.includes('const stateLabel = matchdayLabel'),
+      'Stav sekce se řídí skutečnými fakty, ne datem uložené verze.',
+    );
   });
 
   test('prohlížeč do tabulky nezapisuje', () => {
