@@ -1,19 +1,28 @@
 'use client';
 
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { createLivePoller, createSingleFlight, LIVE_POLL_BASE_MS, type SyncOutcome } from '@/lib/livePoller';
 
 /**
- * ⚠️ TECHNICKÝ DLUH (etapa 6 refaktoru) — klientem spouštěná synchronizace.
+ * Klientem spouštěná synchronizace — stav od v0.1.82.
  *
- * Prohlížeč tu spouští synchronizaci s poskytovatelem (při načtení, každých
- * `intervalMs`, při návratu do aplikace a při pull-to-refresh). To má dva
- * zásadní důsledky:
- *   1) Data se aktualizují jen tehdy, když má někdo otevřenou aplikaci.
- *   2) Osm přihlášených lidí spustí osm souběžných běhů — a sync nemá zámek.
+ * Prohlížeč spouští synchronizaci s poskytovatelem při prvním načtení,
+ * v pravidelném rytmu, při návratu do aplikace a při stažení dolů.
  *
- * Cílový stav: synchronizaci vlastní server (cron) + lease proti souběhu,
- * prohlížeč pouze čte (`router.refresh()`).
+ * Ochrana proti souběhu má DVĚ vrstvy:
+ *   1) V záložce: všechny spouštěče jdou přes `createSingleFlight`, takže
+ *      z jedné záložky nikdy neodejdou dva dotazy současně.
+ *   2) Mezi záložkami, prohlížeči a cronem: databázový zámek
+ *      `claim_sync_lease` (migrace 06). Poskytovatele se ptá vždy jen jeden
+ *      vlastník; ostatní dostanou aktuální stav z databáze.
+ *
+ * Rytmus řídí `createLivePoller`: 90 s, po chybách postupně až 10 min,
+ * skrytá záložka nedotazuje. Stránka se vykreslí jen při skutečné změně.
+ *
+ * ZBÝVAJÍCÍ DLUH: data se aktualizují i z cronu (každých 20 min), ale
+ * živé minuty závisí na tom, že má někdo aplikaci otevřenou. Cílový stav
+ * je, aby prohlížeč pouze četl.
  *
  * POSTUP VYPNUTÍ (záměrně až po ověření serverového cronu):
  *   1) nasadit a ověřit serverový cron,
@@ -37,10 +46,14 @@ export const __technicalDebt_clientSync = {
 /**
  * Obnovení dat bez zavírání appky:
  *  - Pull-to-refresh: vědomé stažení palcem dolů z úplného vrchu stránky (mobil i myš/trackpad).
- *  - Auto-refresh: když běží živý zápas (hasLive), tiše obnovuje každých `intervalMs`.
+ *  - Auto-refresh: když běží živý zápas (hasLive), tiše obnovuje přes `createLivePoller`.
  * Používá router.refresh() – server komponenty se přenačtou z DB bez plného reloadu.
  */
-export function LiveRefresh({ hasLive, intervalMs = 90000 }: { hasLive: boolean; intervalMs?: number }) {
+/**
+ * `intervalMs` se už nepoužívá – rytmus řídí `createLivePoller` (90 s
+ * normálně, delší po chybách). Ponecháno v typu kvůli zpětné kompatibilitě.
+ */
+export function LiveRefresh({ hasLive }: { hasLive: boolean; intervalMs?: number }) {
   const router = useRouter();
   const [pull, setPull] = useState(0); // aktuální vzdálenost stažení (px)
   const [busy, setBusy] = useState(false);
@@ -52,28 +65,55 @@ export function LiveRefresh({ hasLive, intervalMs = 90000 }: { hasLive: boolean;
   const THRESHOLD = 70; // px – kolik je potřeba stáhnout pro spuštění
   const MAX = 110;
 
-  const syncLiveData = useCallback(async () => {
+  /**
+   * Stáhne čerstvá data. Vrací, jestli se v databázi něco změnilo.
+   *
+   * Při chybě vrací `true` – lepší jednou zbytečně obnovit, než nechat
+   * uživatele dívat se na zastaralý stav.
+   */
+  /**
+   * Stáhne čerstvá data.
+   *
+   * `error` = nepodařilo se. Automatické obnovování pak NEVYKRESLÍ stránku
+   * naprázdno, jen prodlouží interval; poslední známý stav zůstává.
+   */
+  const syncLiveData = useCallback(async (): Promise<SyncOutcome> => {
     // Viz TECHNICKÝ DLUH výše – vypínatelné přes NEXT_PUBLIC_CLIENT_SYNC=0.
-    if (!CLIENT_SYNC_ENABLED || !hasLive) return;
+    if (!CLIENT_SYNC_ENABLED || !hasLive) return 'unchanged';
     try {
-      await fetch('/api/sync-football?competition=liga&live_only=1', { method: 'POST', cache: 'no-store' });
+      const res = await fetch('/api/sync-football?competition=liga&live_only=1', { method: 'POST', cache: 'no-store' });
+      if (!res.ok) return 'error';
+      const body = await res.json().catch(() => null) as { changed?: unknown } | null;
+      // Starší server pole nevrací → chovat se jako dřív a obnovit.
+      if (typeof body?.changed !== 'boolean') return 'changed';
+      return body.changed ? 'changed' : 'unchanged';
     } catch {
-      // Samotné obnovení stránky zůstane funkční i při dočasném výpadku zdroje.
+      return 'error';
     }
   }, [hasLive]);
 
 
+  /**
+   * Jediný běh synchronizace pro celou záložku. Všechny spouštěče – plánovač,
+   * první načtení, návrat do aplikace i ruční stažení – jdou přes něj, takže
+   * ze záložky nikdy neodejdou dva dotazy současně. Kdo přijde během běhu,
+   * dostane jeho výsledek.
+   */
+  const sdilenySync = useMemo(() => createSingleFlight(syncLiveData), [syncLiveData]);
+
   const doRefresh = useCallback(async () => {
     setBusy(true);
     lastRefreshAt.current = Date.now();
-    await syncLiveData();
+    // Když už běží jiný dotaz, počká na něj – druhý se neodešle.
+    await sdilenySync.run();
+    // Ruční obnovení obnoví stránku vždy – i při chybě. Uživatel o to požádal.
     router.refresh();
     // krátká vizuální odezva, ať uživatel vidí, že se něco stalo
     window.setTimeout(() => {
       setBusy(false);
       setPull(0);
     }, 700);
-  }, [router, syncLiveData]);
+  }, [router, sdilenySync]);
 
   // První otevření živého zápasu musí skutečně dotáhnout zdrojová data;
   // samotný router.refresh() by jen znovu přečetl starý stav z databáze.
@@ -81,23 +121,33 @@ export function LiveRefresh({ hasLive, intervalMs = 90000 }: { hasLive: boolean;
     if (!hasLive || initialSyncDone.current) return;
     initialSyncDone.current = true;
     void (async () => {
-      await syncLiveData();
+      const vysledek = await sdilenySync.run();
       lastRefreshAt.current = Date.now();
-      router.refresh();
+      // Jen při změně. Beze změny i při chybě zůstává aktuální vykreslení.
+      if (vysledek === 'changed') router.refresh();
     })();
-  }, [hasLive, router, syncLiveData]);
+  }, [hasLive, router, sdilenySync]);
 
   // ── auto-refresh při živém zápasu ──
   useEffect(() => {
     if (!hasLive) return;
-    const id = window.setInterval(async () => {
-      if (document.visibilityState !== 'visible') return;
-      lastRefreshAt.current = Date.now();
-      await syncLiveData();
-      router.refresh();
-    }, intervalMs);
-    return () => window.clearInterval(id);
-  }, [hasLive, intervalMs, router, syncLiveData]);
+    // Plánovač místo setInterval: další kolo až PO dokončení předchozího,
+    // takže pomalý server nikdy nedostane z jedné záložky dva dotazy naráz.
+    // Stránka se vykreslí jen při změně; chyba prodlouží interval.
+    const poller = createLivePoller({
+      sync: async () => {
+        lastRefreshAt.current = Date.now();
+        return sdilenySync.run();
+      },
+      refresh: () => router.refresh(),
+      isVisible: () => document.visibilityState === 'visible',
+      setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimeout: (h) => window.clearTimeout(h as number),
+      random: Math.random,
+    });
+    poller.start();
+    return () => poller.stop();
+  }, [hasLive, router, sdilenySync]);
 
   // Návrat do aplikace obnoví data jen během živých zápasů a pouze tehdy,
   // když od posledního obnovení uběhl celý interval. Dříve se plný serverový
@@ -106,14 +156,15 @@ export function LiveRefresh({ hasLive, intervalMs = 90000 }: { hasLive: boolean;
     if (!hasLive) return;
     const onVis = async () => {
       if (document.visibilityState !== 'visible') return;
-      if (Date.now() - lastRefreshAt.current < intervalMs) return;
+      if (Date.now() - lastRefreshAt.current < LIVE_POLL_BASE_MS) return;
       lastRefreshAt.current = Date.now();
-      await syncLiveData();
-      router.refresh();
+      // Návrat do aplikace: vykreslit jen při změně, chyba stav nemaže.
+      const vysledek = await sdilenySync.run();
+      if (vysledek === 'changed') router.refresh();
     };
     document.addEventListener('visibilitychange', onVis);
     return () => document.removeEventListener('visibilitychange', onVis);
-  }, [hasLive, intervalMs, router, syncLiveData]);
+  }, [hasLive, router, sdilenySync]);
 
   // ── pull-to-refresh (touch) ──
   useEffect(() => {

@@ -202,7 +202,7 @@ describe('RETRY-1…5 — opakování BEZ nové změny zápasu', () => {
       'Musí se poznat, že hodnocení vzniklo.',
     );
     assert.ok(
-      route.includes("if (!allIdle || vzniklyRecapy) revalidateTag('tipovacka-data')"),
+      route.includes("const changed = userVisibleChanges > 0 || vzniklyRecapy") && route.includes("if (changed) revalidateTag('tipovacka-data')"),
       'Úspěšné hodnocení při jinak nečinném běhu musí obnovit cache.',
     );
   });

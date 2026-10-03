@@ -10,6 +10,13 @@
  */
 import { toCz, normKey } from './apiFootball';
 
+/**
+ * Časový limit pro dotaz na poskytovatele. Bez něj by zaseknutý zdroj
+ * držel funkci až do limitu platformy. Chyba se zachytí výš a synchronizace
+ * pokračuje s tím, co má.
+ */
+const PROVIDER_TIMEOUT_MS = 10_000;
+
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports/soccer/fifa.world';
 const SCOREBOARD = `${BASE}/scoreboard?dates=20260611-20260720&limit=300`;
 
@@ -189,7 +196,7 @@ const isPlaceholder = (s: string) => !s || /winner|runner|loser|\btbd\b|to be|\b
 
 /** Načte z ESPN scoreboardu rozpis (i budoucí zápasy) pro doplnění play-off. */
 export async function fetchEspnSchedule(): Promise<EspnFixture[]> {
-  const res = await fetch(SCOREBOARD, { cache: 'no-store' });
+  const res = await fetch(SCOREBOARD, { cache: 'no-store', signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`ESPN HTTP ${res.status}`);
   const data = (await res.json()) as { events?: EspnEvent[] };
   const out: EspnFixture[] = [];
@@ -308,7 +315,7 @@ function sbStat(c: EspnCompetitor | undefined, name: string): string | undefined
 }
 
 export async function fetchEspnResults(): Promise<Map<string, EspnResult>> {
-  const res = await fetch(SCOREBOARD, { cache: 'no-store' });
+  const res = await fetch(SCOREBOARD, { cache: 'no-store', signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
   if (!res.ok) throw new Error(`ESPN HTTP ${res.status}`);
   const data = (await res.json()) as { events?: EspnEvent[] };
   const out = new Map<string, EspnResult>();
@@ -500,7 +507,7 @@ export async function fetchEspnSummary(
   finalAway?: number,
 ): Promise<{ home: TeamStats; away: TeamStats; timeline: EspnTimeline | null; lineups: MatchLineups | null } | null> {
   try {
-    const res = await fetch(`${BASE}/summary?event=${eventId}`, { cache: 'no-store' });
+    const res = await fetch(`${BASE}/summary?event=${eventId}`, { cache: 'no-store', signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data = (await res.json()) as {
       boxscore?: { teams?: { team?: { id?: string }; statistics?: { label?: string; displayValue?: string }[] }[] };

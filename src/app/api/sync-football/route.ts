@@ -22,10 +22,14 @@ import { canonTeam, externalTeamAliases, isSameFixture } from '@/lib/teamAliases
 import { resolveExistingFixture } from '@/lib/postponed';
 import type { MatchDetail, HighlightlySyncMeta } from '@/lib/espn';
 import type { MatchChange, MatchdayMatch } from '@/lib/matchday';
+import { eventsAgreeWithOfficial, resolveMatchScore } from '@/lib/goalAttribution';
+import { diffLiveRow, type LiveRowFields } from '@/lib/liveRowDiff';
+import { createSupabaseSyncLeaseStore, runWithSyncLease } from '@/lib/syncLease';
 import {
   MATCH_CHANGE_COLUMNS,
   changeFromUpdated,
   changesFromPersistedFinish,
+  mergeLigaChanges,
   changesFromInserted,
 } from '@/lib/matchChangeBuilder';
 import { processMatchdayRecaps } from '@/lib/matchdayRecap';
@@ -211,6 +215,8 @@ type HighlightlyReport = {
   prep: { requested: boolean; fetched: number; selected: number; inserted: number; updated: number; league: string | null };
   live: {
     due: boolean;
+    /** Řádky, u kterých se změnilo něco viditelného (skóre, stav, minuta, detail). */
+    visibleChanges?: number;
     date: string | null;
     fetched: number;
     matched: number;
@@ -302,25 +308,38 @@ function detailHasStats(detail: MatchDetail | null | undefined): boolean {
   return !!detail?.stats && (Object.keys(detail.stats.home).length > 0 || Object.keys(detail.stats.away).length > 0);
 }
 
+/**
+ * Výsledné skóre zápasu z Highlightly.
+ *
+ * Oficiální skóre VŽDY vyhrává. Dřívější heuristika ho přepisovala skórem
+ * z událostí, kdykoli seděl součet — a právě to proměnilo každý chybně
+ * připsaný vlastní gól v chybně uložený výsledek. Viz `goalAttribution.ts`.
+ */
 function reconcileHighlightlyScore(
   match: HighlightlyMatch,
   detail: MatchDetail | null | undefined,
 ): { home: number | null; away: number | null; corrected: boolean } {
-  const api = { home: match.homeScore, away: match.awayScore };
-  const events = scoreFromStoredGoals(detail);
-  if (!events) return { ...api, corrected: false };
+  const official = { home: match.homeScore, away: match.awayScore };
+  const fromEvents = scoreFromStoredGoals(detail);
 
-  // Highlightly u některých přátelských zápasů vrací týmy v jiném pořadí než
-  // události zápasu. Skóre z gólových událostí je navázané přímo na název týmu,
-  // proto ho použijeme, pokud jeho celkový počet gólů souhlasí s hlavním skóre.
-  if (api.home != null && api.away != null) {
-    const totalsAgree = api.home + api.away === events.home + events.away;
-    const differs = api.home !== events.home || api.away !== events.away;
-    if (totalsAgree && differs) return { ...events, corrected: true };
-    return { ...api, corrected: false };
+  if (!eventsAgreeWithOfficial(official, fromEvents)) {
+    // Jen zalogovat – výsledek se kvůli tomu NEMĚNÍ. Když je mezi góly
+    // vlastní gól, přidá se minimum potřebné k ověření, ke kterému týmu
+    // ho poskytovatel váže. Jména hráčů se nelogují.
+    const vlastni = (detail?.goals ?? [])
+      .filter((g) => g.kind === 'own')
+      .map((g) => ({ min: g.min, side: g.side }));
+    console.warn(JSON.stringify({
+      event: 'score_events_mismatch',
+      providerMatchId: match.id ?? null,
+      official: `${official.home}:${official.away}`,
+      fromEvents: fromEvents ? `${fromEvents.home}:${fromEvents.away}` : null,
+      ownGoals: vlastni.length > 0 ? vlastni : undefined,
+    }));
   }
 
-  return { ...events, corrected: true };
+  const vysledek = resolveMatchScore({ official, fromEvents });
+  return { home: vysledek.home, away: vysledek.away, corrected: vysledek.source === 'events' };
 }
 
 function hlPair(home: string, away: string): string {
@@ -357,6 +376,40 @@ function shouldPollHighlightly(rows: ExistingMatch[], nowMs: number, pollMinutes
     .map((value) => new Date(value).getTime());
   if (last.length < rows.length) return true;
   return nowMs - Math.min(...last) >= pollMinutes * 60_000;
+}
+
+/**
+ * Dotaz na poskytovatele POD ZÁMKEM.
+ *
+ * Jen jeden běh naráz — ať už je to prohlížeč, nebo cron — se ptá
+ * poskytovatele. Ostatní dostanou prázdný report a vrátí se hned; stránka
+ * si přečte aktuální stav z databáze. Zámek sám vyprší, takže pád procesu
+ * nic nezablokuje.
+ */
+async function syncHighlightlyLigaUnderLease(
+  args: Parameters<typeof syncHighlightlyLiga>[0],
+): Promise<HighlightlyReport & { leaseOwner: boolean }> {
+  const store = createSupabaseSyncLeaseStore(
+    args.supabase as unknown as Parameters<typeof createSupabaseSyncLeaseStore>[0]);
+  const vysledek = await runWithSyncLease(
+    store, 'highlightly-liga', () => syncHighlightlyLiga(args),
+    (event, data) => console.warn(JSON.stringify({ event, ...data })),
+  );
+
+  if (vysledek.owner) return { ...vysledek.value, leaseOwner: true };
+
+  return {
+    semanticChanges: [],
+    configured: highlightlyConfigured(), requests: 0, remaining: null, limit: null,
+    pollMinutes: 0, reserve: 0,
+    prep: { requested: false, fetched: 0, selected: 0, inserted: 0, updated: 0, league: null },
+    live: {
+      due: false, date: null, fetched: 0, matched: 0, updated: 0, details: 0,
+      scoreCorrections: 0, finalRepairs: 0, league: null,
+    },
+    warnings: [],
+    leaseOwner: false,
+  };
 }
 
 async function syncHighlightlyLiga(args: {
@@ -930,18 +983,30 @@ async function syncHighlightlyLiga(args: {
       };
       // Skóre a stav jsou sémantické – tenhle zápis může uzavřít fotbalový
       // den. Událost proto vzniká z toho, co databáze vrátila.
-      const { data: ulozenyLive, error: updateError } = await args.supabase
-        .from('matches')
-        .update(payload)
-        .eq('id', row.id)
-        .select(MATCH_CHANGE_COLUMNS);
-      if (updateError) report.warnings.push(`Live update ${row.id}: ${updateError.message}`);
-      else {
-        report.live.updated++;
+      // Zapisuje se JEN při skutečné změně. Stejná data od poskytovatele
+      // dřív přepsala celý řádek a tvářila se jako změna — invalidace cache
+      // a nové vykreslení u všech prohlížečů pak běžely naprázdno.
+      const rozdil = diffLiveRow(row as unknown as LiveRowFields, payload);
+      if (!rozdil.visible) {
         report.live.details += detailRequests;
-        const zmena = changeFromUpdated(
-          row as unknown as Record<string, unknown>, (ulozenyLive ?? [])[0]);
-        if (zmena) semanticChanges.push(zmena);
+      } else {
+        const { data: ulozenyLive, error: updateError } = await args.supabase
+          .from('matches')
+          .update(payload)
+          .eq('id', row.id)
+          .select(MATCH_CHANGE_COLUMNS);
+        if (updateError) report.warnings.push(`Live update ${row.id}: ${updateError.message}`);
+        else {
+          report.live.updated++;
+          report.live.visibleChanges = (report.live.visibleChanges ?? 0) + 1;
+          report.live.details += detailRequests;
+          // Událost pro hodnocení dne jen u změny bodů/stavu, ne u minuty.
+          if (rozdil.semantic) {
+            const zmena = changeFromUpdated(
+              row as unknown as Record<string, unknown>, (ulozenyLive ?? [])[0]);
+            if (zmena) semanticChanges.push(zmena);
+          }
+        }
       }
     }
   } catch (error) {
@@ -966,6 +1031,15 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
   /** Změny napříč soutěžemi – podklad pro automatické hodnocení dne. */
   /** Výsledky automatického hodnocení, po soutěžích. */
   const recapResults: Record<string, unknown> = {};
+  /**
+   * Kolik ZÁPISŮ změnilo to, co parta vidí. Z toho – a jen z toho – se
+   * odvozuje `changed` i invalidace cache. Samotné dotázání poskytovatele
+   * nebo režim `live-ids` změnou NEJSOU.
+   */
+  let userVisibleChanges = 0;
+  const startMs = Date.now();
+  let providerRequests = 0;
+  let heavyOwner: boolean | null = null;
   const now = new Date();
   const nowMs = now.getTime();
   const liveRefreshMinutes = Math.max(5, Number(process.env.PUBLIC_FEED_LIVE_REFRESH_MINUTES ?? 10));
@@ -1016,7 +1090,7 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
         results[key] = { ok: true, idle: true, reason: 'live sync is available only for liga' };
         continue;
       }
-      const highlightly = await syncHighlightlyLiga({
+      const highlightly = await syncHighlightlyLigaUnderLease({
         supabase, seasonId: season.id, now, bootstrapPrep: false, force: false,
       });
 
@@ -1066,7 +1140,13 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
       }
 
       // Sémantické zápisy z Highlightly – i ty mohou uzavřít fotbalový den.
-      matchChanges.push(...(highlightly.semanticChanges ?? []));
+      {
+        const slouceno = mergeLigaChanges(matchChanges, highlightly);
+        matchChanges.splice(0, matchChanges.length, ...slouceno.changes);
+        userVisibleChanges += slouceno.visibleCount;
+      }
+      providerRequests += highlightly.requests;
+      heavyOwner = highlightly.leaseOwner;
 
       // Živý sync bývá první, kdo konečný výsledek zapíše. Bez tohohle
       // volání by se změny zahodily při `continue` a hodnocení by čekalo
@@ -1625,7 +1705,7 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
     }
 
     const highlightly = key === 'liga'
-      ? await syncHighlightlyLiga({
+      ? await syncHighlightlyLigaUnderLease({
           supabase, seasonId: season.id, now,
           bootstrapPrep: false, force: highlightlyForce,
         })
@@ -1656,8 +1736,18 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
     // Uvnitř smyčky a jen pro Chance ligu: změny se tak nikdy nesmíchají
     // napříč soutěžemi a `season.id` vždy patří té soutěži, která se
     // právě zpracovává. Evropa se do hodnocení nedostane vůbec.
+    // Nejdřív sloučit změny z Highlightly, až pak počítat – jinak by oprava
+    // regulérního skóre (sémantická, ale ne „viditelná“) vypadla z `changed`.
+    {
+      const slouceno = mergeLigaChanges(matchChanges, key === 'liga' ? highlightly : null);
+      matchChanges.splice(0, matchChanges.length, ...slouceno.changes);
+      userVisibleChanges += slouceno.visibleCount;
+    }
+    if (highlightly) {
+      providerRequests += highlightly.requests;
+      heavyOwner = highlightly.leaseOwner;
+    }
     if (key === 'liga') {
-      matchChanges.push(...(highlightly?.semanticChanges ?? []));
       const recapy = await runLigaMatchdayRecapsSafely(matchChanges, season.id, supabase);
       if (recapy) recapResults[key] = recapy;
     }
@@ -1692,8 +1782,6 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
   }
 
   const overallOk = keys.every((key) => (results[key] as { ok?: boolean } | undefined)?.ok !== false);
-  const allIdle = keys.length > 0
-    && keys.every((key) => (results[key] as { idle?: boolean } | undefined)?.idle === true);
 
   // ── AUTOMATICKÉ „KUDY BĚŽÍ ZAJÍC“ ───────────────────────────────────────
   // Věší se na autoritativní sync, ke kterému se dostane externí cron
@@ -1705,11 +1793,28 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
   const vzniklyRecapy = Object.values(recapResults).some((r) =>
     Array.isArray(r) && r.some((v) => (v as { outcome?: string })?.outcome === 'generated'));
 
-  if (!allIdle || vzniklyRecapy) revalidateTag('tipovacka-data');
+  // Invalidace jen při skutečné změně. Dřív stačil nečinný běh v režimu
+  // `live-ids`, takže se cache zahazovala i při beze změny.
+  const changed = userVisibleChanges > 0 || vzniklyRecapy;
+  if (changed) revalidateTag('tipovacka-data');
 
   if (Object.keys(recapResults).length > 0) results.recaps = recapResults;
 
-  return NextResponse.json({ ok: overallOk, results, at: new Date().toISOString() });
+  // Jeden řádek na požadavek – podle něj se po nasazení porovná skutečná
+  // zátěž ve Vercelu. Žádná tajemství ani tipy.
+  console.warn(JSON.stringify({
+    event: 'live_sync_summary',
+    mode: liveOnly ? 'live_only' : 'full',
+    heavy_sync_owner: heavyOwner,
+    provider_requests: providerRequests,
+    semantic_match_changes: userVisibleChanges,
+    cache_revalidated: changed,
+    recap_generated: vzniklyRecapy,
+    duration_ms: Date.now() - startMs,
+    result: overallOk ? 'ok' : 'partial',
+  }));
+
+  return NextResponse.json({ ok: overallOk, changed, results, at: new Date().toISOString() });
 }
 
 

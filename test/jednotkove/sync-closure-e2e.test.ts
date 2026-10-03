@@ -47,10 +47,9 @@ function vytvorStore() {
 
 describe('LIVEONLY-1…3 — živý sync spustí hodnocení', () => {
   test('LIVEONLY-1: změny se předají před `continue`', () => {
-    const blok = route.slice(
-      route.indexOf('matchChanges.push(...(highlightly.semanticChanges ?? []))'),
-      route.indexOf('liveOnly: true'),
-    );
+    // Sloučení změn z Highlightly je od v0.1.82 ve sdílené `mergeLigaChanges`.
+    const iLive = route.indexOf('liveOnly: true');
+    const blok = route.slice(route.lastIndexOf('mergeLigaChanges(', iLive), iLive);
     assert.ok(
       blok.includes('runLigaMatchdayRecapsSafely(matchChanges, season.id'),
       'Bez toho by se změny při `continue` zahodily.',
@@ -119,7 +118,9 @@ describe('Highlightly — sémantické zápisy se propagují', () => {
   test('hlavní live zápis načítá uložený stav zpět', () => {
     const blok = route.slice(route.indexOf('const { data: ulozenyLive'));
     assert.ok(blok.slice(0, 400).includes('.select(MATCH_CHANGE_COLUMNS)'));
-    assert.ok(blok.slice(0, 600).includes('semanticChanges.push(zmena)'));
+    // Událost jen u sémantické změny (skóre, stav), ne u minuty.
+    assert.ok(blok.slice(0, 1200).includes('if (rozdil.semantic)'));
+    assert.ok(blok.slice(0, 1200).includes('semanticChanges.push(zmena)'));
   });
 
   test('obě cesty vynuceného finished emitují změnu z uloženého stavu', () => {
