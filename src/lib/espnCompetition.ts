@@ -1,4 +1,5 @@
 import type { MatchStatus } from './types';
+import { benefitingSide, classifyGoalEvent } from './goalAttribution';
 import type { MatchDetail, MatchLineups, LineupPlayer, TeamStats } from './espn';
 import { canonTeam } from './teamAliases';
 
@@ -1086,23 +1087,21 @@ export async function fetchHighlightlyEvents(
     if (!eventSide) continue;
     const minRaw = firstString(event.time, event.minute, event.clock);
     const min = minRaw ? (minRaw.includes("'") ? minRaw : `${minRaw}'`) : '?';
-    const isCancelledGoal = /cancel|disallow|no goal|missed penalty/.test(type);
-    const isScoredGoal = /goal|penalty/.test(type) && !isCancelledGoal && !/var/.test(type);
-    if (isScoredGoal) {
-      // U vlastního gólu Highlightly váže událost na tým hráče, který si dal
-      // vlastní branku. Pro skóre i průběh ale potřebujeme stranu, které byl
-      // gól připsán, proto ji otočíme.
-      const ownGoal = /own/.test(type);
-      const side = ownGoal ? (eventSide === 'home' ? 'away' : 'home') : eventSide;
+    const druhGolu = classifyGoalEvent(type);
+    if (druhGolu) {
+      // Highlightly vrací vlastní gól u týmu, KTERÉMU byl připsán – stejně
+      // jako běžný gól. Dřívější otočení strany ho přesouvalo na špatnou
+      // stranu (viz `goalAttribution.ts`).
+      const side = benefitingSide(eventSide, druhGolu);
       goals.push({
         min,
         side,
         player: playerName(event.player ?? event.scorer) || 'Neznámý střelec',
-        kind: ownGoal ? 'own' : /penalt/.test(type) ? 'penalty' : 'goal',
+        kind: druhGolu,
       });
       if (side === 'home') eventHomeScore++;
       else eventAwayScore++;
-    } else if (/yellow|red|card/.test(type)) {
+    } else if (/yellow|red|card/.test(type) && !/goal/.test(type)) {
       cards.push({
         min,
         side: eventSide,

@@ -530,3 +530,21 @@ v pořádku. Hlídané dál potřebují doklad, volné zůstávají nepovinné.
 
 Bohatost i zajímavosti se počítají v kódu. Žádné druhé volání modelu na výběr
 příběhů, hlášek ani klasifikaci — hlídá to test.
+
+---
+
+## Zdroje hlášek — závazná smlouva (v0.1.82)
+
+**Povolené zdroje za běhu:**
+
+1. schválený vestavěný katalog v kódu (`AUTHENTIC_BAROKO_PHRASES`, `RECAP_PHRASES`),
+2. deterministicky podmíněné hlášky (`GATED_PHASE_A_PHRASES`, `WALKED_ALL_OVER_VARIANTS`),
+3. zapnuté a ověřené řádky z `public.recap_phrases`.
+
+**Zakázáno:** stahování z Facebooku, Facebook API nebo import, průběžný
+přísun hlášek z Facebooku i záložní korpus z Facebooku.
+
+Repozitář žádný takový zdroj neobsahuje. Hláška, která je výslovně ve
+schváleném katalogu, je schválená bez ohledu na to, odkud kdysi pocházela.
+
+Při výpadku databáze se používají **jen** zdroje 1 a 2.

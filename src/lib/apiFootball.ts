@@ -1,3 +1,10 @@
+
+/**
+ * Časový limit pro dotaz na poskytovatele. Bez něj by zaseknutý zdroj
+ * držel funkci až do limitu platformy. Chyba se zachytí výš a synchronizace
+ * pokračuje s tím, co má.
+ */
+const PROVIDER_TIMEOUT_MS = 10_000;
 /**
  * Integrace football-data.org (v4) — pro MS 2026.
  * Soutěž FIFA World Cup (kód "WC", id 2000) je dostupná i v BEZPLATNÉM tieru.
@@ -106,6 +113,7 @@ async function apiGet(path: string): Promise<{ matches: FdMatch[] }> {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   if (!token) throw new Error('Chybí ENV FOOTBALL_DATA_TOKEN (nenastaveno nebo bez redeploye).');
   const res = await fetch(`${BASE}${path}`, {
+    signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
     headers: { 'X-Auth-Token': token },
     cache: 'no-store',
   });
@@ -202,7 +210,7 @@ interface FdMatchDetail {
 async function apiGetRaw<T>(path: string): Promise<T> {
   const token = process.env.FOOTBALL_DATA_TOKEN;
   if (!token) throw new Error('Chybí ENV FOOTBALL_DATA_TOKEN.');
-  const res = await fetch(`${BASE}${path}`, { headers: { 'X-Auth-Token': token }, cache: 'no-store' });
+  const res = await fetch(`${BASE}${path}`, { headers: { 'X-Auth-Token': token }, cache: 'no-store', signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS) });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     const msg = (json as { message?: string }).message ?? `HTTP ${res.status}`;

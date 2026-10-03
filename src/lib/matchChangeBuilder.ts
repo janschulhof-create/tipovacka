@@ -103,3 +103,29 @@ export function changesFromPersistedFinish(
  * produkční kontrakt vyžaduje stav skutečně uložený v databázi.
  * Nahradila ji `changesFromPersistedFinish()` výše.
  */
+
+/**
+ * Sloučí změny ze synchronizace se změnami z Highlightly a spočítá, kolik
+ * jich parta uvidí.
+ *
+ * ── PROČ JEDNA FUNKCE ───────────────────────────────────────────────────────
+ * Plná synchronizace dřív počítala viditelné změny DŘÍV, než přidala
+ * sémantické změny z Highlightly. Oprava `reg_home`/`reg_away` ve finálním
+ * detailu vytváří sémantickou změnu BEZ zvýšení `visibleChanges` — taková
+ * změna tedy vypadla z `changed`, cache se neinvalidovala a stránka se
+ * nepřekreslila.
+ *
+ * Cesta `live_only` měla pořadí správně. Obě teď volají tuto funkci, takže
+ * se nemohou rozejít.
+ */
+export function mergeLigaChanges(
+  syncChanges: MatchChange[],
+  highlightly: { semanticChanges?: MatchChange[]; live?: { visibleChanges?: number } } | null | undefined,
+): { changes: MatchChange[]; visibleCount: number } {
+  // NEJDŘÍV sloučit, AŽ PAK počítat.
+  const changes = [...syncChanges, ...(highlightly?.semanticChanges ?? [])];
+  return {
+    changes,
+    visibleCount: changes.length + (highlightly?.live?.visibleChanges ?? 0),
+  };
+}
