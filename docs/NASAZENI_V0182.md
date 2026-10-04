@@ -5,7 +5,8 @@
 | Krok | Co | Když chybí |
 |---|---|---|
 | 1 | `db/06-sync-lease.sql` | ⚠️ aplikace funguje dál, zámek se jen neuplatní (log `sync_lease_unavailable`) |
-| 2 | kód | |
+| 2 | `db/07-recap-phrase-usage.sql` | ⚠️ aplikace funguje dál, hlášky se hlídají jen podle uložených textů — **bez ochrany souběhu** (log `phrase_usage_unavailable`) |
+| 3 | kód | |
 
 Migrace 06 není povinná pro funkčnost, ale **bez ní nebude fungovat úspora
 ze souběhu** (bod 3 níže).

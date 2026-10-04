@@ -3,6 +3,10 @@ import { AUTHENTIC_BAROKO_PHRASES, BAROKO_STYLE_GUIDE, validateBarokoText } from
 import { loadRecapPhrases } from './phraseLibraryLoader';
 import { richnessFrom, richnessGuidance, selectMatchInterest } from './matchInterest';
 import { buildPhraseLibraryBlock, selectAvailablePhrases } from './phraseLibrary';
+import {
+  blockedRenderings, buildUsedPhrasesBlock, builtInFamilyKey, dbFamilyKey, FREE_CANDIDATES_PER_REQUEST,
+  rotateCandidates, type PhraseFamily,
+} from './phraseFamilies';
 import { buildGatedPhraseBlock, buildMatchPhraseEligibility } from './roundRecapPhrases';
 
 /**
@@ -35,15 +39,32 @@ export async function generateRoastLLM(input: {
   tips: RoastTip[];
   redCards?: Array<{ side: 'home' | 'away'; player?: string }>;
   standings?: string | null; // průběžné celkové pořadí (kontext)
+  /**
+   * Pestrost v kole: rodiny hlášek, které už v Baroku tohoto kola padly
+   * nebo je právě drží jiný běh. Výstup se kontroluje i po vygenerování
+   * (`generateWithPhraseDiversity`) — tohle jen šetří zbytečná odmítnutí.
+   */
+  diversity?: { blocked: ReadonlySet<string>; families: PhraseFamily[]; seed: string };
 }): Promise<string | null> {
   // Deterministická eligibilita pro TENTO zápas. Prahy jsou ve sdíleném
   // jádru (`roundRecapPhrases`), tady se nekopírují.
-  const eligibilita = buildMatchPhraseEligibility({
+  const plnaEligibilita = buildMatchPhraseEligibility({
     homeTeam: input.home,
     awayTeam: input.away,
     score: input.score,
     tips: input.tips,
   });
+
+  // Hlídaná hláška, která už v kole padla, se nenabídne A ani nepovolí –
+  // validátor ji pak odmítne stejně jako hlášku bez dokladu.
+  const blokovanaPravidla = input.diversity?.blocked ?? new Set<string>();
+  const eligibilita = {
+    ...plnaEligibilita,
+    eligiblePhraseIds: plnaEligibilita.eligiblePhraseIds
+      .filter((id) => !blokovanaPravidla.has(`rule:${id}`)),
+    allowedPhraseTexts: plnaEligibilita.allowedPhraseTexts
+      .filter((t) => !blokovanaPravidla.has(builtInFamilyKey(t))),
+  };
 
   const povoleneHlasky = buildGatedPhraseBlock(eligibilita);
 
@@ -55,12 +76,26 @@ export async function generateRoastLLM(input: {
   const richness = richnessFrom(zajimavosti.notableCount);
 
   const knihovna = await loadRecapPhrases();
-  const knihovnaBlok = buildPhraseLibraryBlock(selectAvailablePhrases({
+  const zablokovane = input.diversity?.blocked ?? new Set<string>();
+  const nabidka = selectAvailablePhrases({
     rows: knihovna.rows,
     scope: 'baroko',
     eligibleRuleKeys: eligibilita.eligiblePhraseIds,
     builtInTexts: AUTHENTIC_BAROKO_PHRASES,
-  }));
+  });
+  // Už použité rodiny se modelu vůbec nenabídnou. Volné hlášky se rotují,
+  // aby se ke slovu dostal celý katalog, ne jen pár nejvýš vážených.
+  const knihovnaBlok = buildPhraseLibraryBlock({
+    gated: nabidka.gated.filter((r) => !zablokovane.has(dbFamilyKey(r))),
+    free: rotateCandidates(
+      nabidka.free.filter((r) => !zablokovane.has(dbFamilyKey(r))),
+      input.diversity?.seed ?? `${input.home}|${input.away}`,
+      FREE_CANDIDATES_PER_REQUEST,
+    ),
+  });
+  const pouziteBlok = input.diversity
+    ? buildUsedPhrasesBlock(blockedRenderings(input.diversity.families, zablokovane))
+    : '';
 
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key || input.tips.length === 0) return null;
@@ -99,6 +134,7 @@ Nevypisuj tipéry za sebou jako seznam; radši je porovnej v jedné větě.
 POVOLENÉ HLÍDANÉ HLÁŠKY FÁZE A (týká se JEN jich, historických hlášek ne):
 ${povoleneHlasky}
 ${knihovnaBlok}
+${pouziteBlok}
 
 Specificky pro jeden zápas:
 - použij nejvýše JEDNU autentickou hlášku,

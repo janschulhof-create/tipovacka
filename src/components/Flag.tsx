@@ -133,7 +133,7 @@ function SpriteIcon({
       aria-label={`Logo nebo vlajka ${team}`}
       className={`inline-block shrink-0 bg-no-repeat ${responsiveIconClasses(className)}`}
       style={{
-        backgroundImage: 'url(/team-sprite-v1.webp)',
+        backgroundImage: 'url(/team-sprite-v2.webp)',
         // Procentuální výřez se přizpůsobí skutečné velikosti prvku. Díky tomu
         // logo zůstane správně oříznuté i při h-8/w-8 nebo h-9/w-9 a neukáže
         // sousední znaky ze sprite obrázku.

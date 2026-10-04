@@ -197,7 +197,9 @@ describe('LOGIN-10 — bezpečnost a rozvržení', () => {
   });
 
   test('kořen neobsahuje aplikační zdroje', async () => {
-    const povoleno = new Set(['next.config.ts', 'next-env.d.ts', 'postcss.config.mjs', 'tailwind.config.ts']);
+    // `sentry.client.config.ts` přidán v v0.1.82 vědomě: Next.js 15.1 ho hledá
+    // v kořeni. Obsahuje jen odložený import ze src/lib/sentryShared.ts.
+    const povoleno = new Set(['next.config.ts', 'next-env.d.ts', 'postcss.config.mjs', 'tailwind.config.ts', 'sentry.client.config.ts']);
     const { readdirSync, statSync } = await import('node:fs');
     const naleze = readdirSync(KOREN).filter((f) => {
       if (statSync(path.join(KOREN, f)).isDirectory()) return false;
