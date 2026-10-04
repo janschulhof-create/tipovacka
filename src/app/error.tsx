@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { reportError } from '@/lib/monitoring';
 
 /**
  * Chybová obrazovka pro běžné chyby uvnitř aplikace.
@@ -22,6 +23,8 @@ export default function Error({
   const [odeslano, setOdeslano] = useState(false);
 
   useEffect(() => {
+    // Do Sentry s příznakem hranice. Selhání monitoringu UI neovlivní.
+    reportError(error, { area: 'error_boundary', tags: { boundary: 'route', digest: error.digest ?? 'none' } });
     // `digest` je identifikátor, který Next.js přiřadí serverové chybě.
     // Podle něj se dá chyba dohledat ve Vercel logu.
     void fetch('/api/client-error', {

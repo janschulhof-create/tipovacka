@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { reportExpected, reportOnce } from './monitoring';
 
 /**
  * Zámek pro těžkou synchronizaci s poskytovateli.
@@ -52,11 +53,16 @@ export async function runWithSyncLease<T>(
     ziskano = await store.claim(name, owner, SYNC_LEASE_TTL_SECONDS);
   } catch (error) {
     log('sync_lease_unavailable', { name, errorName: (error as Error)?.name ?? 'unknown' });
+    // Akční (chybí migrace nebo GRANT), ale hlásí se jednou za běh procesu.
+    reportOnce('sync_lease_unavailable', 'Zámek synchronizace nedostupný – chybí migrace 06 nebo GRANT?',
+      { name, errorName: (error as Error)?.name ?? 'unknown' });
     return { owner: true, value: await work(), leaseUnavailable: true };
   }
 
   if (!ziskano) {
     log('sync_lease_held_elsewhere', { name });
+    // Správný stav: souběžný běh drží zámek. Žádné issue.
+    reportExpected('lease_held_elsewhere', { name });
     return { owner: false, reason: 'held_elsewhere' };
   }
 

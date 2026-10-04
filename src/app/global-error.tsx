@@ -1,5 +1,6 @@
 'use client';
 
+import { reportError } from '@/lib/monitoring';
 /**
  * Poslední záchrana — chyba v samotném kořeni aplikace (layout).
  *
@@ -17,6 +18,8 @@ export default function GlobalError({
   // Hlášení posíláme přímo, bez useEffect – komponenta nemusí stihnout
   // dokončit životní cyklus.
   if (typeof window !== 'undefined') {
+    // Celá aplikace spadla – nejdůležitější chyba vůbec.
+    reportError(error, { area: 'error_boundary', tags: { boundary: 'global', digest: error.digest ?? 'none' } });
     void fetch('/api/client-error', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

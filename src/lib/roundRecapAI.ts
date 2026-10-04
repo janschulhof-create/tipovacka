@@ -2,6 +2,10 @@ import { unstable_cache } from 'next/cache';
 import { BAROKO_STYLE_GUIDE } from './barokoPhrases';
 import { loadRecapPhrases } from './phraseLibraryLoader';
 import { buildPhraseLibraryBlock, selectAvailablePhrases } from './phraseLibrary';
+import {
+  blockedRenderings, buildUsedPhrasesBlock, builtInFamilies, dbFamilyKey,
+  FREE_CANDIDATES_PER_REQUEST, rotateCandidates,
+} from './phraseFamilies';
 import { richnessFrom, richnessGuidance } from './matchInterest';
 import { generateAnthropicText, getRoastModel } from './anthropicText';
 import type { AnthropicFailureReason } from './anthropicErrors';
@@ -34,7 +38,10 @@ import { shouldCallModel, slimRecapFacts, stableRecapCacheKey, type GenerationCo
 const cachedRoundRecap = unstable_cache(
   // `_cacheKey` je stabilní otisk kola – je součástí klíče cache, ale do
   // promptu nevstupuje. `serializedFacts` je ZEŠTÍHLENÝ payload pro model.
-  async (_cacheKey: string, serializedFacts: string, serializedFull: string) => {
+  // `serializedDiversity` = rodiny hlášek, které už v kole padly. Je součástí
+  // klíče cache: odmítnutý text se tak při dalším pokusu nevrátí z cache.
+  async (_cacheKey: string, serializedFacts: string, serializedFull: string, serializedDiversity = '[]') => {
+    const zablokovane = new Set<string>(JSON.parse(serializedDiversity) as string[]);
     const facts = JSON.parse(serializedFull) as RoundRecapFacts;
     const modeRules = facts.mode === 'final'
       ? 'Napiš 12 až 20 krátkých vět ve 3 až 4 odstavcích. Použij nejvýše TŘI katalogové hlášky, každou k jiné situaci a organicky vplетenou do textu.'
@@ -63,12 +70,24 @@ const cachedRoundRecap = unstable_cache(
     // Knihovna hlášek je NEPOVINNÝ doplněk. Výpadek databáze znamená menší
     // pestrost, ne chybu.
     const knihovna = await loadRecapPhrases();
-    const knihovnaBlok = buildPhraseLibraryBlock(selectAvailablePhrases({
+    const nabidka = selectAvailablePhrases({
       rows: knihovna.rows,
       scope: 'kudy',
       eligibleRuleKeys: phraseFacts.eligiblePhraseIds,
       builtInTexts: Object.values(RECAP_PHRASES),
-    }));
+    });
+    const knihovnaBlok = buildPhraseLibraryBlock({
+      gated: nabidka.gated.filter((r) => !zablokovane.has(dbFamilyKey(r))),
+      free: rotateCandidates(
+        nabidka.free.filter((r) => !zablokovane.has(dbFamilyKey(r))),
+        _cacheKey,
+        FREE_CANDIDATES_PER_REQUEST,
+      ),
+    });
+    const pouziteBlok = buildUsedPhrasesBlock(blockedRenderings(builtInFamilies(), zablokovane));
+    // Hláška s dokladem, která už v Kudy tohoto kola padla, se nenabídne.
+    phraseFacts.eligiblePhraseIds = phraseFacts.eligiblePhraseIds
+      .filter((id) => !zablokovane.has(`rule:${id}`));
     const phraseRules = phraseFacts.eligiblePhraseIds.length === 0
       ? 'Žádná hláška z této skupiny není pro toto kolo doložená — nepoužívej je. Historické hlášky se řídí svými pravidly.'
       : phraseFacts.eligiblePhraseIds
@@ -127,6 +146,7 @@ ${facts.matchdayContext.roundComplete
   : '- Kolo NENÍ dohrané. NESMÍŠ napsat „kolo je za námi“, „kolo je uzavřené“ ani nic podobného. Piš o programu dne nebo o průběžném stavu kola — například „po sobotním programu“ nebo „zatím v tomto kole“.'}
 ` : ''}
 ${knihovnaBlok}
+${pouziteBlok}
 
 ROZSAH: ${richnessGuidance(richness)}
 Delší text NEZNAMENÁ vymýšlet. Každá věta musí stát na některém z faktů výše —
@@ -218,6 +238,8 @@ export { validateRoundRecapDetailed, validateRoundRecapText };
 export async function getRoundRecapText(
   facts: RoundRecapFacts,
   context: GenerationContext = 'interactive',
+  /** Rodiny hlášek, které už v Kudy tohoto kola padly. */
+  diversity?: { blocked: ReadonlySet<string> },
 ): Promise<{ text: string; source: 'ai' | 'fallback' }> {
   if (facts.mode === 'waiting') return { text: fallbackRoundRecap(facts), source: 'fallback' };
 
@@ -231,7 +253,8 @@ export async function getRoundRecapText(
   const slim = JSON.stringify(slimRecapFacts(facts));
 
   try {
-    const generated = await cachedRoundRecap(cacheKey, slim, JSON.stringify(facts));
+    const diversityKey = JSON.stringify([...(diversity?.blocked ?? [])].sort());
+    const generated = await cachedRoundRecap(cacheKey, slim, JSON.stringify(facts), diversityKey);
     if (generated) return { text: generated.trim(), source: 'ai' };
   } catch (error) {
     zalogujSelhani(error, facts);

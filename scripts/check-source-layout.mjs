@@ -35,6 +35,9 @@ const POVOLENO = new Set([
   'tailwind.config.js',
   'eslint.config.mjs',
   'middleware.ts', // viz poznámka níže
+  // Sentry: Next.js 15.1 hledá klientskou konfiguraci v kořeni projektu.
+  // Obsahuje jen import sdílené inicializace ze src/lib/sentryShared.ts.
+  'sentry.client.config.ts',
 ]);
 
 /**

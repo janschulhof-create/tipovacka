@@ -25,6 +25,10 @@ import type { MatchChange, MatchdayMatch } from '@/lib/matchday';
 import { eventsAgreeWithOfficial, resolveMatchScore } from '@/lib/goalAttribution';
 import { diffLiveRow, type LiveRowFields } from '@/lib/liveRowDiff';
 import { createSupabaseSyncLeaseStore, runWithSyncLease } from '@/lib/syncLease';
+import { reportError, reportExpected } from '@/lib/monitoring';
+import { allFamilies } from '@/lib/phraseFamilies';
+import { createSupabasePhraseUsageStore, generateWithPhraseDiversity } from '@/lib/phraseUsage';
+import { loadRecapPhrases } from '@/lib/phraseLibraryLoader';
 import {
   MATCH_CHANGE_COLUMNS,
   changeFromUpdated,
@@ -64,6 +68,8 @@ async function runLigaMatchdayRecapsSafely(
     const recapy = await runMatchdayRecaps(changes, { seasonId, competition: 'liga' }, admin);
     return recapy.length > 0 ? recapy : null;
   } catch (error) {
+    // Skutečné selhání – synchronizaci ale neshodí.
+    reportError(error, { area: 'matchday_recap', tags: { competition: 'liga' } });
     console.warn(JSON.stringify({
       event: 'round_recap_generation_failed',
       competition: 'liga',
@@ -78,10 +84,37 @@ async function runMatchdayRecaps(
   context: { seasonId: number; competition: string },
   admin: ReturnType<typeof createAdminClient>,
 ) {
-  const store = createSupabaseRecapStore(
+  const baseStore = createSupabaseRecapStore(
     admin as unknown as Parameters<typeof createSupabaseRecapStore>[0],
     context,
   );
+
+  // ── Pestrost hlášek napříč verzemi Kudy jednoho kola ──────────────────────
+  // Sobotní, nedělní i pozdější verze sdílejí JEDEN fond: hláška, která
+  // padla v sobotu, se v neděli ani po odloženém zápase nezopakuje.
+  const usageStore = createSupabasePhraseUsageStore(
+    admin as unknown as Parameters<typeof createSupabasePhraseUsageStore>[0]);
+  const knihovna = await loadRecapPhrases();
+  const families = allFamilies(knihovna.rows);
+  /** Fakta → vstup (kvůli číslu kola). Fakta se staví jednou, takže sedí. */
+  const vstupFaktu = new WeakMap<object, { round: number; footballDay: string }>();
+  /** Token podle kola a dne – most mezi `generate` a `save`. */
+  const tokenyDne = new Map<string, string>();
+
+  // Uložení textu potvrdí rezervaci; neúspěch ji uvolní.
+  const store: typeof baseStore = {
+    ...baseStore,
+    async save(recap, claimToken) {
+      const ok = await baseStore.save(recap, claimToken);
+      const token = tokenyDne.get(`${recap.round}|${recap.footballDay}`);
+      if (token) {
+        tokenyDne.delete(`${recap.round}|${recap.footballDay}`);
+        if (ok) await usageStore.finalize(token);
+        else await usageStore.release(token);
+      }
+      return ok;
+    },
+  };
 
   return processMatchdayRecaps(changes, context, {
     store,
@@ -94,15 +127,38 @@ async function runMatchdayRecaps(
       return (data ?? []) as MatchdayMatch[];
     },
     async buildFacts(input) {
-      return buildMatchdayRecapFacts(admin, input);
+      const facts = await buildMatchdayRecapFacts(admin, input);
+      if (facts) vstupFaktu.set(facts, { round: input.round, footballDay: input.footballDay });
+      return facts;
     },
     // Dostane přesně ta fakta, ze kterých vznikl otisk – žádné druhé čtení.
     async generate(facts) {
-      // `closedDay` – model se volá i u rozehraného kola. Fakta přitom
-      // nesou `roundComplete: false`, takže netvrdí, že je kolo za námi.
-      const { text, source } = await getRoundRecapText(facts, 'closedDay');
-      // Fallback se neukládá jako úspěšné generování – ať se dá zkusit znovu.
-      return source === 'ai' ? text : null;
+      const vstup = vstupFaktu.get(facts);
+      if (!vstup) return null;
+
+      // Hlášky z dřívějších ÚSPĚŠNÝCH verzí Kudy téhož kola.
+      const { data: drivejsi } = await admin
+        .from('round_recaps').select('text')
+        .eq('season_id', context.seasonId).eq('competition', context.competition)
+        .eq('round', vstup.round).eq('status', 'success');
+
+      const vysledek = await generateWithPhraseDiversity({
+        store: usageStore,
+        pool: { competition: context.competition, seasonId: context.seasonId, round: vstup.round, scope: 'kudy' },
+        families,
+        persistedTexts: ((drivejsi ?? []) as { text: string | null }[]).map((r) => r.text ?? ''),
+        log: (event, data) => console.warn(JSON.stringify({ event, ...data })),
+        generate: async (blocked) => {
+          // `closedDay` – model se volá i u rozehraného kola. Fakta přitom
+          // nesou `roundComplete: false`, takže netvrdí, že je kolo za námi.
+          const { text, source } = await getRoundRecapText(facts, 'closedDay', { blocked });
+          // Fallback se neukládá jako úspěšné generování – ať se dá zkusit znovu.
+          return source === 'ai' ? text : null;
+        },
+      });
+
+      if (vysledek.token) tokenyDne.set(`${vstup.round}|${vstup.footballDay}`, vysledek.token);
+      return vysledek.text;
     },
     log: (event, data) => console.warn(JSON.stringify({ event, ...data })),
   });
@@ -1802,16 +1858,44 @@ async function runSync(req: NextRequest, trustedUserLiveSync = false) {
 
   // Jeden řádek na požadavek – podle něj se po nasazení porovná skutečná
   // zátěž ve Vercelu. Žádná tajemství ani tipy.
+  // Souhrn napříč soutěžemi – zápisy do DB a druh případné chyby.
+  let dbMatchUpdates = 0;
+  const zdrojeChyb: string[] = [];
+  for (const r of Object.values(results) as Array<Record<string, unknown>>) {
+    dbMatchUpdates += Number(r?.inserted ?? 0) + Number(r?.updated ?? 0) + Number(r?.forcedFinished ?? 0);
+    const hl = r?.highlightly as { live?: { updated?: number } } | undefined;
+    dbMatchUpdates += Number(hl?.live?.updated ?? 0);
+    for (const e of (r?.sourceErrors as Array<{ source: string }> | undefined) ?? []) zdrojeChyb.push(e.source);
+  }
+  const dbChyby = zdrojeChyb.filter((z) => z.startsWith('database'));
+  const errorCategory = zdrojeChyb.length === 0 ? 'none'
+    : dbChyby.length === zdrojeChyb.length ? 'database'
+      : dbChyby.length > 0 ? 'mixed' : 'provider';
+
+  // Chyba zápisu do databáze je akční. Výpadek poskytovatele je očekávaný.
+  if (dbChyby.length > 0) {
+    reportError(new Error('sync_database_write_failed'), {
+      area: 'live_sync',
+      tags: { sync_mode: liveOnly ? 'live_only' : 'full' },
+      extra: { sources: dbChyby.slice(0, 10), count: dbChyby.length },
+    });
+  }
+  if (zdrojeChyb.length > dbChyby.length) {
+    reportExpected('provider_unavailable', { count: zdrojeChyb.length - dbChyby.length });
+  }
+
   console.warn(JSON.stringify({
     event: 'live_sync_summary',
     mode: liveOnly ? 'live_only' : 'full',
     heavy_sync_owner: heavyOwner,
     provider_requests: providerRequests,
     semantic_match_changes: userVisibleChanges,
+    db_match_updates: dbMatchUpdates,
     cache_revalidated: changed,
     recap_generated: vzniklyRecapy,
     duration_ms: Date.now() - startMs,
     result: overallOk ? 'ok' : 'partial',
+    error_category: errorCategory,
   }));
 
   return NextResponse.json({ ok: overallOk, changed, results, at: new Date().toISOString() });

@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
+import { reportExpected } from '@/lib/monitoring';
 import { createLivePoller, createSingleFlight, LIVE_POLL_BASE_MS, type SyncOutcome } from '@/lib/livePoller';
 
 /**
@@ -82,12 +83,17 @@ export function LiveRefresh({ hasLive }: { hasLive: boolean; intervalMs?: number
     if (!CLIENT_SYNC_ENABLED || !hasLive) return 'unchanged';
     try {
       const res = await fetch('/api/sync-football?competition=liga&live_only=1', { method: 'POST', cache: 'no-store' });
-      if (!res.ok) return 'error';
+      if (!res.ok) {
+        // Očekávaný, obnovitelný stav – plánovač prodlouží interval.
+        reportExpected('client_sync_failed', { status: res.status });
+        return 'error';
+      }
       const body = await res.json().catch(() => null) as { changed?: unknown } | null;
       // Starší server pole nevrací → chovat se jako dřív a obnovit.
       if (typeof body?.changed !== 'boolean') return 'changed';
       return body.changed ? 'changed' : 'unchanged';
     } catch {
+      reportExpected('client_sync_failed', { network: true });
       return 'error';
     }
   }, [hasLive]);

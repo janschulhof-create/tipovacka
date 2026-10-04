@@ -1,7 +1,7 @@
 /**
  * Ikony týmů používané v UI.
  *
- * - reprezentační týmy používají vlajky ze sprite souboru /team-sprite-v1.webp
+ * - reprezentační týmy používají vlajky ze sprite souboru /team-sprite-v2.webp
  * - kluby Chance ligy používají loga vložená ve stejném sprite souboru
  *
  * Názvy klubů jsou mapované přes přesné aliasy, aby se například Slavia Praha
@@ -145,7 +145,7 @@ export function flagCode(name: string): string | null {
 }
 
 
-/** Pozice ikon v komprimovaném sprite souboru /team-sprite-v1.webp. */
+/** Pozice ikon v komprimovaném sprite souboru /team-sprite-v2.webp. */
 const FLAG_SPRITE_ORDER = [
   'ar', 'at', 'au', 'ba', 'be', 'br', 'ca', 'cd',
   'ch', 'ci', 'co', 'cv', 'cw', 'cz', 'de', 'dz',
