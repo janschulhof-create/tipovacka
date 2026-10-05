@@ -19,7 +19,8 @@
     "test:red:check": "node scripts/check-red-suites.mjs",
     "seed:player": "node scripts/seed-player.mjs",
     "security:check": "node scripts/check-secrets.mjs",
-    "check:layout": "node scripts/check-source-layout.mjs"
+    "check:layout": "node scripts/check-source-layout.mjs",
+    "verify:client-env": "node scripts/verify-client-env.mjs"
   },
   "dependencies": {
     "@sentry/nextjs": "^9.47.2",
