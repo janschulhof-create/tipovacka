@@ -1,5 +1,6 @@
 import * as Sentry from '@sentry/nextjs';
 import { setMonitoringSink } from './monitoring';
+import { readMonitoringEnv } from './monitoringEnv';
 import {
   resolveEnvironment, resolveRelease, scrubEvent, scrubUrl, tracesSampleRate, type ScrubbableEvent,
 } from './monitoringConfig';
@@ -12,9 +13,10 @@ import {
  */
 export function initSentry(runtime: 'client' | 'server' | 'edge'): void {
   try {
-    const env = process.env as Record<string, string | undefined>;
+    // Přímé odkazy na proměnné – jinak je Next.js do prohlížeče nevloží.
+    const env = readMonitoringEnv();
     const environment = resolveEnvironment(env);
-    const dsn = env.NEXT_PUBLIC_SENTRY_DSN;
+    const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
 
     Sentry.init({
       dsn,
