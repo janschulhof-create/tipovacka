@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { reportError } from '@/lib/monitoring';
+import { reportError, reportExpected } from '@/lib/monitoring';
+import { claimChunkReload } from '@/lib/chunkReload';
 
 /**
  * Chybová obrazovka pro běžné chyby uvnitř aplikace.
@@ -23,6 +24,15 @@ export default function Error({
   const [odeslano, setOdeslano] = useState(false);
 
   useEffect(() => {
+    // Zastaralý chunk po novém nasazení: jedno automatické znovunačtení
+    // stáhne aktuální verzi. Pojistka v `claimChunkReload` brání smyčce.
+    let storage: Storage | null = null;
+    try { storage = window.sessionStorage; } catch { storage = null; }
+    if (claimChunkReload(error, storage, Date.now(), navigator.onLine !== false)) {
+      reportExpected('client_sync_failed', { chunkReload: true });
+      window.location.reload();
+      return;
+    }
     // Do Sentry s příznakem hranice. Selhání monitoringu UI neovlivní.
     reportError(error, { area: 'error_boundary', tags: { boundary: 'route', digest: error.digest ?? 'none' } });
     // `digest` je identifikátor, který Next.js přiřadí serverové chybě.

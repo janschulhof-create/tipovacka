@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2';
 import webpush from 'npm:web-push@3.6.7';
 import { generateNotificationWithClaude } from '../_shared/ai-notifications.ts';
+import { rescheduledReminderText, selectDueReminders, type ReminderDue } from './reminderSelection.ts';
 
 const responseHeaders = { 'Content-Type': 'application/json' };
 const RESULT_WINDOW_MS = 24 * 60 * 60 * 1000;
@@ -36,11 +37,6 @@ type PredictionRow = {
   points: number | null;
 };
 
-type ReminderDue = {
-  round: number;
-  kind: 'round_24h' | 'round_3h';
-  matchIds: number[];
-};
 
 type ResultBlock = {
   round: number;
@@ -445,23 +441,9 @@ Deno.serve(async (request) => {
   if (matchesError) return json({ error: matchesError.message }, 500);
 
   const matchRows = (matches || []) as MatchRow[];
-  const matchesByRound = new Map<number, MatchRow[]>();
-  for (const match of matchRows) {
-    const rows = matchesByRound.get(match.round) || [];
-    rows.push(match);
-    matchesByRound.set(match.round, rows);
-  }
-
-  const reminders: ReminderDue[] = [];
-  for (const [round, rows] of matchesByRound) {
-    const firstFuture = rows
-      .filter((row) => row.status === 'scheduled' && new Date(row.kickoff).getTime() > nowMs)
-      .sort((a, b) => new Date(a.kickoff).getTime() - new Date(b.kickoff).getTime())[0];
-    if (!firstFuture) continue;
-    const minutes = (new Date(firstFuture.kickoff).getTime() - nowMs) / 60000;
-    if (minutes >= 1425 && minutes <= 1455) reminders.push({ round, kind: 'round_24h', matchIds: rows.map((row) => row.id) });
-    if (minutes >= 165 && minutes <= 195) reminders.push({ round, kind: 'round_3h', matchIds: rows.map((row) => row.id) });
-  }
+  // Výběr připomínek je v `reminderSelection.ts` (testovaný v Node).
+  // Odložené a znovu naplánované zápasy dostanou vlastní blok.
+  const reminders: ReminderDue[] = selectDueReminders(matchRows, nowMs);
 
   const resultGroups = new Map<string, MatchRow[]>();
   for (const match of matchRows) {
@@ -542,7 +524,7 @@ Deno.serve(async (request) => {
       .eq('season_id', season.id)
       .eq('round', item.round)
       .eq('kind', item.kind)
-      .eq('block_key', '')
+      .eq('block_key', item.blockKey)
       .in('player_id', playerIds);
     const alreadySent = new Set((logs || []).map((row) => row.player_id as number));
 
@@ -562,9 +544,13 @@ Deno.serve(async (request) => {
       const completed = counts.get(playerId) || 0;
       const missing = Math.max(0, item.matchIds.length - completed);
       if (item.kind === 'round_3h' && missing === 0) continue;
+      // U odloženého zápasu jen těm, komu tip chybí.
+      if (item.rescheduled && missing === 0) continue;
 
       const fallback = fallbackReminderNotification(item.kind, item.round, missing, item.matchIds.length, playerId);
-      const notification = await generateNotificationWithClaude({
+      // Odložený zápas: pevný text. Obecná šablona i AI mluví o začátku
+      // kola, což by tady nebyla pravda.
+      const notification = item.rescheduled ? rescheduledReminderText(item, missing) : await generateNotificationWithClaude({
         apiKey: anthropicKey,
         model: anthropicModel,
         type: 'reminder',
@@ -582,7 +568,7 @@ Deno.serve(async (request) => {
         ...notification,
         icon: '/icons/icon-192.png',
         badge: '/icons/icon-192.png',
-        tag: `liga-${season.id}-${item.round}-${item.kind}`,
+        tag: `liga-${season.id}-${item.round}-${item.kind}${item.blockKey ? `-${item.blockKey}` : ''}`,
         url: `/?soutez=liga&kolo=${item.round}`,
       });
 
@@ -598,7 +584,7 @@ Deno.serve(async (request) => {
           season_id: season.id,
           round: item.round,
           kind: item.kind,
-          block_key: '',
+          block_key: item.blockKey,
           sent_at: new Date().toISOString(),
         }, { onConflict: 'player_id,season_id,round,kind,block_key' });
       }

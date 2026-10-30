@@ -47,8 +47,14 @@ export function HistorieView({
   extraCards = [],
   trailingCards = [],
   regionalCards = [],
+  archiveOnly = false,
 }: {
   data: Historie;
+  /**
+   * Režim archivu v Síni slávy: vynechá statistické karty sezóny, protože
+   * stejné rekordy jsou o kus výš v části „Všechny sezóny“.
+   */
+  archiveOnly?: boolean;
   titleRows?: RankRow[];
   extraCards?: StatCardDef[];
   trailingCards?: StatCardDef[];
@@ -163,7 +169,9 @@ export function HistorieView({
         </div>
       </section>
 
-      {/* Statistiky sezóny — hráčské karty i zajímavosti pohromadě */}
+      {/* Statistiky sezóny — hráčské karty i zajímavosti pohromadě.
+          V Síni slávy se nezobrazují: stejné rekordy jsou výš. */}
+      {!archiveOnly && (
       <section className="space-y-2">
         <h2 className="eyebrow"><span className="flag-chip" /> Statistiky sezóny</h2>
         <p className="text-[11px] text-slate-100/40">Klepni na kartu pro celé pořadí.</p>
@@ -173,6 +181,7 @@ export function HistorieView({
           ))}
         </div>
       </section>
+      )}
 
       {regionalCards.length > 0 && (
         <section className="space-y-3">

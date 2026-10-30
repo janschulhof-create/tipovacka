@@ -23,6 +23,11 @@ const nextConfig: NextConfig = {
       },
     ],
   },
+  // Historie je od v0.1.83 součástí Síně slávy. Přesměrování v konfiguraci
+  // se vyřídí na okraji sítě – nespustí žádnou funkci.
+  async redirects() {
+    return [{ source: '/historie', destination: '/sin-slavy', permanent: true }];
+  },
   async headers() {
     return [
       {

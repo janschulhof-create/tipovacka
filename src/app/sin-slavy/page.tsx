@@ -1,3 +1,5 @@
+import { HistorieView, type Historie } from '@/components/HistorieView';
+import { getMsSeason } from '@/lib/msSeason';
 import historie from '@/data/historie.json';
 import { PageHeader } from '@/components/PageHeader';
 import { CompetitionTabs } from '@/components/CompetitionTabs';
@@ -166,7 +168,20 @@ function mergeContinents(
   return [...aggregate.values()];
 }
 
+/** Oddělovač mezi rekordy všech sezón a archivem jedné sezóny. */
+function ArchiveHeading({ label }: { label: string }) {
+  return (
+    <h2 className="eyebrow mb-3 mt-10 border-t border-line-subtle pt-6 lg:mt-12">
+      <span className="flag-chip" /> 📚 {label}
+    </h2>
+  );
+}
+
 export default async function SinSlavyPage() {
+  // Archiv sezón (dřív samostatná stránka Historie).
+  const historieLiga = historie as Historie;
+  const msArchiv = await getMsSeason();
+
   const [leagueMeta, msMeta] = await Promise.all([
     getCompetitionSeasons('liga'),
     getCompetitionSeasons('ms'),
@@ -262,7 +277,7 @@ export default async function SinSlavyPage() {
 
   return (
     <main>
-      <PageHeader icon="🏆" title="Síň slávy" subtitle="All-time rekordy odděleně podle soutěží" />
+      <PageHeader icon="🏆" title="Síň slávy" subtitle="Rekordy všech sezón a archiv odehraných soutěží" />
       <CompetitionTabs
         liga={
           leagueAllTime ? (
@@ -276,6 +291,8 @@ export default async function SinSlavyPage() {
                 extraCards={leagueExtra}
                 regionalCards={leagueRegions}
               />
+              <ArchiveHeading label={`Archiv sezóny ${historieLiga.season}`} />
+              <HistorieView data={historieLiga} archiveOnly />
             </>
           ) : null
         }
@@ -291,6 +308,12 @@ export default async function SinSlavyPage() {
                 extraCards={msExtra}
                 trailingCards={msContinents}
               />
+              {msArchiv && (
+                <>
+                  <ArchiveHeading label="Archiv turnaje" />
+                  <HistorieView data={msArchiv.data} archiveOnly />
+                </>
+              )}
             </>
           ) : null
         }
